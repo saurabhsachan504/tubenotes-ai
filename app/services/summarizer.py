@@ -1,9 +1,7 @@
-"""Summary generation via Ollama, in the video's own language.
+"""Summary generation via vLLM's OpenAI-compatible API.
 
-The prompts and the language routing are carried over from the extension, which
-already tuned them: the summary must come back in the SAME language the video is
-spoken in, and regional Indian languages go to an Indic-strong model because
-general models drift back into English or produce broken text.
+The summary is generated in the video's own language.  This deployment uses a
+single Gemma 4 model for all supported languages.
 """
 from __future__ import annotations
 
@@ -19,6 +17,8 @@ from app.config import settings
 from app.services.youtube import sample_for_model
 
 logger = logging.getLogger("trialguard.summarizer")
+
+_vllm_client: httpx.AsyncClient | None = None
 
 # Languages the general model writes well natively.
 STRONG_LANGS = {
@@ -81,9 +81,8 @@ def language_name(code: str) -> str:
 
 
 def model_for(code: str) -> str:
-    if code in INDIC_LANGS:
-        return settings.OLLAMA_INDIC_MODEL
-    return settings.OLLAMA_MODEL
+    # Gemma 4 is the single model served by this vLLM instance.
+    return settings.VLLM_MODEL
 
 
 def plan_for(target: str) -> tuple[str, str, str | None]:
@@ -96,11 +95,9 @@ def plan_for(target: str) -> tuple[str, str, str | None]:
         into a language it writes badly produces broken text; translating clean
         English is far better.
     """
-    if target in INDIC_LANGS:
-        return settings.OLLAMA_INDIC_MODEL, target, None
-    if target in STRONG_LANGS:
-        return settings.OLLAMA_MODEL, target, None
-    return settings.OLLAMA_MODEL, "en", target
+    if target in INDIC_LANGS or target in STRONG_LANGS:
+        return settings.VLLM_MODEL, target, None
+    return settings.VLLM_MODEL, "en", target
 
 
 def language_directive(code: str) -> str:
@@ -189,33 +186,29 @@ def _label_rule(code: str) -> str:
 
 def summary_prompt(code: str) -> str:
     L = labels_for(code)
-    return f"""Write a CONCISE but complete summary of the video from the content below, in Markdown. TARGET LENGTH: about 350-400 words TOTAL (never more than ~420 words). Be selective - capture the MAIN parts of the whole video from start to end; do not list every tiny detail.
+    return f"""Write a natural, engaging, and easy-to-scan summary of the video from the content below, in Markdown. Write like a skilled editor explaining the video clearly to a curious reader. TARGET LENGTH: about 350-400 words TOTAL (never more than ~420 words). Be selective, but cover the MAIN ideas from the beginning, middle, and end.
 
-Use EXACTLY this structure, with these exact labels:
+Use this structure:
 
 ## {L["overview"]}
-A 3-5 sentence paragraph on what the whole video is about.
+A short 3-4 sentence overview that immediately tells the reader the subject, central idea, and why it matters. Start with the substance, not phrases such as "this video discusses".
 
-Then 4 to 7 sections (NOT more). For each, YOU choose a real, short, descriptive title in the SAME language as the rest of the output. NEVER output the words "Section Title" or any angle-bracket placeholder - always write a real title:
+Then write 3 to 6 sections in the order the ideas appear. Give each section a short, specific, descriptive heading in the SAME language as the rest of the output:
 
 ## <your real descriptive title>
-**{L["key_point"]}:** one sentence.
-
-- **{L["background"]}:** 1-2 sentences of context.
-- **{L["details"]}:** 1-2 sentences with the real names, numbers and facts.
+Explain the idea in one short, flowing paragraph. Use plain language and natural transitions. When a section contains several distinct facts, steps, reasons, or examples, present them as 2-4 concise bullet points instead of packing them into a dense paragraph. Do not force bullets into every section.
 
 Then finish with:
 
 ## {L["conclusion"]}
-**{L["key_point"]}:** one sentence.
-
-- **{L["details"]}:** 1-2 sentences on the key takeaways.
-
-**{L["in_summary"]},** a 2-3 sentence closing paragraph.
+Give 3-5 concise bullet points containing the most useful conclusions or takeaways. Each bullet must add new information rather than repeat a sentence from above.
 
 Strict rules:
-- Keep the WHOLE summary around 350-400 words. Choose only the 4-7 most important sections; merge related topics; do NOT repeat the same point in multiple sections.
+- Make the writing flow naturally and feel enjoyable to read, not like a form or a list of database fields. Vary sentence openings and avoid repetitive labels such as "Key Point", "Background", and "Details".
+- Keep paragraphs short (normally 2-4 sentences). Bold only a few genuinely important names, terms, numbers, or conclusions; do not bold whole sentences.
+- Keep the WHOLE summary around 350-400 words. Merge related topics and do NOT repeat the same point in multiple sections.
 - Be FAITHFUL and ACCURATE: real names, events, dates and numbers exactly; never confuse two people or events, never invent.
+- Be engaging through clarity and specificity, never through hype, clickbait, invented emotion, or unsupported claims.
 - NEVER include caption noise like "[Music]" or anything in square brackets.
 - Start directly with "## {L["overview"]}". Always use REAL section titles, never a placeholder.{_label_rule(code)}"""
 
@@ -292,13 +285,44 @@ def strip_think(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Ollama
+# vLLM / OpenAI-compatible chat completions
 # ---------------------------------------------------------------------------
+def _vllm_headers() -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    if settings.VLLM_API_KEY:
+        headers["Authorization"] = f"Bearer {settings.VLLM_API_KEY}"
+    return headers
+
+
+async def vllm_client() -> httpx.AsyncClient:
+    """Return one connection-pooled client for all model calls in this worker."""
+    global _vllm_client
+    if _vllm_client is not None and not _vllm_client.is_closed:
+        return _vllm_client
+    # There is no await between this check and assignment, so tasks on the
+    # worker's event loop cannot race and create duplicate clients.
+    timeout = httpx.Timeout(settings.VLLM_TIMEOUT_SECONDS, connect=15)
+    _vllm_client = httpx.AsyncClient(timeout=timeout)
+    return _vllm_client
+
+
+async def close_vllm_client() -> None:
+    global _vllm_client
+    client, _vllm_client = _vllm_client, None
+    if client is not None and not client.is_closed:
+        await client.aclose()
+
+
 async def stream_chat(
-    *, model: str, system: str, content: str, num_predict: int = 3000
+    *,
+    model: str,
+    system: str,
+    content: str,
+    num_predict: int = 3000,
+    temperature: float = 0.4,
 ) -> AsyncIterator[str]:
-    """Yield tokens from Ollama's /api/chat as they arrive."""
-    url = settings.OLLAMA_URL.rstrip("/") + "/api/chat"
+    """Yield text deltas from vLLM's /v1/chat/completions SSE stream."""
+    url = settings.VLLM_URL.rstrip("/") + "/chat/completions"
     payload = {
         "model": model,
         "messages": [
@@ -306,44 +330,38 @@ async def stream_chat(
             {"role": "user", "content": content},
         ],
         "stream": True,
-        "keep_alive": -1,
-        "options": {
-            "temperature": 0.4,
-            "top_p": 0.9,
-            "repeat_penalty": 1.15,
-            "num_predict": num_predict,
-            # The 4096 default is too small: the transcript fills it and the
-            # summary gets cut off mid-sentence.
-            "num_ctx": 8192,
-        },
+        "temperature": temperature,
+        "top_p": 0.9,
+        "max_tokens": num_predict,
     }
 
-    # Sochne wale models ko soch band karne ko kaho. Warna wo pehle 20 second
-    # tak `thinking` bhejta hai jisme `content` khaali hota hai, aur user ko
-    # khaali screen dikhti hai. Key sirf band karne ke liye bheji jaati hai -
-    # jo models sochte hi nahi unhe isse koi farq nahi padta.
-    if getattr(settings, "OLLAMA_SKIP_THINKING", True):
-        payload["think"] = False
+    client = await vllm_client()
+    async with client.stream(
+        "POST", url, json=payload, headers=_vllm_headers()
+    ) as res:
+        if res.status_code != 200:
+            body = (await res.aread()).decode("utf-8", "replace")[:500]
+            raise RuntimeError(f"vLLM HTTP {res.status_code}: {body}")
 
-    timeout = httpx.Timeout(settings.OLLAMA_TIMEOUT_SECONDS, connect=15)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        async with client.stream("POST", url, json=payload) as res:
-            if res.status_code != 200:
-                body = (await res.aread()).decode("utf-8", "replace")[:300]
-                raise RuntimeError(f"Ollama HTTP {res.status_code}: {body}")
-            async for line in res.aiter_lines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                token = (obj.get("message") or {}).get("content")
-                if token:
-                    yield token
-                if obj.get("done"):
-                    return
+        async for line in res.aiter_lines():
+            line = line.strip()
+            if not line or line.startswith(":"):
+                continue
+            if line.startswith("data:"):
+                line = line[5:].strip()
+            if line == "[DONE]":
+                return
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            choices = obj.get("choices") or []
+            if not choices:
+                continue
+            delta = choices[0].get("delta") or {}
+            token = delta.get("content")
+            if token:
+                yield token
 
 
 async def collect_chat(*, model: str, system: str, content: str, num_predict: int = 3000) -> str:
@@ -377,7 +395,8 @@ async def stream_summary(
         model=model,
         system=system,
         content=sample_for_model(transcript, settings.TRANSCRIPT_MAX_CHARS),
-        num_predict=3000,
+        num_predict=settings.SUMMARY_NUM_PREDICT,
+        temperature=0.7 if mode == "summary" else 0.4,
     ):
         buffer += token
         if hide_reasoning and "</think>" not in buffer.lower():
@@ -403,6 +422,19 @@ def split_into_chunks(text: str, size: int, overlap: int) -> list[str]:
             break
         i = max(0, end - overlap)
     return chunks
+
+
+def _budget_for(chunk: str) -> int:
+    """Scale the notes output allowance for short and final chunks.
+
+    A full 6,000-character chunk keeps the configured exhaustive-notes budget.
+    Giving the same 4,096-token allowance to a 300-character tail encourages
+    padding/repetition and can keep the GPU busy long after the useful answer.
+    """
+    cap = max(1, settings.NOTES_NUM_PREDICT)
+    floor = min(768, cap)
+    proportional = (len(chunk) * cap + 5999) // 6000
+    return min(cap, max(floor, proportional))
 
 
 async def full_notes(
@@ -462,7 +494,7 @@ async def full_notes(
                         model=model,
                         system=directive + "\n\n" + base + reminder,
                         content=chunk,
-                        num_predict=settings.NOTES_NUM_PREDICT,
+                        num_predict=_budget_for(chunk),
                     )
                     if text.strip():
                         break

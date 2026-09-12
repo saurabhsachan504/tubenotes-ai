@@ -84,22 +84,31 @@ class Settings(BaseSettings):
     # Serve the browser UI from this same service at "/".
     WEB_APP_ENABLED: bool = True
 
-    OLLAMA_URL: str = "https://ollama.trueworks.in"
-    OLLAMA_MODEL: str = "gemma2:9b"
-    # Regional Indian languages need an Indic-strong model; general models drift
-    # back into English or produce broken text.
-    OLLAMA_INDIC_MODEL: str = "sarvam-m-q4"
-    OLLAMA_TIMEOUT_SECONDS: int = 300
-    # Sochne wale models (gemma4 jaise) pehle chupchap soch likhte hain. Naya
-    # Ollama us soch ko alag `thinking` field me bhejta hai aur `content`
-    # khaali rakhta hai - screen tab tak khaali padi rehti hai. Naapa gaya:
-    # soch ke saath pehla content 20.60s, band karne par 0.98s.
-    OLLAMA_SKIP_THINKING: bool = True
+    # vLLM exposes an OpenAI-compatible API.  When this API itself runs in
+    # Docker and vLLM is exposed on the host at :8010, host.docker.internal is
+    # the correct address (docker-compose adds the Linux host-gateway mapping).
+    VLLM_URL: str = "http://host.docker.internal:8010/v1"
+    VLLM_MODEL: str = "google/gemma-4-26B-A4B-it"
+    # Leave blank when vLLM was started without --api-key.
+    VLLM_API_KEY: str = ""
+    VLLM_TIMEOUT_SECONDS: int = 600
+
+    # A 350-400 word summary normally needs well under 1,000 tokens. Keeping
+    # this bounded prevents a model that ignores the length instruction from
+    # spending several minutes generating an unnecessarily long answer.
+    SUMMARY_NUM_PREDICT: int = 1200
 
     # Longer transcripts are sampled down to this budget before summarising.
     # This applies to the on-screen SUMMARY only - the full notes always read
     # the entire transcript.
     TRANSCRIPT_MAX_CHARS: int = 12000
+    # Summary and PDF requests commonly target the same video back-to-back.
+    # Keep that transcript in process so the second request does not repeat
+    # YouTube's slow, rate-limited network path. 0 disables the cache.
+    TRANSCRIPT_CACHE_TTL_SECONDS: int = 1800
+    TRANSCRIPT_CACHE_MAX_ENTRIES: int = 200
+    # Applied to each request made by youtube-transcript-api and yt-dlp.
+    YOUTUBE_REQUEST_TIMEOUT_SECONDS: int = 12
     # ---- output cache ----------------------------------------------------
     # Ek baar bani summary sabke liye. Default BAND hai - table ban jaane aur
     # sab theek dikhne ke baad .env me OUTPUT_CACHE_ENABLED=true kijiye.
@@ -111,9 +120,10 @@ class Settings(BaseSettings):
     OUTPUT_CACHE_TTL_DAYS: int = 90
 
     # ---- full notes (the PDF) ------------------------------------------
-    # Smaller chunks give the model less to compress, so more of the detail
-    # survives. Overlap stops a point from falling between two chunks.
-    NOTES_CHUNK_CHARS: int = 3500
+    # 6k keeps a chunk within the model context while requiring substantially
+    # fewer model round trips than the old 3.5k default. Overlap stops a point
+    # from falling between two chunks.
+    NOTES_CHUNK_CHARS: int = 6000
     NOTES_CHUNK_OVERLAP: int = 400
     # 0 = no limit. Anything above 0 truncates long videos, and the user is
     # told when that happens - it is never silent.
@@ -121,9 +131,9 @@ class Settings(BaseSettings):
     # Output budget per chunk. Notes are meant to be exhaustive, so this is
     # deliberately large.
     NOTES_NUM_PREDICT: int = 4096
-    # How many chunks to send to Ollama at once. 1 is safest; 2-3 is much
-    # faster if your Ollama has OLLAMA_NUM_PARALLEL > 1.
-    NOTES_CONCURRENCY: int = 2
+    # How many note chunks to send to vLLM at once. Keep this at or below
+    # vLLM's --max-num-seqs setting.
+    NOTES_CONCURRENCY: int = 4
     # Attempts per chunk before it is reported as missing.
     NOTES_CHUNK_RETRIES: int = 3
     # Optional http(s) proxy for YouTube. Set this if your server's IP gets

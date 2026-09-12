@@ -106,19 +106,15 @@ def _chunk(text: str, size: int = 1500) -> list[str]:
     return chunks or [""]
 
 
-async def _ollama(chunk: str, target: str) -> str:
-    """Ek tukda apne model se anuvaad karake wapas."""
+async def _vllm(chunk: str, target: str) -> str:
+    """Translate one chunk through the vLLM OpenAI-compatible endpoint."""
     from app.services.summarizer import LANG_NAMES   # circular import se bachne ko
     name = LANG_NAMES.get(target, target)
     payload = {
-        "model": settings.OLLAMA_MODEL,
+        "model": settings.VLLM_MODEL,
         "stream": False,
-        "think": False,        # sochne wala hissa yahan bekaar hai
-        "keep_alive": -1,
-        # num_ctx wahi 8192 jo summarizer bhejta hai. Alag bhejne par Ollama
-        # poora model utaar kar dobara chadhata hai - har translate par ~9
-        # second, aur uske baad agli summary par phir se.
-        "options": {"temperature": 0.1, "num_ctx": 8192, "num_predict": 4000},
+        "temperature": 0.1,
+        "max_tokens": 4000,
         "messages": [
             {"role": "system", "content": (
                 f"You are a professional translator. Translate the user text "
@@ -131,11 +127,20 @@ async def _ollama(chunk: str, target: str) -> str:
             {"role": "user", "content": chunk},
         ],
     }
-    url = settings.OLLAMA_URL.rstrip("/") + "/api/chat"
-    async with httpx.AsyncClient(timeout=httpx.Timeout(180, connect=15)) as c:
-        res = await c.post(url, json=payload)
-        res.raise_for_status()
-        return (res.json().get("message", {}).get("content") or "").strip()
+    headers = {"Content-Type": "application/json"}
+    if settings.VLLM_API_KEY:
+        headers["Authorization"] = f"Bearer {settings.VLLM_API_KEY}"
+    url = settings.VLLM_URL.rstrip("/") + "/chat/completions"
+    timeout = httpx.Timeout(settings.VLLM_TIMEOUT_SECONDS, connect=15)
+    async with httpx.AsyncClient(timeout=timeout) as c:
+        res = await c.post(url, json=payload, headers=headers)
+        if res.status_code != 200:
+            raise RuntimeError(f"vLLM HTTP {res.status_code}: {res.text[:500]}")
+        data = res.json()
+        choices = data.get("choices") or []
+        if not choices:
+            return ""
+        return ((choices[0].get("message") or {}).get("content") or "").strip()
 
 
 async def _google(chunk: str, target: str) -> str:
@@ -159,9 +164,9 @@ async def translate(text: str, target: str) -> str:
             out.append(chunk)
             continue
         try:
-            piece = await _ollama(chunk, target)
+            piece = await _vllm(chunk, target)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("ollama translate (%s) fail, Google par: %s", target, exc)
+            logger.warning("vLLM translate (%s) fail, Google par: %s", target, exc)
             piece = await _google(chunk, target)
         out.append(piece or chunk)
     return "\n".join(out)

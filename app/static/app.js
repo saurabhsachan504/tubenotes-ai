@@ -11,6 +11,7 @@
 
   let mode = "summary";
   let lastNotes = null;   // { videoId, title, url, markdown, lang }
+  let lastTranscript = null; // { videoId, text, lang }; reused by Full Notes
   let busy = false;
 
   // Offered output languages. "auto" keeps the video's own language, which is
@@ -48,8 +49,13 @@
     }
   }
 
+  // Summary hamesha video ki apni bhasha me banti hai. Dropdown hata diya gaya
+  // hai, isliye yahan element milta hi nahi - null ka matlab "auto" hai.
+  // Dropdown wapas daalte hi ye phir se us ki value padhne lagega.
   const outLang = () => {
-    const v = $("outLang").value;
+    const el = $("outLang");
+    if (!el) return null;
+    const v = el.value;
     return v && v !== "auto" ? v : null;
   };
 
@@ -335,6 +341,7 @@
       $("rTitle").textContent = info.title;
       $("rMeta").innerHTML = info.author ? `<span class="tag">${escapeAttr(info.author)}</span>` : "";
       lastNotes = { videoId: info.video_id, title: info.title, url: info.url, markdown: "" };
+      if (lastTranscript && lastTranscript.videoId !== info.video_id) lastTranscript = null;
     } catch (e) {
       if (e.status === 401) { setBusy(false); openAuth("login"); return; }
       if (e.status === 400) { setBusy(false); status(""); note("err", escapeAttr(e.message)); return; }
@@ -416,6 +423,14 @@
   }
 
   async function extraFromExtension(url) {
+    const videoId = videoIdFrom(url);
+    if (lastTranscript && lastTranscript.videoId === videoId && lastTranscript.text) {
+      return {
+        transcript: lastTranscript.text,
+        transcript_lang: lastTranscript.lang || null,
+      };
+    }
+
     // BAND. Ye pul extension se transcript maangta tha aur 30 second tak uska
     // intezaar karta tha. Wo raasta kabhi kaam nahi kiya: YouTube ab
     // api/timedtext par HTTP 200 ke saath KHAALI body lautata hai - server se,
@@ -468,6 +483,13 @@
       if (ev.type === "meta") {
         paintChip(ev.entitlement);
         langOut = ev.language;
+        if (ev.transcript) {
+          lastTranscript = {
+            videoId: ev.video.video_id,
+            text: ev.transcript,
+            lang: ev.transcript_lang || ev.detected_language || null,
+          };
+        }
         lastNotes = { videoId: ev.video.video_id, title: ev.video.title, url: ev.video.url, markdown: "", lang: ev.language };
         const translated = ev.detected_language && ev.detected_language !== ev.language;
         $("rMeta").innerHTML =
@@ -1056,7 +1078,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   };
 
   // ---- boot ----
-  fillLangSelect($("outLang"), { includeAuto: true });
+  if ($("outLang")) fillLangSelect($("outLang"), { includeAuto: true });
   initGoogle();
   try {
     const t = localStorage.getItem("tn_theme");

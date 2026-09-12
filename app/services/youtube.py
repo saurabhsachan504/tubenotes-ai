@@ -19,7 +19,9 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlparse
 
@@ -106,31 +108,58 @@ def watch_url(video_id: str) -> str:
 # ---------------------------------------------------------------------------
 # Metadata
 # ---------------------------------------------------------------------------
+_metadata_cache: dict[str, VideoMeta] = {}
+_oembed_client: httpx.AsyncClient | None = None
+
+
+def _get_oembed_client() -> httpx.AsyncClient:
+    """Return the worker's shared oEmbed connection pool."""
+    global _oembed_client
+    if _oembed_client is None or _oembed_client.is_closed:
+        _oembed_client = httpx.AsyncClient(
+            timeout=settings.YOUTUBE_REQUEST_TIMEOUT_SECONDS,
+            proxy=settings.YOUTUBE_PROXY or None,
+        )
+    return _oembed_client
+
+
+async def close_oembed_client() -> None:
+    global _oembed_client
+    client, _oembed_client = _oembed_client, None
+    if client is not None and not client.is_closed:
+        await client.aclose()
+
+
 async def fetch_metadata(video_id: str) -> VideoMeta:
     """Title/author via the public oEmbed endpoint (no API key needed)."""
+    cached = _metadata_cache.get(video_id)
+    if cached is not None:
+        return cached
+
     url = watch_url(video_id)
     title, author = f"YouTube video {video_id}", None
 
     try:
-        async with httpx.AsyncClient(timeout=10, proxy=settings.YOUTUBE_PROXY or None) as client:
-            res = await client.get(
-                "https://www.youtube.com/oembed",
-                params={"url": url, "format": "json"},
-            )
-            if res.status_code == 200:
-                data = res.json()
-                title = data.get("title") or title
-                author = data.get("author_name")
+        res = await _get_oembed_client().get(
+            "https://www.youtube.com/oembed",
+            params={"url": url, "format": "json"},
+        )
+        if res.status_code == 200:
+            data = res.json()
+            title = data.get("title") or title
+            author = data.get("author_name")
     except Exception as exc:  # pragma: no cover - network
         logger.info("oEmbed lookup failed for %s: %s", video_id, exc)
 
-    return VideoMeta(
+    meta = VideoMeta(
         video_id=video_id,
         title=title,
         author=author,
         thumbnail=f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
         url=url,
     )
+    _metadata_cache[video_id] = meta
+    return meta
 
 
 # ---------------------------------------------------------------------------
@@ -176,22 +205,31 @@ def _pick_track(transcript_list):
 
 
 def _fetch_via_api(video_id: str) -> Transcript:
+    import requests
     from youtube_transcript_api import YouTubeTranscriptApi
 
-    api = YouTubeTranscriptApi(proxy_config=_proxy_config())
-    listing = api.list(video_id)
-    track = _pick_track(listing)
-    if track is None:
-        raise TranscriptUnavailable("no caption tracks")
+    class _TimeoutSession(requests.Session):
+        def request(self, *args, **kwargs):
+            kwargs.setdefault("timeout", settings.YOUTUBE_REQUEST_TIMEOUT_SECONDS)
+            return super().request(*args, **kwargs)
 
-    fetched = track.fetch()
-    text = " ".join(snippet.text for snippet in fetched)
-    return Transcript(
-        text=clean_transcript(text),
-        language=(track.language_code or "").split("-")[0].lower() or None,
-        is_generated=bool(track.is_generated),
-        source="captions",
-    )
+    with _TimeoutSession() as session:
+        api = YouTubeTranscriptApi(
+            proxy_config=_proxy_config(), http_client=session
+        )
+        listing = api.list(video_id)
+        track = _pick_track(listing)
+        if track is None:
+            raise TranscriptUnavailable("no caption tracks")
+
+        fetched = track.fetch()
+        text = " ".join(snippet.text for snippet in fetched)
+        return Transcript(
+            text=clean_transcript(text),
+            language=(track.language_code or "").split("-")[0].lower() or None,
+            is_generated=bool(track.is_generated),
+            source="captions",
+        )
 
 
 def _parse_json3(payload: str) -> str:
@@ -263,7 +301,7 @@ def _fetch_via_ytdlp(video_id: str) -> Transcript:
         "skip_download": True,
         "writesubtitles": True,
         "writeautomaticsub": True,
-        "socket_timeout": 20,
+        "socket_timeout": settings.YOUTUBE_REQUEST_TIMEOUT_SECONDS,
     }
     if settings.YOUTUBE_PROXY:
         opts["proxy"] = settings.YOUTUBE_PROXY
@@ -280,7 +318,10 @@ def _fetch_via_ytdlp(video_id: str) -> Transcript:
 
     throttled = False
 
-    with httpx.Client(timeout=25, proxy=settings.YOUTUBE_PROXY or None) as client:
+    with httpx.Client(
+        timeout=settings.YOUTUBE_REQUEST_TIMEOUT_SECONDS,
+        proxy=settings.YOUTUBE_PROXY or None,
+    ) as client:
         for code in order:
             formats = manual.get(code) or auto.get(code) or []
             chosen = next(
@@ -291,7 +332,7 @@ def _fetch_via_ytdlp(video_id: str) -> Transcript:
                 continue
 
             body = None
-            for attempt in range(3):
+            for attempt in range(1):
                 try:
                     res = client.get(chosen["url"])
                 except Exception as exc:
@@ -299,10 +340,7 @@ def _fetch_via_ytdlp(video_id: str) -> Transcript:
                     break
                 if res.status_code == 429:
                     throttled = True
-                    logger.info("yt-dlp subtitle 429 (%s), attempt %s", code, attempt + 1)
-                    if attempt < 2:
-                        time.sleep(2 + attempt * 3)
-                        continue
+                    logger.info("yt-dlp subtitle 429 (%s)", code)
                     break
                 if res.status_code != 200:
                     logger.info("yt-dlp subtitle HTTP %s (%s)", res.status_code, code)
@@ -311,6 +349,10 @@ def _fetch_via_ytdlp(video_id: str) -> Transcript:
                 break
 
             if not body:
+                # Every caption URL uses the same YouTube host and client IP.
+                # Retrying other languages after a 429 only repeats the block.
+                if throttled:
+                    break
                 continue
 
             try:
@@ -365,8 +407,71 @@ def is_cacheable(transcript: Transcript) -> bool:
     return True
 
 
+_transcript_cache: OrderedDict[str, tuple[float, Transcript]] = OrderedDict()
+_transcript_cache_guard = threading.Lock()
+# A fixed set avoids one permanent lock object per video while still ensuring
+# that the same video can only be fetched once at a time.
+_transcript_fetch_locks = tuple(threading.Lock() for _ in range(64))
+
+
+def clear_transcript_cache() -> None:
+    """Clear the small in-process cache (also useful for tests)."""
+    with _transcript_cache_guard:
+        _transcript_cache.clear()
+
+
+def _cached_transcript(video_id: str) -> Transcript | None:
+    ttl = settings.TRANSCRIPT_CACHE_TTL_SECONDS
+    if ttl <= 0:
+        return None
+    now = time.monotonic()
+    with _transcript_cache_guard:
+        cached = _transcript_cache.get(video_id)
+        if cached is None:
+            return None
+        stored_at, transcript = cached
+        if now - stored_at >= ttl:
+            _transcript_cache.pop(video_id, None)
+            return None
+        _transcript_cache.move_to_end(video_id)
+        return transcript
+
+
+def _cache_transcript(video_id: str, transcript: Transcript) -> None:
+    if settings.TRANSCRIPT_CACHE_TTL_SECONDS <= 0:
+        return
+    with _transcript_cache_guard:
+        _transcript_cache[video_id] = (time.monotonic(), transcript)
+        _transcript_cache.move_to_end(video_id)
+        limit = max(1, settings.TRANSCRIPT_CACHE_MAX_ENTRIES)
+        while len(_transcript_cache) > limit:
+            _transcript_cache.popitem(last=False)
+
+
+def _fetch_lock(video_id: str) -> threading.Lock:
+    return _transcript_fetch_locks[hash(video_id) % len(_transcript_fetch_locks)]
+
+
 def fetch_transcript(video_id: str) -> Transcript:
-    """Blocking - call it from a worker thread."""
+    """Blocking - call it from a worker thread.
+
+    Successful transcripts are cached briefly, and concurrent requests for the
+    same video share one fetch instead of stampeding YouTube.
+    """
+    cached = _cached_transcript(video_id)
+    if cached is not None:
+        logger.info("transcript cache hit for %s", video_id)
+        return cached
+
+    lock = _fetch_lock(video_id)
+    with lock:
+        cached = _cached_transcript(video_id)
+        if cached is not None:
+            return cached
+        return _fetch_transcript_uncached(video_id)
+
+
+def _fetch_transcript_uncached(video_id: str) -> Transcript:
     errors: list[str] = []
 
     for name, fn in (("captions", _fetch_via_api), ("yt-dlp", _fetch_via_ytdlp)):
@@ -380,6 +485,7 @@ def fetch_transcript(video_id: str) -> Transcript:
                     len(transcript.text),
                     transcript.language,
                 )
+                _cache_transcript(video_id, transcript)
                 return transcript
             errors.append(f"{name}: too short")
         except Exception as exc:

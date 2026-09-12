@@ -7,9 +7,11 @@ charge, and re-summarising a video you already paid for is free forever.
 """
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -44,7 +46,10 @@ class VideoRequest(BaseModel):
     # The cap is a memory guard, not a trust boundary: a caller who sends
     # nonsense only wastes their own trial, because billing happens before
     # this text is ever read.
-    transcript: str | None = Field(default=None, max_length=200_000)
+    # A freshly generated summary returns the transcript to the same browser so
+    # the follow-up Full Notes/PDF request can reuse it across uvicorn workers.
+    # Nginx accepts 25 MB request bodies; this guard stays comfortably below it.
+    transcript: str | None = Field(default=None, max_length=5_000_000)
     transcript_lang: str | None = Field(default=None, max_length=8)
 
 
@@ -97,6 +102,31 @@ async def _obtain_transcript(payload: VideoRequest, video_id: str) -> youtube.Tr
         )
 
     return await run_in_threadpool(youtube.fetch_transcript, video_id)
+
+
+async def _prepare_video(payload: VideoRequest, video_id: str):
+    """Fetch independent YouTube data concurrently and record each duration."""
+    async def metadata():
+        started = time.perf_counter()
+        value = await youtube.fetch_metadata(video_id)
+        return value, (time.perf_counter() - started) * 1000
+
+    async def transcript():
+        started = time.perf_counter()
+        value = await _obtain_transcript(payload, video_id)
+        return value, (time.perf_counter() - started) * 1000
+
+    (meta, metadata_ms), (captions, transcript_ms) = await asyncio.gather(
+        metadata(), transcript()
+    )
+    logger.info(
+        "prepared %s: metadata=%.1fms transcript=%.1fms source=%s",
+        video_id,
+        metadata_ms,
+        transcript_ms,
+        captions.source,
+    )
+    return meta, captions, metadata_ms, transcript_ms
 
 
 class VideoInfoOut(BaseModel):
@@ -184,7 +214,7 @@ def _store_cached(
             logger.exception("cache session band karne me dikkat")
 
 
-def _cache_lookup(db: Session, payload, video_id: str):
+def _cache_lookup(db: Session, payload, video_id: str, *, mode: str | None = None):
     """(row, target, model). row None hai to cache me kuch nahi mila.
 
     Ye transcript laane se PEHLE chalta hai, isliye hit hone par YouTube par ek
@@ -207,7 +237,8 @@ def _cache_lookup(db: Session, payload, video_id: str):
     # ho jayein.
     target = _resolve_target(payload.target_lang, detected)
     model = summarizer.plan_for(target)[0]
-    return output_cache.get(db, video_id, payload.mode, target, model), target, model
+    output_mode = mode or payload.mode
+    return output_cache.get(db, video_id, output_mode, target, model), target, model
 
 
 async def _replay_cached(row, *, meta, target: str, model: str, entitlement):
@@ -263,15 +294,12 @@ async def summarize(
     db.commit()
     entitlement: EntitlementOut = result.entitlement
 
-    # 2. Metadata + transcript. Both happen BEFORE the stream opens so a
-    #    failure here is a normal HTTP error the UI can show cleanly.
-    meta = await youtube.fetch_metadata(video_id)
-
-    # 2a. Cache. Wahi video, wahi mode, wahi bhasha, wahi model = wahi jawab.
+    # 2. Cache. Wahi video, wahi mode, wahi bhasha, wahi model = wahi jawab.
     #     Ye transcript laane se pehle hai, isliye hit par YouTube ko chhua bhi
     #     nahi jaata. (Cache band ho to ye chupchap None lautata hai.)
     cached_row, cached_target, cached_model = _cache_lookup(db, payload, video_id)
     if cached_row is not None:
+        meta = await youtube.fetch_metadata(video_id)
         return StreamingResponse(
             _replay_cached(
                 cached_row,
@@ -284,8 +312,12 @@ async def summarize(
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
 
+    # Metadata and captions are independent network calls. Running them in
+    # parallel removes the metadata round trip from the critical path.
     try:
-        transcript = await _obtain_transcript(payload, video_id)
+        meta, transcript, metadata_ms, transcript_ms = await _prepare_video(
+            payload, video_id
+        )
     except youtube.TranscriptUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
@@ -305,6 +337,15 @@ async def summarize(
                 "model": model,
                 "transcript_chars": len(transcript.text),
                 "transcript_source": transcript.source,
+                # Full Notes is a second HTTP request and may hit another
+                # uvicorn worker. Hand the already-fetched transcript back to
+                # this browser so that request never has to ask YouTube again.
+                "transcript": transcript.text,
+                "transcript_lang": transcript.language,
+                "timings_ms": {
+                    "metadata": round(metadata_ms, 1),
+                    "transcript": round(transcript_ms, 1),
+                },
                 "entitlement": json.loads(entitlement.model_dump_json()),
             }
         )
@@ -384,7 +425,7 @@ async def notes(
     """
     video_id = _video_id_or_400(payload.url)
 
-    entitlements.consume(
+    result = entitlements.consume(
         db,
         user,
         payload.device,
@@ -393,16 +434,35 @@ async def notes(
         meta={"video_id": video_id, "mode": "notes", "surface": "web"},
     )
     db.commit()
+    entitlement: EntitlementOut = result.entitlement
 
-    meta = await youtube.fetch_metadata(video_id)
+    cached_row, cached_target, cached_model = _cache_lookup(
+        db, payload, video_id, mode="notes"
+    )
+    if cached_row is not None:
+        meta = await youtube.fetch_metadata(video_id)
+        return StreamingResponse(
+            _replay_cached(
+                cached_row,
+                meta=meta,
+                target=cached_target,
+                model=cached_model,
+                entitlement=entitlement,
+            ),
+            media_type="application/x-ndjson",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
+
     try:
-        transcript = await _obtain_transcript(payload, video_id)
+        meta, transcript, metadata_ms, transcript_ms = await _prepare_video(
+            payload, video_id
+        )
     except youtube.TranscriptUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
     detected = summarizer.detect_language(transcript.text, hint=transcript.language)
     target = _resolve_target(payload.target_lang, detected)
-    _model, lang, translate_to = summarizer.plan_for(target)
+    model, lang, translate_to = summarizer.plan_for(target)
 
     async def generate() -> AsyncIterator[bytes]:
         queue: list[bytes] = []
@@ -432,6 +492,11 @@ async def notes(
                 "detected_language_name": summarizer.language_name(detected),
                 "language": target,
                 "language_name": summarizer.language_name(target),
+                "transcript_source": transcript.source,
+                "timings_ms": {
+                    "metadata": round(metadata_ms, 1),
+                    "transcript": round(transcript_ms, 1),
+                },
             }
         )
 
@@ -475,6 +540,18 @@ async def notes(
 
         yield _event({"type": "done", "text": text, "language": target})
 
+        if youtube.is_cacheable(transcript):
+            await run_in_threadpool(
+                _store_cached,
+                video_id,
+                "notes",
+                target,
+                model,
+                text,
+                detected,
+                len(transcript.text),
+            )
+
     return StreamingResponse(
         generate(),
         media_type="application/x-ndjson",
@@ -513,12 +590,10 @@ async def translate_text(
 
 def _friendly(exc: Exception) -> str:
     text = str(exc)
-    if "Ollama HTTP 404" in text:
-        return (
-            f"The model '{settings.OLLAMA_MODEL}' is not installed on your Ollama server."
-        )
+    if "vLLM HTTP 404" in text:
+        return f"The vLLM endpoint or model '{settings.VLLM_MODEL}' was not found."
     if "ConnectError" in type(exc).__name__ or "Connect" in text:
-        return "Can't reach the AI server. Check OLLAMA_URL and that Ollama is running."
+        return "Can't reach vLLM. Check VLLM_URL and that the vLLM server is running."
     if "Timeout" in type(exc).__name__ or "timeout" in text.lower():
         return "The AI server took too long to answer. Try a shorter video."
     return f"Summary failed: {text[:200]}"

@@ -39,7 +39,7 @@ logger = logging.getLogger("trialguard.cache")
 # changes. Old rows keep their old number and are simply never matched again;
 # the cleanup job removes them once they go cold.
 # ---------------------------------------------------------------------------
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2
 
 
 def _key(video_id: str, mode: str, lang: str, model: str) -> tuple:

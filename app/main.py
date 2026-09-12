@@ -1,6 +1,17 @@
 """FastAPI application entry point."""
 from __future__ import annotations
 
+import socket as _socket
+
+_orig_getaddrinfo = _socket.getaddrinfo
+
+
+def _ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    return _orig_getaddrinfo(host, port, _socket.AF_INET, type, proto, flags)
+
+
+_socket.getaddrinfo = _ipv4_only_getaddrinfo
+
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -17,7 +28,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import engine, init_db
-from app.routers import admin, auth, billing, ollama_proxy, summarize, usage, webhooks
+from app.routers import admin, auth, billing, summarize, usage, webhooks
+from app.services import youtube
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -49,6 +61,8 @@ async def lifespan(app: FastAPI):
         # Convenient for dev/tests; production should run Alembic migrations.
         init_db()
     yield
+    await summarize.summarizer.close_vllm_client()
+    await youtube.close_oembed_client()
     engine.dispose()
 
 
@@ -98,7 +112,6 @@ app.include_router(summarize.router, prefix=settings.API_PREFIX)
 app.include_router(billing.router, prefix=settings.API_PREFIX)
 app.include_router(webhooks.router, prefix=settings.API_PREFIX)
 app.include_router(admin.router, prefix=settings.API_PREFIX)
-app.include_router(ollama_proxy.router, prefix=settings.API_PREFIX)
 
 
 @app.get("/healthz", tags=["meta"])
