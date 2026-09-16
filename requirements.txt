@@ -9,6 +9,10 @@ psycopg[binary]==3.2.3
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 PyJWT[crypto]==2.10.1
+# Explicitly retain the RS256 backend used to verify Google Identity tokens.
+# PyJWT[crypto] requests this transitively, but pinning it here prevents a
+# minimal/partial install from breaking Google sign-in at runtime.
+cryptography>=43,<46
 python-multipart==0.0.20
 httpx==0.28.1
 stripe==11.4.1

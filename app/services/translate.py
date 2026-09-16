@@ -108,7 +108,10 @@ def _chunk(text: str, size: int = 1500) -> list[str]:
 
 async def _vllm(chunk: str, target: str) -> str:
     """Translate one chunk through the vLLM OpenAI-compatible endpoint."""
-    from app.services.summarizer import LANG_NAMES   # circular import se bachne ko
+    from app.services.summarizer import (  # circular import se bachne ko
+        LANG_NAMES,
+        _vllm_headers,
+    )
     name = LANG_NAMES.get(target, target)
     payload = {
         "model": settings.VLLM_MODEL,
@@ -127,13 +130,10 @@ async def _vllm(chunk: str, target: str) -> str:
             {"role": "user", "content": chunk},
         ],
     }
-    headers = {"Content-Type": "application/json"}
-    if settings.VLLM_API_KEY:
-        headers["Authorization"] = f"Bearer {settings.VLLM_API_KEY}"
     url = settings.VLLM_URL.rstrip("/") + "/chat/completions"
     timeout = httpx.Timeout(settings.VLLM_TIMEOUT_SECONDS, connect=15)
     async with httpx.AsyncClient(timeout=timeout) as c:
-        res = await c.post(url, json=payload, headers=headers)
+        res = await c.post(url, json=payload, headers=_vllm_headers())
         if res.status_code != 200:
             raise RuntimeError(f"vLLM HTTP {res.status_code}: {res.text[:500]}")
         data = res.json()

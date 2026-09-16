@@ -273,6 +273,66 @@
     R().scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  /**
+   * Paint the full-notes progress card before making any network request.
+   * The first visible state is therefore immediate, even while /video/info or
+   * the transcript provider is still working.
+   */
+  function showPdfProgress(video) {
+    const title = video && video.title ? video.title : "Getting video details…";
+    const thumbnail = video && video.thumbnail ? video.thumbnail : "";
+    const author = video && video.author ? `<span class="tag">${escapeAttr(video.author)}</span>` : "";
+    R().classList.remove("hidden");
+    R().innerHTML = `
+      <div class="card pdf-flow" id="pdfFlow">
+        <div class="pdf-flow-grid">
+          <div class="pdf-flow-video">
+            <img id="rThumb" alt="" src="${escapeAttr(thumbnail)}"
+                 onerror="this.style.visibility='hidden'"
+                 onload="this.style.visibility='visible'" />
+            <div>
+              <div class="pdf-flow-title" id="rTitle">${escapeAttr(title)}</div>
+              <div class="pdf-flow-meta" id="rMeta">${author}</div>
+            </div>
+          </div>
+          <div class="pdf-flow-main">
+            <div class="pdf-flow-head"><span class="pdf-flow-icon">${ICONS.pdf}</span><span id="pdfFlowTitle">Initializing PDF generation…</span></div>
+            <div class="pdf-flow-copy" id="pdfFlowCopy">Reading the video and preparing your detailed notes. This may take a few moments.</div>
+            <div class="pdf-flow-meter"><div class="progress"><i id="pdfFlowBar" style="width:4%"></i></div><span class="pdf-flow-percent" id="pdfFlowPercent">4%</span></div>
+          </div>
+          <div class="pdf-steps" aria-label="PDF generation progress">
+            <div class="pdf-step active" data-pdf-step="1"><div class="pdf-step-dot">1</div>Reading<br>Video</div>
+            <div class="pdf-step" data-pdf-step="2"><div class="pdf-step-dot">2</div>Analyzing<br>Content</div>
+            <div class="pdf-step" data-pdf-step="3"><div class="pdf-step-dot">3</div>Writing<br>Notes</div>
+            <div class="pdf-step" data-pdf-step="4"><div class="pdf-step-dot">4</div>Preparing<br>PDF</div>
+          </div>
+        </div>
+      </div>`;
+    R().scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  function updatePdfProgress(stage, percent, title, copy) {
+    const flow = $("pdfFlow");
+    if (!flow) return;
+    const bar = $("pdfFlowBar"), label = $("pdfFlowPercent");
+    if (bar) bar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+    if (label) label.textContent = `${Math.round(percent)}%`;
+    if ($("pdfFlowTitle")) $("pdfFlowTitle").textContent = title;
+    if ($("pdfFlowCopy")) $("pdfFlowCopy").textContent = copy;
+    for (const step of flow.querySelectorAll("[data-pdf-step]")) {
+      const number = Number(step.dataset.pdfStep);
+      step.classList.toggle("done", number < stage);
+      step.classList.toggle("active", number === stage);
+    }
+  }
+
+  function showPdfProgressError(message) {
+    const flow = $("pdfFlow");
+    if (!flow) return;
+    flow.classList.add("error");
+    updatePdfProgress(1, 0, "PDF generation couldn't start", message || "Please try again.");
+  }
+
   function escapeAttr(s) {
     return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
       .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -319,7 +379,7 @@
     $("goBtn").textContent = on ? "Working…" : "Summarize";
   }
 
-  async function run(requestedMode, targetOverride) {
+  async function run(requestedMode, targetOverride, { pdfProgress = false } = {}) {
     if (busy) return;
     const url = $("url").value.trim();
     if (!url) { $("url").focus(); return; }
@@ -329,40 +389,63 @@
     const wantNotes = requestedMode === "notes";
     const target = targetOverride === undefined ? outLang() : targetOverride;
     setBusy(true);
-    shell(null);
-    status("Reading the video…", true);
-    note("", "");
+    if (pdfProgress) {
+      showPdfProgress(lastNotes);
+    } else {
+      shell(null);
+      status("Reading the video…", true);
+      note("", "");
+    }
 
     // Show the thumbnail straight away — it costs nothing and makes the wait
     // feel much shorter.
     try {
       const info = await api("/video/info", { method: "POST", body: { url, device: device() } });
-      $("rThumb").src = info.thumbnail;
+      const thumb = $("rThumb");
+      if (thumb) {
+        thumb.src = info.thumbnail;
+        thumb.alt = info.title ? `${info.title} thumbnail` : "Video thumbnail";
+        // The PDF progress card begins with an empty image while metadata is
+        // loading. Reveal it explicitly once the real YouTube thumbnail URL
+        // is available, even when a browser does not dispatch a second load.
+        thumb.style.visibility = "visible";
+      }
       $("rTitle").textContent = info.title;
       $("rMeta").innerHTML = info.author ? `<span class="tag">${escapeAttr(info.author)}</span>` : "";
-      lastNotes = { videoId: info.video_id, title: info.title, url: info.url, markdown: "" };
+      lastNotes = {
+        videoId: info.video_id,
+        title: info.title,
+        author: info.author,
+        thumbnail: info.thumbnail,
+        url: info.url,
+        markdown: "",
+      };
       if (lastTranscript && lastTranscript.videoId !== info.video_id) lastTranscript = null;
     } catch (e) {
       if (e.status === 401) { setBusy(false); openAuth("login"); return; }
-      if (e.status === 400) { setBusy(false); status(""); note("err", escapeAttr(e.message)); return; }
+      if (e.status === 400) {
+        setBusy(false);
+        if (pdfProgress) showPdfProgressError(e.message); else { status(""); note("err", escapeAttr(e.message)); }
+        return;
+      }
     }
 
     try {
       if (wantNotes) await streamNotes(url, target);
       else await streamSummary(url, requestedMode, target);
     } catch (e) {
-      status("");
+      if (pdfProgress) showPdfProgressError(e.message); else status("");
       if (e.status === 402) {
         const ent = e.entitlement;
         paintChip(ent);
-        note("warn",
+        if (!pdfProgress) note("warn",
           `<b>${escapeAttr(e.message)}</b><br>` +
           `Your free videos are used up. <button class="linkbtn" onclick="document.getElementById('accountBtn').click()">Subscribe for $5/month →</button>`);
       } else if (e.status === 401) {
         openAuth("login");
-      } else if (e.status === 422) {
+      } else if (e.status === 422 && !pdfProgress) {
         note("err", escapeAttr(e.message));
-      } else {
+      } else if (!pdfProgress) {
         note("err", escapeAttr(e.message || "Something went wrong."));
       }
     } finally {
@@ -490,7 +573,10 @@
             lang: ev.transcript_lang || ev.detected_language || null,
           };
         }
-        lastNotes = { videoId: ev.video.video_id, title: ev.video.title, url: ev.video.url, markdown: "", lang: ev.language };
+        lastNotes = {
+          videoId: ev.video.video_id, title: ev.video.title, url: ev.video.url,
+          markdown: "", lang: ev.language,
+        };
         const translated = ev.detected_language && ev.detected_language !== ev.language;
         $("rMeta").innerHTML =
           (ev.video.author ? `<span class="tag">${escapeAttr(ev.video.author)}</span>` : "") +
@@ -524,39 +610,82 @@
     let failed = null;
     let langOut = null;
     let partsDone = 0;
+    let metaVideo = null;
     const warnings = [];
-    $("rProgress").classList.remove("hidden");
-    status("Reading the whole video…", true);
+    const inPdfFlow = Boolean($("pdfFlow"));
+    if (inPdfFlow) {
+      updatePdfProgress(1, 8, "Reading video…", "Fetching the transcript for your complete PDF notes.");
+    } else {
+      $("rProgress").classList.remove("hidden");
+      status("Reading the whole video…", true);
+    }
 
     const extra = await extraFromExtension(url);
     await streamNdjson("/notes", { url, device: device(), target_lang: target || null, ...extra }, (ev) => {
       if (ev.type === "meta") {
+        metaVideo = ev.video;
         langOut = ev.language;
         const translated = ev.detected_language && ev.detected_language !== ev.language;
         $("rMeta").innerHTML =
           (ev.video.author ? `<span class="tag">${escapeAttr(ev.video.author)}</span>` : "") +
           `<span class="tag" id="rLangTag">🌐 ${escapeAttr(ev.language_name)}</span>` +
           (translated ? `<span class="tag">video: ${escapeAttr(ev.detected_language_name)}</span>` : "");
-        lastNotes = { videoId: ev.video.video_id, title: ev.video.title, url: ev.video.url, markdown: "", lang: ev.language };
+        lastNotes = {
+          videoId: ev.video.video_id, title: ev.video.title, url: ev.video.url,
+          markdown: "", lang: ev.language,
+        };
+        if (inPdfFlow) {
+          updatePdfProgress(2, 24, "Analyzing content…", "Transcript is ready. Planning the detailed notes in the video’s language.");
+        }
       } else if (ev.type === "status") {
-        status(ev.message, true);
+        if (inPdfFlow) {
+          updatePdfProgress(4, 92, "Preparing PDF…", ev.message);
+        } else {
+          status(ev.message, true);
+        }
       } else if (ev.type === "warning") {
         warnings.push(ev.message);
-        note("warn", warnings.map(escapeAttr).join("<br>"));
+        if (inPdfFlow) {
+          updatePdfProgress(3, 45, "Writing notes…", "Some sections need attention; the available notes are still being prepared.");
+        } else {
+          note("warn", warnings.map(escapeAttr).join("<br>"));
+        }
       } else if (ev.type === "progress") {
         partsDone = ev.total;
-        $("rBar").style.width = ev.percent + "%";
-        status(`Writing detailed notes — part ${ev.done} of ${ev.total}…`, true);
+        if (inPdfFlow) {
+          const percent = Math.max(30, Math.min(90, ev.percent));
+          updatePdfProgress(3, percent, "Writing detailed notes…", `Writing part ${ev.done} of ${ev.total}. Every section is included in your PDF.`);
+        } else {
+          $("rBar").style.width = ev.percent + "%";
+          status(`Writing detailed notes — part ${ev.done} of ${ev.total}…`, true);
+        }
       } else if (ev.type === "done") {
         text = ev.text || "";
-        $("rBody").innerHTML = md2html(text);
+        if (!inPdfFlow) $("rBody").innerHTML = md2html(text);
       } else if (ev.type === "error") {
         failed = ev.message;
       }
     });
 
-    $("rProgress").classList.add("hidden");
-    if (failed) { status(""); note("err", escapeAttr(failed)); return; }
+    if (!inPdfFlow) $("rProgress").classList.add("hidden");
+    if (failed) {
+      if (inPdfFlow) showPdfProgressError(failed); else { status(""); note("err", escapeAttr(failed)); }
+      return;
+    }
+
+    // Let the final PDF stage render before changing back to the normal notes
+    // card and opening the print dialog.
+    if (inPdfFlow) {
+      updatePdfProgress(4, 100, "Preparing PDF…", "Your detailed notes are ready. Opening the print dialog.");
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      shell(metaVideo);
+      const translated = metaVideo && langOut && metaVideo.detected_language && metaVideo.detected_language !== langOut;
+      $("rMeta").innerHTML =
+        (metaVideo && metaVideo.author ? `<span class="tag">${escapeAttr(metaVideo.author)}</span>` : "") +
+        `<span class="tag" id="rLangTag">🌐 ${escapeAttr(langOut || "")}</span>` +
+        (translated ? `<span class="tag">video: ${escapeAttr(metaVideo.detected_language)}</span>` : "");
+      $("rBody").innerHTML = md2html(text);
+    }
     if (lastNotes) { lastNotes.markdown = text; lastNotes.lang = langOut; }
 
     status(`All ${partsDone || "?"} parts written — building the PDF…`, true);
@@ -600,10 +729,8 @@
       { label: "Copy", icon: ICONS.copy, tone: "t-copy", onClick: () => {
           navigator.clipboard.writeText(text).then(() => status("Copied to clipboard"));
         } },
-      // Always print what is on screen. Earlier this regenerated the notes,
-      // which silently threw away a translation the user had just applied.
-      // Ask for the language first, then print. Earlier this printed straight
-      // away, so there was no way to get the PDF in another language.
+      // Download exactly what is on screen. This preserves a translation and
+      // never regenerates the text or opens the browser print dialog.
       { label: "Download PDF", icon: ICONS.pdf, tone: "t-pdf",
         onClick: () => pdfFlow({ full: false }) },
       ...(isNotes ? [] : [{ label: "Full notes → PDF", icon: ICONS.notes, tone: "t-notes",
@@ -837,23 +964,21 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     // full notes either way - say so, rather than promising a quick PDF.
     const willGenerate = full || !haveCurrent;
 
-    const firstOption = willGenerate
-      ? { value: "auto", label: "Same as the video" }
-      : { value: "", label: `Keep current — ${LANG_BY_CODE[lastNotes.lang] || lastNotes.lang || "as shown"}` };
+    // Full Notes always uses the video's own language. Start immediately so
+    // the PDF-progress card appears before either API request responds.
+    if (willGenerate) {
+      await run("notes", null, { pdfProgress: true });
+      return;
+    }
+
+    const firstOption = { value: "", label: `Keep current — ${LANG_BY_CODE[lastNotes.lang] || lastNotes.lang || "as shown"}` };
 
     const choice = await pickLanguage({
-      title: willGenerate ? "Full notes PDF — language" : "PDF language",
-      lead: willGenerate
-        ? "Reads the whole video and writes complete notes in this language. Long videos take a few minutes."
-        : "The PDF will be written in this language.",
+      title: "PDF language",
+      lead: "The PDF will be written in this language.",
       firstOption,
     });
     if (choice === null) return;          // cancelled
-
-    if (willGenerate) {
-      await run("notes", choice === "" ? null : choice);
-      return;
-    }
 
     // A summary is already on screen: keep it, translating only if needed.
     if (choice && choice !== "auto" && choice !== lastNotes.lang) {
@@ -937,7 +1062,9 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
 
   $("goBtn").onclick = () => run(mode);
   $("summaryBtn").onclick = () => run(mode === "notes" ? "summary" : mode);
-  $("pdfBtn").onclick = () => pdfFlow({ full: mode === "notes" });
+  // The hero button promises a full-notes PDF, regardless of the currently
+  // selected output tab or an existing on-screen summary.
+  $("pdfBtn").onclick = () => pdfFlow({ full: true });
   $("url").addEventListener("keydown", (e) => { if (e.key === "Enter") run(mode); });
 
   $("pasteBtn").onclick = async () => {

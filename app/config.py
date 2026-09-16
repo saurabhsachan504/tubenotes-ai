@@ -10,7 +10,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+        # .env is the deploy/default configuration.  A developer can create
+        # an untracked .env.local beside it; values there intentionally win so
+        # running locally never requires editing DGX production settings.
+        env_file=(".env", ".env.local"), env_file_encoding="utf-8", extra="ignore"
     )
 
     # ---- core ----------------------------------------------------------
@@ -91,6 +94,11 @@ class Settings(BaseSettings):
     VLLM_MODEL: str = "google/gemma-4-26B-A4B-it"
     # Leave blank when vLLM was started without --api-key.
     VLLM_API_KEY: str = ""
+    # Cloudflare Access service-token credentials for a vLLM endpoint exposed
+    # through a protected Cloudflare Tunnel. Leave both blank when Access is
+    # not enabled for the endpoint.
+    CF_ACCESS_CLIENT_ID: str = ""
+    CF_ACCESS_CLIENT_SECRET: str = ""
     VLLM_TIMEOUT_SECONDS: int = 600
 
     # A 350-400 word summary normally needs well under 1,000 tokens. Keeping

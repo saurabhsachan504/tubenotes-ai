@@ -291,6 +291,10 @@ def _vllm_headers() -> dict[str, str]:
     headers = {"Content-Type": "application/json"}
     if settings.VLLM_API_KEY:
         headers["Authorization"] = f"Bearer {settings.VLLM_API_KEY}"
+    if settings.CF_ACCESS_CLIENT_ID:
+        headers["CF-Access-Client-Id"] = settings.CF_ACCESS_CLIENT_ID
+    if settings.CF_ACCESS_CLIENT_SECRET:
+        headers["CF-Access-Client-Secret"] = settings.CF_ACCESS_CLIENT_SECRET
     return headers
 
 
