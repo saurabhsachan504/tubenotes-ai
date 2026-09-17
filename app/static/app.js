@@ -388,8 +388,6 @@
     if (!signedIn()) { openAuth("signup", "Create a free account to summarize — 5 videos free."); return; }
 
     const wantNotes = requestedMode === "notes";
-    const liveParts = [];
-    let notesStartedAt = 0;
     const target = targetOverride === undefined ? outLang() : targetOverride;
     setBusy(true);
     if (pdfProgress) {
@@ -553,7 +551,14 @@
         const line = buf.slice(0, nl).trim();
         buf = buf.slice(nl + 1);
         if (!line) continue;
-        try { onEvent(JSON.parse(line)); } catch (_) {}
+        try {
+          onEvent(JSON.parse(line));
+        } catch (err) {
+          // A malformed line is worth ignoring; a bug in the handler is not.
+          // Swallowing both is how two ReferenceErrors hid behind a progress
+          // bar that simply never moved.
+          if (!(err instanceof SyntaxError)) console.error("event handler failed", err);
+        }
       }
     }
   }
@@ -563,6 +568,9 @@
     let failed = null;
     let langOut = null;
     const body = $("rBody");
+    // Same mistake as above: this was read from streamNotes's scope, so the
+    // summary phase threw on its first delta and left the bar at 24%.
+    const inPdfFlow = Boolean($("pdfFlow"));
 
     const extra = await extraFromExtension(url);
     await streamNdjson("/summarize", { url, device: device(), mode: m, target_lang: target || null, ...extra }, (ev) => {
@@ -626,6 +634,12 @@
     let partsDone = 0;
     let metaVideo = null;
     const warnings = [];
+    // Declared HERE, in the function that uses them. They lived in run()
+    // before, which does not enclose this one, so every progress and part
+    // event threw ReferenceError - silently, see streamNdjson - and the bar
+    // never moved at all.
+    const liveParts = [];
+    let notesStartedAt = 0;
     const inPdfFlow = Boolean($("pdfFlow"));
     if (inPdfFlow) {
       updatePdfProgress(1, 8, "Reading video…", "Fetching the transcript for your complete PDF notes.");
