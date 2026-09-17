@@ -712,6 +712,23 @@ async def notes(
     )
 
 
+@router.get("/load")
+async def server_load():
+    """Live load, for the meter the page shows while it waits.
+
+    Deliberately unauthenticated and cheap: it exposes how busy the GPU is and
+    nothing about anyone's videos, and the page polls it precisely when the
+    server is under strain, so it must not itself need work to answer.
+    """
+    data = await summarizer.server_load()
+    running = data.get("running")
+    capacity = max(1, int(data.get("capacity") or 1))
+    busy = None
+    if running is not None:
+        busy = round(min(100.0, running / capacity * 100), 1)
+    return {**data, "busy_percent": busy}
+
+
 @router.post("/translate", response_model=TranslateOut)
 async def translate_text(
     payload: TranslateRequest,

@@ -311,8 +311,51 @@
              written, and putting it above pushed the bar and the step markers
              down the page as it grew. -->
         <div class="pdf-flow-live" id="pdfFlowLive" hidden></div>
+        <div class="load-meter" id="loadMeter" hidden>
+          <div class="load-meter-head">
+            <span>Server load</span><span id="loadMeterText">checking…</span>
+          </div>
+          <div class="load-meter-bar"><i id="loadMeterFill" style="width:0%"></i></div>
+        </div>
       </div>`;
     R().scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  let loadTimer = null;
+
+  async function pollServerLoad() {
+    const meter = $("loadMeter");
+    if (!meter) return;
+    try {
+      const r = await fetch(`${API}/load`, { cache: "no-store" });
+      if (!r.ok) return;
+      const d = await r.json();
+      const running = d.running == null ? null : Math.round(d.running);
+      const busy = d.busy_percent == null ? 0 : d.busy_percent;
+      meter.hidden = false;
+      const fill = $("loadMeterFill");
+      if (fill) {
+        fill.style.width = `${Math.max(2, Math.min(100, busy))}%`;
+        // Green under half, amber approaching full, red once queueing starts.
+        fill.className = d.waiting > 0 ? "hot" : busy >= 70 ? "warm" : "";
+      }
+      const bits = [];
+      if (running != null) bits.push(`${running}/${d.capacity} generating`);
+      if (d.waiting) bits.push(`${Math.round(d.waiting)} queued`);
+      if (d.jobs) bits.push(`${d.jobs} PDF${d.jobs === 1 ? "" : "s"}`);
+      const txt = $("loadMeterText");
+      if (txt) txt.textContent = bits.length ? bits.join(" · ") : "idle";
+    } catch (_) { /* a meter must never break the page */ }
+  }
+
+  function startLoadMeter() {
+    stopLoadMeter();
+    pollServerLoad();
+    loadTimer = setInterval(pollServerLoad, 3000);
+  }
+
+  function stopLoadMeter() {
+    if (loadTimer) { clearInterval(loadTimer); loadTimer = null; }
   }
 
   let pdfProgressHigh = 0;
@@ -413,6 +456,7 @@
     if (pdfProgress) {
       resetPdfProgress();
       showPdfProgress(lastNotes);
+      startLoadMeter();
     } else {
       shell(null);
       status("Reading the video…", true);
@@ -786,6 +830,7 @@
     // PDF look like it is still being written.
     const livePane = $("pdfFlowLive");
     if (livePane) { livePane.innerHTML = ""; livePane.hidden = true; }
+    stopLoadMeter();
     finishTools(text, true);
     // Only now, with every part written, do we open the print dialog.
     openPrintView();

@@ -456,6 +456,49 @@ async def vllm_slot(wait: float | None = None, *, batch: bool = False) -> AsyncI
         sem.release()
 
 
+_METRIC_KEYS = {
+    "vllm:num_requests_running": "running",
+    "vllm:num_requests_waiting": "waiting",
+    "vllm:gpu_cache_usage_perc": "kv_cache",
+}
+
+
+async def server_load() -> dict:
+    """What the GPU is doing right now, for the load meter in the page.
+
+    Read from vLLM's own /metrics rather than inferred from our semaphores: the
+    semaphores say what this worker has permitted, the metrics say what the
+    machine is actually running - and with several workers those differ.
+    """
+    out: dict = {
+        "running": None,
+        "waiting": None,
+        "kv_cache": None,
+        "capacity": max(1, settings.VLLM_MAX_CONCURRENCY),
+        "jobs": _active_notes,
+        "share": _fair_share(),
+    }
+    try:
+        client = await vllm_client()
+        url = settings.VLLM_URL.rstrip("/").removesuffix("/v1") + "/metrics"
+        res = await client.get(url, headers=_vllm_headers(), timeout=4.0)
+        if res.status_code != 200:
+            return out
+        for line in res.text.splitlines():
+            if line.startswith("#"):
+                continue
+            name = line.split("{", 1)[0].split(" ", 1)[0]
+            key = _METRIC_KEYS.get(name)
+            if key and out.get(key) is None:
+                try:
+                    out[key] = float(line.rsplit(" ", 1)[1])
+                except (ValueError, IndexError):
+                    pass
+    except Exception as exc:  # noqa: BLE001 - a meter must never break a page
+        logger.debug("load metrics unavailable: %s", exc)
+    return out
+
+
 async def close_vllm_client() -> None:
     global _vllm_client
     client, _vllm_client = _vllm_client, None

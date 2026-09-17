@@ -436,6 +436,14 @@
     font-size:13px;line-height:1.5;text-align:left}
   .pdf-flow-live[hidden]{display:none}
   .pdf-flow-live h1,.pdf-flow-live h2,.pdf-flow-live h3{font-size:14px;margin:8px 0 4px}
+  .load-meter{margin:8px 0 2px;font-size:12px}
+  .load-meter[hidden]{display:none}
+  .load-meter-head{display:flex;justify-content:space-between;color:var(--muted,#6b7785);margin-bottom:4px}
+  .load-meter-bar{height:6px;border-radius:999px;background:var(--line,#e3e8ee);overflow:hidden}
+  .load-meter-bar i{display:block;height:100%;width:0;border-radius:999px;background:#2fa36b;
+    transition:width .6s ease,background .6s ease}
+  .load-meter-bar i.warm{background:#d99100}
+  .load-meter-bar i.hot{background:#c0392b}
 </style>
 </head>
 <body>

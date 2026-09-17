@@ -750,3 +750,22 @@ def test_progress_is_scaled_by_chunk_size_not_the_budget():
     # Never over the allowance, never absurd for a tiny tail.
     assert _expected_tokens(10**6, 4096) <= 4096
     assert _expected_tokens(1, 4096) >= 32
+
+
+def test_the_load_endpoint_never_raises(monkeypatch):
+    """The meter polls precisely when the server is under strain.
+
+    So it must degrade to "unknown" rather than throw or hang: a status widget
+    that fails when things are busy is worse than no widget.
+    """
+    import asyncio as _asyncio
+    from app.services import summarizer as sm
+
+    async def dead_client():
+        raise RuntimeError("vLLM unreachable")
+
+    monkeypatch.setattr(sm, "vllm_client", dead_client)
+    out = _asyncio.run(sm.server_load())
+    assert out["running"] is None, "unknown must be reported as unknown"
+    assert out["capacity"] >= 1
+    assert "jobs" in out and "share" in out
