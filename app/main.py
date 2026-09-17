@@ -77,6 +77,7 @@ async def lifespan(app: FastAPI):
         # Convenient for dev/tests; production should run Alembic migrations.
         init_db()
     yield
+    summarize.pdf.shutdown()
     await summarize.summarizer.close_vllm_client()
     await translate_service.close_google_client()
     await youtube.close_oembed_client()

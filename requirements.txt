@@ -19,3 +19,10 @@ stripe==11.4.1
 razorpay==1.4.2
 youtube-transcript-api==1.2.2
 yt-dlp>=2025.1.1
+
+# Server-side PDF rendering of the full notes. WeasyPrint gets its text shaping
+# from Pango, which is what makes Devanagari, Tamil and Arabic come out as
+# words rather than broken glyphs - the notes are written in the video's own
+# language, so this is not optional. Needs the pango/cairo libs in Dockerfile.
+weasyprint==63.1
+markdown==3.7

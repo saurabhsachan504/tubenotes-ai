@@ -11,11 +11,12 @@ import asyncio
 import dataclasses
 import json
 import logging
+import re
 import time
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -25,7 +26,15 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
 from app.schemas import DeviceFingerprint, EntitlementOut
-from app.services import entitlements, output_cache, ratelimit, summarizer, translate, youtube
+from app.services import (
+    entitlements,
+    output_cache,
+    pdf,
+    ratelimit,
+    summarizer,
+    translate,
+    youtube,
+)
 
 logger = logging.getLogger("trialguard.summarize")
 router = APIRouter(tags=["summarize"])
@@ -650,6 +659,79 @@ async def translate_text(
         )
     return TranslateOut(
         text=text, target_lang=target, language_name=summarizer.language_name(target)
+    )
+
+
+class PdfRequest(VideoRequest):
+    """Same shape as /notes - the PDF is a rendering of those same notes."""
+
+
+@router.post("/notes/pdf")
+async def notes_pdf(
+    payload: PdfRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """The full notes as a PDF, rendered here rather than in the browser.
+
+    Served from the shared cache whenever the notes already exist, which is the
+    point: rendering is capped at PDF_RENDER_WORKERS processes, so the cheapest
+    request is the one that never regenerates anything.
+
+    A caller who has not had the notes made yet is told to call /notes first
+    rather than being made to wait through a generation AND a render on one
+    connection - that is the pattern that produces half-hour requests.
+    """
+    video_id = _video_id_or_400(payload.url)
+
+    entitlement, cached_row, target, model = await run_in_threadpool(
+        _charge_and_lookup, db, user, payload, video_id, action="notes_pdf", mode="notes"
+    )
+
+    if cached_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": (
+                    "These notes have not been written yet. Request the notes "
+                    "first, then download the PDF."
+                ),
+                "entitlement": json.loads(entitlement.model_dump_json()),
+            },
+        )
+
+    meta = await youtube.fetch_metadata(video_id)
+    try:
+        data = await pdf.render_notes_pdf(
+            cached_row.text,
+            title=meta.title,
+            subtitle=f"{meta.author or 'YouTube'} - {youtube.watch_url(video_id)}",
+        )
+    except pdf.PDFBusy as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+            headers={"Retry-After": "30"},
+        )
+    except pdf.PDFTooLarge as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("pdf render failed for %s", video_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The PDF could not be rendered. The notes themselves are fine.",
+        )
+
+    safe = re.sub(r"[^A-Za-z0-9 _-]+", "", meta.title or "notes")[:60].strip() or "notes"
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe}.pdf"',
+            "Cache-Control": "no-store",
+        },
     )
 
 

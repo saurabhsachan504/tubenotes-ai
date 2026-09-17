@@ -222,6 +222,20 @@ class Settings(BaseSettings):
     # which a burst of long videos exhausts; then even a health check queues.
     THREADPOOL_MAX_THREADS: int = 96
 
+    # ---- server-side PDF -------------------------------------------------
+    # Rendering used to happen in the reader's browser, where it cost this
+    # machine nothing. Doing it here has to be capped, and capped tightly: on a
+    # GB10 the CPU and GPU share one 128 GB pool, so memory spent rendering is
+    # memory taken from vLLM's KV cache.
+    #
+    # PER UVICORN WORKER, like the vLLM gate - 3 workers x 1 = 3 renderers.
+    PDF_RENDER_WORKERS: int = 1
+    # How long a request waits for a renderer before it is told to try again.
+    PDF_QUEUE_TIMEOUT_SECONDS: int = 120
+    # A two-hour lecture makes roughly 80k characters of notes; this leaves
+    # room without letting one document occupy a renderer indefinitely.
+    PDF_MAX_CHARS: int = 400_000
+
     # ---- transport / CORS ---------------------------------------------
     # Chrome extensions call the API from origin chrome-extension://<id>
     ALLOWED_ORIGINS: str = "*"
