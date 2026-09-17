@@ -131,12 +131,22 @@ class Settings(BaseSettings):
     # that would have taken a millisecond. Several processes means several
     # GILs, which is the only thing that actually fixes it.
     #
-    # The cost is that this gate is per process, so it is exact only when load
-    # spreads across workers. A single client opening 30 sockets at once lands
-    # on one worker and uses 10 of the 30 GPU slots; 30 real browsers arriving
-    # through nginx spread far better. Erring low is the right way to err -
-    # under-using the GPU is a slower answer, overfilling it was the hang.
-    VLLM_MAX_CONCURRENCY: int = 10
+    # Set to vLLM's --max-num-seqs, not to a third of it, because the gate is
+    # per process and load does NOT spread evenly: a burst of connections lands
+    # on one worker. At 10 that worker drove vLLM at batch 10; measured
+    # throughput by batch size (2 reps, best-of, warmed) is
+    #
+    #     batch 10 -> 311 tok/s     batch 24 -> 641 tok/s
+    #     batch 16 -> 465 tok/s     batch 30 -> 659 tok/s
+    #
+    # so the concentrated case was running at less than half the box's rate.
+    # At 30 a single worker can fill the server on its own.
+    #
+    # If load DOES spread, three workers can offer 90 and vLLM will run 30 and
+    # queue the rest. That is now safe in a way it was not before the gate
+    # existed: the queue is bounded by this number, retries back off and never
+    # follow a timeout, and VLLM_QUEUE_TIMEOUT_SECONDS ends a genuine pile-up.
+    VLLM_MAX_CONCURRENCY: int = 30
     # How long a request may wait for a free slot before it is told the server
     # is busy. Answering "try again shortly" in a minute is kinder than a
     # connection that hangs for half an hour and then dies anyway.
@@ -170,6 +180,15 @@ class Settings(BaseSettings):
     OUTPUT_CACHE_MIN_CHARS: int = 200
     # Itne din tak koi na maange to entry hat jaati hai. 0 = kabhi na hatao.
     OUTPUT_CACHE_TTL_DAYS: int = 90
+    # Share results built from an extension-supplied transcript, when oEmbed
+    # has confirmed the video is reachable without a login.
+    #
+    # The trade-off is worth stating: the transcript itself is unverified, so a
+    # determined user could spend a trial to seed one video's cached summary
+    # with text of their choosing. Every row records where its transcript came
+    # from (CachedOutput.source), so such rows can be found and purged; set
+    # this to false to stop writing them at all.
+    CACHE_CLIENT_TRANSCRIPTS: bool = True
 
     # ---- full notes (the PDF) ------------------------------------------
     # 6k keeps a chunk within the model context while requiring substantially

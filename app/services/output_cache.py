@@ -108,6 +108,7 @@ def put(
     *,
     detected_lang: str = "",
     transcript_chars: int = 0,
+    source: str = "server",
 ) -> bool:
     """Store a freshly generated output. Returns True if it was stored."""
     if not settings.OUTPUT_CACHE_ENABLED:
@@ -126,6 +127,7 @@ def put(
         chars=len(text),
         detected_lang=detected_lang or "",
         transcript_chars=transcript_chars,
+        source=source or "server",
         hits=0,
         last_used_at=datetime.now(timezone.utc),
     )

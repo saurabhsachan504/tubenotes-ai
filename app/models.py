@@ -372,6 +372,12 @@ class CachedOutput(Base):
     detected_lang: Mapped[str] = mapped_column(String(8), nullable=False, default="")
     transcript_chars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    # Where the transcript behind this row came from: "captions"/"yt-dlp" means
+    # the server fetched it itself, "client" means a browser extension supplied
+    # it. Only the latter is unverified text, so this is what makes a targeted
+    # purge possible if a row is ever suspect.
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default="server")
+
     hits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

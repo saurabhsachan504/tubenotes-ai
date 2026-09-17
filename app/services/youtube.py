@@ -45,6 +45,15 @@ class VideoMeta:
     author: str | None
     thumbnail: str
     url: str
+    # Did YouTube's oEmbed endpoint answer for this video WITHOUT any login?
+    # True  - anonymously reachable, so its transcript is not a secret.
+    # False - private, members-only, deleted or nonexistent.
+    # None  - the lookup itself failed, so we know nothing.
+    #
+    # This costs no extra request: fetch_metadata() already calls oEmbed for
+    # the title and thumbnail. Measured: 200 for public, 400 for private and
+    # deleted alike.
+    public: bool | None = None
 
 
 @dataclass(slots=True)
@@ -109,6 +118,7 @@ def watch_url(video_id: str) -> str:
 # Metadata
 # ---------------------------------------------------------------------------
 _metadata_cache: dict[str, VideoMeta] = {}
+_METADATA_CACHE_MAX = 5000
 _oembed_client: httpx.AsyncClient | None = None
 
 
@@ -138,6 +148,7 @@ async def fetch_metadata(video_id: str) -> VideoMeta:
 
     url = watch_url(video_id)
     title, author = f"YouTube video {video_id}", None
+    public: bool | None = None
 
     try:
         res = await _get_oembed_client().get(
@@ -148,7 +159,12 @@ async def fetch_metadata(video_id: str) -> VideoMeta:
             data = res.json()
             title = data.get("title") or title
             author = data.get("author_name")
+            public = True
+        elif res.status_code in (400, 401, 403, 404):
+            # YouTube refuses oEmbed for anything that needs a login.
+            public = False
     except Exception as exc:  # pragma: no cover - network
+        # Unknown, not "private". is_cacheable() treats None as "do not share".
         logger.info("oEmbed lookup failed for %s: %s", video_id, exc)
 
     meta = VideoMeta(
@@ -157,8 +173,13 @@ async def fetch_metadata(video_id: str) -> VideoMeta:
         author=author,
         thumbnail=f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
         url=url,
+        public=public,
     )
     _metadata_cache[video_id] = meta
+    # Bounded: this dict used to grow for the life of the process.
+    if len(_metadata_cache) > _METADATA_CACHE_MAX:
+        for stale in list(_metadata_cache)[: len(_metadata_cache) - _METADATA_CACHE_MAX]:
+            _metadata_cache.pop(stale, None)
     return meta
 
 
@@ -385,7 +406,7 @@ _PRIVATE_AVAILABILITY = frozenset(
 )
 
 
-def is_cacheable(transcript: Transcript) -> bool:
+def is_cacheable(transcript: Transcript, *, video_public: bool | None = None) -> bool:
     """Kya is summary ko sab ke liye rakha ja sakta hai?
 
     Asli sawaal ye nahi ki video public hai ya unlisted - asli sawaal ye hai ki
@@ -400,10 +421,23 @@ def is_cacheable(transcript: Transcript) -> bool:
     isliye wo ek private video ka transcript bhi bhej sakta hai. Wo kabhi
     saanjha nahi hota.
     """
-    if transcript.source == "client":
-        return False
     if (transcript.availability or "") in _PRIVATE_AVAILABILITY:
         return False
+
+    if transcript.source == "client":
+        # The extension reads with the user's own cookies, so on its own a
+        # client transcript proves nothing about who else may see the video.
+        #
+        # oEmbed does prove it, and we already have the answer: YouTube
+        # answered for this video with no login at all. That is the same test
+        # the server-fetched path passes implicitly, so the same conclusion is
+        # available - and without it the cache never fills for extension users,
+        # who then pay a full GPU generation for a video already summarised a
+        # hundred times.
+        if not settings.CACHE_CLIENT_TRANSCRIPTS:
+            return False
+        return video_public is True
+
     return True
 
 

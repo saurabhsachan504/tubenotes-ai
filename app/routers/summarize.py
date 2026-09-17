@@ -177,6 +177,7 @@ def _store_cached(
     text: str,
     detected: str,
     transcript_chars: int,
+    source: str = "server",
 ) -> None:
     """Cache me likho - APNI ALAG session me, threadpool par.
 
@@ -203,6 +204,7 @@ def _store_cached(
             text,
             detected_lang=detected,
             transcript_chars=transcript_chars,
+            source=source,
         )
     except Exception:  # noqa: BLE001 - cache kabhi summary na todhe
         try:
@@ -451,7 +453,7 @@ async def summarize(
         # Jama karna SABSE AAKHIR me - user ka jawab ja chuka hai, to yahan
         # kuch bigde bhi to farq nahi padta. Cache band ho to _store_cached()
         # khud hi kuch nahi karta.
-        if _may_cache(transcript):
+        if _may_cache(transcript, meta):
             await run_in_threadpool(
                 _store_cached,
                 video_id,
@@ -461,6 +463,7 @@ async def summarize(
                 text,
                 detected,
                 len(transcript.text),
+                transcript.source,
             )
 
     return StreamingResponse(
@@ -602,7 +605,7 @@ async def notes(
 
         yield _event({"type": "done", "text": text, "language": target})
 
-        if _may_cache(transcript):
+        if _may_cache(transcript, meta):
             await run_in_threadpool(
                 _store_cached,
                 video_id,
@@ -612,6 +615,7 @@ async def notes(
                 text,
                 detected,
                 len(transcript.text),
+                transcript.source,
             )
 
     return StreamingResponse(
@@ -658,15 +662,15 @@ def _rate_limit_translate(db: Session, user_id) -> None:
         db.close()
 
 
-def _may_cache(transcript) -> bool:
+def _may_cache(transcript, meta) -> bool:
     """Never let the caching DECISION break a summary that already shipped.
 
-    is_cacheable() is a pure check today, but it is the gate on sharing another
-    user's content - if it ever raises, the honest answer is "do not share",
-    not "abort the request the user already paid for".
+    It is the gate on sharing one user's content with the next, so if it ever
+    raises, the honest answer is "do not share" - not "abort the request the
+    user already paid for".
     """
     try:
-        return bool(youtube.is_cacheable(transcript))
+        return bool(youtube.is_cacheable(transcript, video_public=meta.public))
     except Exception:  # noqa: BLE001
         logger.warning("is_cacheable() failed; not caching", exc_info=True)
         return False

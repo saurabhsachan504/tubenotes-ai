@@ -29,7 +29,7 @@ def cache_on(monkeypatch):
     # is_cacheable() is a pure, synchronous check on the Transcript we already
     # hold - no network. An async fake here would return a coroutine, which is
     # always truthy, so a "not cacheable" stub would silently cache anyway.
-    def public(transcript):
+    def public(transcript, *, video_public=None):
         return True
 
     monkeypatch.setattr("app.routers.summarize.youtube.is_cacheable", public)
@@ -179,7 +179,7 @@ def test_an_unlisted_video_is_never_cached(
     client, device, cache_on, stub_youtube, stub_model, monkeypatch, db
 ):
     """Someone's private video must not be handed to a stranger with the id."""
-    def not_public(transcript):
+    def not_public(transcript, *, video_public=None):
         return False
 
     monkeypatch.setattr("app.routers.summarize.youtube.is_cacheable", not_public)
@@ -194,7 +194,7 @@ def test_a_failed_public_check_means_no_cache(
     client, device, cache_on, stub_youtube, stub_model, monkeypatch, db
 ):
     """If we cannot tell, the safe answer is not to share it."""
-    def blows_up(transcript):
+    def blows_up(transcript, *, video_public=None):
         raise RuntimeError("YouTube blocked us")
 
     monkeypatch.setattr("app.routers.summarize.youtube.is_cacheable", blows_up)
@@ -330,6 +330,9 @@ def test_idle_locks_are_dropped():
         ("yt-dlp", "premium_only", False),
         ("yt-dlp", "subscriber_only", False),
         ("yt-dlp", "needs_auth", False),
+        # A client transcript on its own proves nothing - the extension reads
+        # with the user's cookies - so without the oEmbed verdict it is never
+        # shared.
         ("client", None, False),
         ("client", "public", False),
     ],
@@ -343,3 +346,40 @@ def test_is_cacheable(source, availability, expected):
         availability=availability,
     )
     assert youtube.is_cacheable(t) is expected
+
+
+def _client_transcript():
+    return youtube.Transcript(
+        text="x" * 100, language="en", is_generated=True, source="client"
+    )
+
+
+@pytest.mark.parametrize(
+    "video_public,expected",
+    [
+        # oEmbed answered without a login: anyone could have fetched this, so
+        # the extension's copy may be shared. This is what stops an extension
+        # user paying full GPU for a video already summarised a hundred times.
+        (True, True),
+        # Private/members-only/deleted - oEmbed refuses.
+        (False, False),
+        # The lookup itself failed. Unknown is not "public".
+        (None, False),
+    ],
+)
+def test_a_client_transcript_is_shared_only_when_oembed_says_public(video_public, expected):
+    assert youtube.is_cacheable(_client_transcript(), video_public=video_public) is expected
+
+
+def test_the_client_cache_can_be_switched_off(monkeypatch):
+    monkeypatch.setattr(settings, "CACHE_CLIENT_TRANSCRIPTS", False)
+    assert youtube.is_cacheable(_client_transcript(), video_public=True) is False
+
+
+def test_a_public_video_still_never_overrides_a_private_availability():
+    """oEmbed saying "public" must not rescue a track yt-dlp flagged private."""
+    t = youtube.Transcript(
+        text="x" * 100, language="en", is_generated=True,
+        source="yt-dlp", availability="private",
+    )
+    assert youtube.is_cacheable(t, video_public=True) is False
