@@ -591,17 +591,8 @@ async def notes(
             # for 100 seconds (524), and the browser shows an error while the
             # server is still working perfectly. Nginx is configured for 3600s
             # and never sees this; Cloudflare is the one that cuts.
-            last_sent = time.monotonic()
-            while not task.done():
-                await asyncio.sleep(0.4)
-                while queue:
-                    yield queue.pop(0)
-                    last_sent = time.monotonic()
-                if time.monotonic() - last_sent >= settings.STREAM_HEARTBEAT_SECONDS:
-                    yield _event({"type": "ping"})
-                    last_sent = time.monotonic()
-            while queue:
-                yield queue.pop(0)
+            async for chunk_event in _drain_until_done(task, queue):
+                yield chunk_event
             text = await task
         except Exception as exc:  # noqa: BLE001
             logger.exception("notes failed for %s", video_id)
@@ -625,12 +616,27 @@ async def notes(
 
         if translate_to:
             yield _event({"type": "status", "message": f"Translating to {summarizer.language_name(translate_to)}…"})
+            # Translating a full set of notes is minutes of work on a document
+            # this size, and it used to happen behind a silent connection.
+            ttask = asyncio.create_task(translate.translate(text, translate_to))
             try:
-                text = await translate.translate(text, translate_to)
+                async for chunk_event in _drain_until_done(ttask, queue):
+                    yield chunk_event
+                text = await ttask
             except Exception:  # pragma: no cover - network
                 logger.warning("notes translation to %s failed", translate_to)
+            finally:
+                if not ttask.done():
+                    ttask.cancel()
         else:
-            text, _fixed = await translate.ensure_language(text, target)
+            ltask = asyncio.create_task(translate.ensure_language(text, target))
+            try:
+                async for chunk_event in _drain_until_done(ltask, queue):
+                    yield chunk_event
+                text, _fixed = await ltask
+            finally:
+                if not ltask.done():
+                    ltask.cancel()
 
         yield _event({"type": "done", "text": text, "language": target})
 
@@ -753,6 +759,28 @@ async def notes_pdf(
             "Cache-Control": "no-store",
         },
     )
+
+
+async def _drain_until_done(task: asyncio.Task, queue: list[bytes]) -> AsyncIterator[bytes]:
+    """Relay queued events while `task` runs, and never let the line go quiet.
+
+    Silence on a streaming response is not free: Cloudflare closes an origin
+    connection that has been idle for 100 seconds with a 524, and the browser
+    shows an error while the server is still working. Every phase that can take
+    longer than that - writing the parts, and then translating them - has to be
+    wrapped in this, not just the first one.
+    """
+    last = time.monotonic()
+    while not task.done():
+        await asyncio.sleep(0.4)
+        while queue:
+            yield queue.pop(0)
+            last = time.monotonic()
+        if time.monotonic() - last >= settings.STREAM_HEARTBEAT_SECONDS:
+            yield _event({"type": "ping"})
+            last = time.monotonic()
+    while queue:
+        yield queue.pop(0)
 
 
 def _rate_limit_translate(db: Session, user_id) -> None:
