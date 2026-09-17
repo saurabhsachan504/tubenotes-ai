@@ -25,6 +25,11 @@ logger = logging.getLogger("trialguard.summarizer")
 # Measured against the longest of these prompts with a wide margin.
 _PROMPT_TOKEN_ALLOWANCE = 900
 
+# Before any part of a video has finished there is nothing to calibrate
+# against, so assume a part uses about this share of its token allowance.
+# Measured across real videos: ~400 tokens written against a 4096 budget.
+_UNCALIBRATED_SHARE = 0.15
+
 _vllm_client: httpx.AsyncClient | None = None
 _vllm_slots: asyncio.Semaphore | None = None
 _batch_slots: asyncio.Semaphore | None = None
@@ -725,6 +730,11 @@ async def _write_all(
     # part's worth of progress - which is what makes the bar move instead of
     # resting on one number until everything finishes at once.
     fraction: list[float] = [0.0] * total
+    # How many tokens finished parts actually produced. The budget is a CEILING
+    # - measured, a part writes about 400 tokens against an allowance of 4096 -
+    # so scaling progress by the budget pinned the bar near zero until a part
+    # completed and then jumped. The first part to finish calibrates the rest.
+    observed: list[int] = []
     lock = asyncio.Lock()
 
     # Tell the caller the shape of the job before any of it finishes. Chunks
@@ -752,9 +762,15 @@ async def _write_all(
             budget = _budget_for(chunk)
 
             def seen(n: int, text: str, _idx: int = idx, _budget: int = budget) -> None:
-                # Never let a part claim to be finished before it is: cap at
-                # 0.95 so the last step always belongs to the real completion.
-                fraction[_idx] = min(0.95, n / max(1, _budget))
+                # Expected length: what parts of THIS video have actually run
+                # to, falling back to a fraction of the allowance before any
+                # has finished. Never claim a part is done before it is - the
+                # cap at 0.95 leaves the last step to real completion.
+                expected = (
+                    sum(observed) / len(observed) if observed
+                    else max(1.0, _budget * _UNCALIBRATED_SHARE)
+                )
+                fraction[_idx] = min(0.95, n / max(1.0, expected))
                 if on_text is not None:
                     # The words themselves, as they are written. A progress bar
                     # is a proxy for this; people would rather read the notes
@@ -805,6 +821,9 @@ async def _write_all(
         parts[idx] = (text or "").strip()
         async with lock:
             done += 1
+            if text:
+                # Roughly tokens; good enough to calibrate a progress bar.
+                observed.append(max(1, len(text) // 4))
             fraction[idx] = 0.0          # folded into `done` now
             if not parts[idx]:
                 failed.append(idx + 1)
