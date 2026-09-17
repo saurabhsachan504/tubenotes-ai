@@ -597,7 +597,10 @@
         status("Writing the summary…", true);
       } else if (ev.type === "delta") {
         text += ev.text;
-        body.innerHTML = md2html(text) + '<span class="cursor"></span>';
+        // The PDF card has no rBody - it is a different view entirely - so this
+        // must not assume the element is there. It threw on the first delta of
+        // every PDF run, which is why the summary phase never reported.
+        if (body) body.innerHTML = md2html(text) + '<span class="cursor"></span>';
         if (inPdfFlow) {
           // The PDF flow runs /summarize before /notes, and progress events
           // only exist for notes - so this whole phase used to leave the bar
@@ -613,7 +616,7 @@
         status(ev.message, true);
       } else if (ev.type === "done") {
         text = ev.text || text;
-        body.innerHTML = md2html(text);
+        if (body) body.innerHTML = md2html(text);
         if (ev.language) langOut = ev.language;
         if (ev.partial) note("warn", "The model stopped early — this is what it produced.");
       } else if (ev.type === "error") {
@@ -752,6 +755,11 @@
     if (lastNotes) { lastNotes.markdown = text; lastNotes.lang = langOut; }
 
     status(`All ${partsDone || "?"} parts written — building the PDF…`, true);
+    // The live pane exists to show work happening. The work has happened, and
+    // leaving the streamed text sitting in the progress card makes the finished
+    // PDF look like it is still being written.
+    const livePane = $("pdfFlowLive");
+    if (livePane) { livePane.innerHTML = ""; livePane.hidden = true; }
     finishTools(text, true);
     // Only now, with every part written, do we open the print dialog.
     openPrintView();
