@@ -265,6 +265,12 @@ class Settings(BaseSettings):
     # room without letting one document occupy a renderer indefinitely.
     PDF_MAX_CHARS: int = 400_000
 
+    # How long a streaming response may stay silent before a keepalive line is
+    # sent. Cloudflare closes an origin connection quiet for 100s with a 524,
+    # so this must stay comfortably under that - the user sees an error while
+    # the server is still working.
+    STREAM_HEARTBEAT_SECONDS: int = 20
+
     # ---- transport / CORS ---------------------------------------------
     # Chrome extensions call the API from origin chrome-extension://<id>
     ALLOWED_ORIGINS: str = "*"

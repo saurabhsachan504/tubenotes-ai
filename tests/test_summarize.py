@@ -604,14 +604,28 @@ def test_notes_progress_counts_every_chunk(monkeypatch):
         return "notes"
 
     monkeypatch.setattr(summarizer, "collect_chat", fake_chat)
-    seen: list[tuple[int, int]] = []
+    seen: list[tuple[int, int, int]] = []
 
-    async def on_progress(done, total):
-        seen.append((done, total))
+    async def on_progress(done, total, started=0):
+        seen.append((done, total, started))
 
     transcript = "word " * 6000
     asyncio.run(
         summarizer.full_notes(transcript, lang="en", on_progress=on_progress)
     )
     total = seen[0][1]
-    assert sorted(d for d, _ in seen) == list(range(1, total + 1))
+
+    # Progress is now reported when a part STARTS as well as when it finishes,
+    # so a given "done" count shows up more than once. What must hold is that
+    # every count from 0 to total is reported, and that it ends at total.
+    assert sorted({d for d, _t, _s in seen}) == list(range(0, total + 1))
+    assert max(d for d, _t, _s in seen) == total, "the last part was never reported"
+    assert max(s for _d, _t, s in seen) == total, "not every part reported starting"
+    # done must never run ahead of started, or the bar would exceed 100%
+    assert all(d <= s for d, _t, s in seen if s), "more parts done than started"
+
+    # And the caller hears about the job BEFORE any part finishes. Parts run in
+    # parallel, so without this the UI froze on one number for minutes.
+    assert seen[0][0] == 0, "the shape of the job must be reported up front"
+    assert seen[0][1] == total
+    assert any(s > 0 and d == 0 for d, _t, s in seen), "chunk starts unreported"

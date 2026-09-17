@@ -626,15 +626,27 @@ async def full_notes(
     parts: list[str] = [""] * total
     failed: list[int] = []
     done = 0
+    started = 0
     lock = asyncio.Lock()
+
+    # Tell the caller the shape of the job before any of it finishes. Chunks
+    # run in PARALLEL, so the first completion can be minutes away - and until
+    # then the UI had nothing at all to show and sat on one frozen percentage.
+    if on_progress:
+        await on_progress(0, total, 0)
     semaphore = asyncio.Semaphore(max(1, settings.NOTES_CONCURRENCY))
 
     async def write_chunk(idx: int, chunk: str) -> None:
-        nonlocal done
+        nonlocal done, started
         base = NOTES_FIRST_PROMPT if idx == 0 else NOTES_SEGMENT_PROMPT
         text = ""
         attempts = max(1, settings.NOTES_CHUNK_RETRIES)
         async with semaphore:
+            # A slot was taken, so this part is genuinely being written now.
+            async with lock:
+                started += 1
+                if on_progress:
+                    await on_progress(done, total, started)
             for attempt in range(attempts):
                 try:
                     text = await collect_chat(
@@ -682,7 +694,7 @@ async def full_notes(
                 failed.append(idx + 1)
                 parts[idx] = _missing_marker(idx + 1, total, lang)
             if on_progress:
-                await on_progress(done, total)
+                await on_progress(done, total, started)
 
     await asyncio.gather(*(write_chunk(i, c) for i, c in enumerate(chunks)))
 

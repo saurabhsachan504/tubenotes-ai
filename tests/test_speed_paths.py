@@ -587,3 +587,18 @@ def test_the_chunk_size_is_clamped_to_the_context_window(monkeypatch):
     # a sane value is passed through untouched
     monkeypatch.setattr(settings, "NOTES_CHUNK_CHARS", 9000)
     assert summarizer.effective_chunk_chars() == 9000
+
+
+def test_a_long_silence_gets_a_heartbeat():
+    """Cloudflare closes an origin connection quiet for 100s with a 524.
+
+    Notes parts run in parallel, so nothing is reported between the meta event
+    and the first part finishing - minutes on a long video. Without a keepalive
+    the user sees an error at the exact percentage the UI was showing, while
+    the server is still working correctly.
+    """
+    from app.config import Settings
+
+    assert Settings.model_fields["STREAM_HEARTBEAT_SECONDS"].default < 100, (
+        "the heartbeat must fire well inside Cloudflare's 100s idle cut-off"
+    )

@@ -532,14 +532,22 @@ async def notes(
     async def generate() -> AsyncIterator[bytes]:
         queue: list[bytes] = []
 
-        async def on_progress(done: int, total: int) -> None:
+        async def on_progress(done: int, total: int, started: int = 0) -> None:
+            # A part that has started but not landed is real progress, so it
+            # counts for half. Without this the bar could not move at all until
+            # the first part finished - which, with parts running in parallel,
+            # is most of the way through the job.
+            in_flight = max(0, started - done)
+            effective = done + in_flight * 0.5
+            percent = round(min(100.0, effective / total * 100)) if total else 0
             queue.append(
                 _event(
                     {
                         "type": "progress",
                         "done": done,
                         "total": total,
-                        "percent": round(done / total * 100),
+                        "started": started,
+                        "percent": percent,
                     }
                 )
             )
@@ -576,10 +584,22 @@ async def notes(
             )
         )
         try:
+            # A heartbeat, because silence on this connection is not free.
+            # Parts are written in parallel, so nothing is reported between the
+            # meta event and the first part finishing - minutes, on a long
+            # video. Cloudflare closes an origin connection that has been quiet
+            # for 100 seconds (524), and the browser shows an error while the
+            # server is still working perfectly. Nginx is configured for 3600s
+            # and never sees this; Cloudflare is the one that cuts.
+            last_sent = time.monotonic()
             while not task.done():
                 await asyncio.sleep(0.4)
                 while queue:
                     yield queue.pop(0)
+                    last_sent = time.monotonic()
+                if time.monotonic() - last_sent >= settings.STREAM_HEARTBEAT_SECONDS:
+                    yield _event({"type": "ping"})
+                    last_sent = time.monotonic()
             while queue:
                 yield queue.pop(0)
             text = await task

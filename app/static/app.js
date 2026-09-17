@@ -650,14 +650,24 @@
         } else {
           note("warn", warnings.map(escapeAttr).join("<br>"));
         }
+      } else if (ev.type === "ping") {
+        // Keepalive only - the server is still working. It exists so the
+        // connection is never silent long enough for Cloudflare to close it.
       } else if (ev.type === "progress") {
         partsDone = ev.total;
+        // Parts are written in parallel, so "3 of 12 done, 9 being written"
+        // is the honest description. Saying only "part 3 of 12" made a busy
+        // server look like a stalled one.
+        const inFlight = Math.max(0, (ev.started || 0) - ev.done);
+        const detail = ev.done > 0
+          ? `${ev.done} of ${ev.total} parts written` + (inFlight ? `, ${inFlight} in progress` : "")
+          : `${ev.total} parts` + (inFlight ? `, ${inFlight} being written now` : " queued");
         if (inPdfFlow) {
-          const percent = Math.max(30, Math.min(90, ev.percent));
-          updatePdfProgress(3, percent, "Writing detailed notes…", `Writing part ${ev.done} of ${ev.total}. Every section is included in your PDF.`);
+          const percent = Math.max(26, Math.min(90, ev.percent));
+          updatePdfProgress(3, percent, "Writing detailed notes…", `${detail}. Every section is included in your PDF.`);
         } else {
-          $("rBar").style.width = ev.percent + "%";
-          status(`Writing detailed notes — part ${ev.done} of ${ev.total}…`, true);
+          $("rBar").style.width = Math.max(2, ev.percent) + "%";
+          status(`Writing detailed notes — ${detail}…`, true);
         }
       } else if (ev.type === "done") {
         text = ev.text || "";
