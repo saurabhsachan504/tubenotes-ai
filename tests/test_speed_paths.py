@@ -640,3 +640,37 @@ def test_batch_work_cannot_starve_an_interactive_summary(monkeypatch):
     asyncio.run(scenario())
     summarizer._vllm_slots = None
     summarizer._batch_slots = None
+
+
+def test_the_transcript_hedge_does_not_wait_for_the_loser(monkeypatch):
+    """Winning the race must end the wait, not begin a new one.
+
+    The first version used `with ThreadPoolExecutor(...)`, whose __exit__ calls
+    shutdown(wait=True). Captions answered in 3s and the request still took
+    12.6s, blocked on the yt-dlp call nobody needed - slower than no hedge.
+    """
+    import time as _time
+    from app.services import youtube as yt
+
+    monkeypatch.setattr(settings, "TRANSCRIPT_HEDGE_SECONDS", 0.05)
+    monkeypatch.setattr(settings, "TRANSCRIPT_CACHE_TTL_SECONDS", 0)
+
+    def slow_captions(video_id):
+        _time.sleep(0.25)
+        return yt.Transcript(text="c" * 500, language="en", is_generated=True,
+                             source="captions")
+
+    def very_slow_ytdlp(video_id):
+        _time.sleep(5.0)          # the loser: must NOT be waited on
+        return yt.Transcript(text="d" * 500, language="en", is_generated=True,
+                             source="yt-dlp")
+
+    monkeypatch.setattr(yt, "_fetch_via_api", slow_captions)
+    monkeypatch.setattr(yt, "_fetch_via_ytdlp", very_slow_ytdlp)
+
+    t0 = _time.perf_counter()
+    got = yt._fetch_transcript_uncached("vid12345678")
+    elapsed = _time.perf_counter() - t0
+
+    assert got.source == "captions"
+    assert elapsed < 2.0, f"waited {elapsed:.1f}s for the losing fetch"

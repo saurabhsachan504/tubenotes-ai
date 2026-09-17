@@ -533,7 +533,14 @@ def _fetch_transcript_uncached(video_id: str) -> Transcript:
         errors.append(f"{name}: too short")
         return None
 
-    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="transcript") as pool:
+    # NOT a `with` block: ThreadPoolExecutor.__exit__ calls shutdown(wait=True),
+    # so winning the race would still block until the losing fetch finished -
+    # which is the opposite of the point. Measured with the `with` in place:
+    # captions answered in 3s and the request still took 12.6s, waiting on the
+    # yt-dlp call nobody needed. The pool is released without waiting instead,
+    # and the loser's thread simply finishes into a discarded result.
+    pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="transcript")
+    try:
         futures: dict = {pool.submit(_fetch_via_api, video_id): "captions"}
         hedge = max(0.0, settings.TRANSCRIPT_HEDGE_SECONDS)
         deadline = time.monotonic() + hedge
@@ -563,6 +570,9 @@ def _fetch_transcript_uncached(video_id: str) -> Transcript:
             if not futures and not hedged:
                 hedged = True
                 futures[pool.submit(_fetch_via_ytdlp, video_id)] = "yt-dlp"
+    finally:
+        # Do not wait: a losing fetch is abandoned, not awaited.
+        pool.shutdown(wait=False, cancel_futures=True)
 
     raise TranscriptUnavailable(
         "This video has no usable subtitles, or YouTube is blocking this server. "
