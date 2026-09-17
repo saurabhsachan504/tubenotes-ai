@@ -300,7 +300,6 @@
             <div class="pdf-flow-copy" id="pdfFlowCopy">Reading the video and preparing your detailed notes. This may take a few moments.</div>
             <div class="pdf-flow-meter"><div class="progress"><i id="pdfFlowBar" style="width:4%"></i></div><span class="pdf-flow-percent" id="pdfFlowPercent">4%</span></div>
           </div>
-        <div class="pdf-flow-live" id="pdfFlowLive"></div>
           <div class="pdf-steps" aria-label="PDF generation progress">
             <div class="pdf-step active" data-pdf-step="1"><div class="pdf-step-dot">1</div>Reading<br>Video</div>
             <div class="pdf-step" data-pdf-step="2"><div class="pdf-step-dot">2</div>Analyzing<br>Content</div>
@@ -308,22 +307,43 @@
             <div class="pdf-step" data-pdf-step="4"><div class="pdf-step-dot">4</div>Preparing<br>PDF</div>
           </div>
         </div>
+        <!-- Below the steps, and fixed height: it fills as the notes are
+             written, and putting it above pushed the bar and the step markers
+             down the page as it grew. -->
+        <div class="pdf-flow-live" id="pdfFlowLive" hidden></div>
       </div>`;
     R().scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  let pdfProgressHigh = 0;
+  let pdfStageHigh = 0;
+
+  function resetPdfProgress() {
+    pdfProgressHigh = 0;
+    pdfStageHigh = 0;
   }
 
   function updatePdfProgress(stage, percent, title, copy) {
     const flow = $("pdfFlow");
     if (!flow) return;
+    // Monotonic. The phases report their own scale and they overlap - the
+    // notes phase opens at 8% after the transcript step has already reached
+    // 24%, a warning asks for 45% after progress has passed it, and a status
+    // sets 99.9% before the last progress events arrive. Each of those walked
+    // the bar backwards, which reads as the job losing ground.
+    const wanted = Math.max(0, Math.min(100, percent));
+    pdfProgressHigh = Math.max(pdfProgressHigh, wanted);
+    pdfStageHigh = Math.max(pdfStageHigh, stage);
+
     const bar = $("pdfFlowBar"), label = $("pdfFlowPercent");
-    if (bar) bar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
-    if (label) label.textContent = `${Math.round(percent)}%`;
+    if (bar) bar.style.width = `${pdfProgressHigh}%`;
+    if (label) label.textContent = `${Math.round(pdfProgressHigh)}%`;
     if ($("pdfFlowTitle")) $("pdfFlowTitle").textContent = title;
     if ($("pdfFlowCopy")) $("pdfFlowCopy").textContent = copy;
     for (const step of flow.querySelectorAll("[data-pdf-step]")) {
       const number = Number(step.dataset.pdfStep);
-      step.classList.toggle("done", number < stage);
-      step.classList.toggle("active", number === stage);
+      step.classList.toggle("done", number < pdfStageHigh);
+      step.classList.toggle("active", number === pdfStageHigh);
     }
   }
 
@@ -391,6 +411,7 @@
     const target = targetOverride === undefined ? outLang() : targetOverride;
     setBusy(true);
     if (pdfProgress) {
+      resetPdfProgress();
       showPdfProgress(lastNotes);
     } else {
       shell(null);
@@ -690,7 +711,12 @@
         liveParts[ev.index] += ev.text || "";
         const joined = liveParts.filter((p) => p != null).join("\n\n");
         const target = inPdfFlow ? $("pdfFlowLive") : $("rBody");
-        if (target) target.innerHTML = md2html(joined);
+        if (target) {
+          target.hidden = false;
+          target.innerHTML = md2html(joined);
+          // Follow the text as it is written, without moving the page.
+          target.scrollTop = target.scrollHeight;
+        }
       } else if (ev.type === "ping") {
         // Keepalive only - the server is still working. It exists so the
         // connection is never silent long enough for Cloudflare to close it.
