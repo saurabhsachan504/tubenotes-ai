@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     CF_ACCESS_CLIENT_ID: str = ""
     CF_ACCESS_CLIENT_SECRET: str = ""
     VLLM_TIMEOUT_SECONDS: int = 600
+    # Generous on purpose. Under load the delay is this process's own
+    # scheduling lag, not vLLM being unreachable, and 15s was short
+    # enough to turn that lag into a failed summary.
+    VLLM_CONNECT_TIMEOUT_SECONDS: int = 60
 
     # Hard ceiling on how many requests THIS worker keeps in flight at vLLM at
     # once, across every feature - summary, notes chunks and translation alike.
@@ -111,21 +115,28 @@ class Settings(BaseSettings):
     # the retry loop then fed it straight back in. That is the hang.
     #
     # THIS IS PER UVICORN WORKER, so what reaches the GPU is
-    # (workers x VLLM_MAX_CONCURRENCY).
+    # (workers x VLLM_MAX_CONCURRENCY). The deployment runs 3 x 10 = 30,
+    # matching vLLM's --max-num-seqs 30.
     #
-    # The deployment runs ONE worker, so this number IS the global limit and it
-    # is set to vLLM's --max-num-seqs exactly. That is deliberate. With three
-    # workers x 10 the arithmetic was right but the behaviour was not: a burst
-    # of connections does not spread evenly across workers, and a 30-request
-    # strain test landed entirely on one of them - vLLM sat at
-    # "Running: 10, Waiting: 0" while two thirds of the GPU went unused.
+    # Both halves of that were measured, and one worker does NOT work here:
     #
-    # A per-worker gate can only under-use the GPU or overfill it; it cannot be
-    # exactly right without cross-process coordination. One worker makes the
-    # question disappear, and costs nothing here: this app does no per-request
-    # CPU work worth parallelising - it relays tokens, and every blocking call
-    # it makes already runs in the thread pool.
-    VLLM_MAX_CONCURRENCY: int = 30
+    #   3 workers x 10 : 30/30 summaries, 102s, no failures.
+    #   1 worker  x 30 : 2/30. The rest died on httpx.ConnectTimeout to a vLLM
+    #                    that answers 30 cold connects in 0.1s when asked
+    #                    directly.
+    #
+    # The reason is yt-dlp. Pulling a transcript is heavy *Python* CPU work,
+    # and thirty of those in one process hold the GIL hard enough to starve the
+    # event loop - asyncio's 15s connect timer then expires on a connection
+    # that would have taken a millisecond. Several processes means several
+    # GILs, which is the only thing that actually fixes it.
+    #
+    # The cost is that this gate is per process, so it is exact only when load
+    # spreads across workers. A single client opening 30 sockets at once lands
+    # on one worker and uses 10 of the 30 GPU slots; 30 real browsers arriving
+    # through nginx spread far better. Erring low is the right way to err -
+    # under-using the GPU is a slower answer, overfilling it was the hang.
+    VLLM_MAX_CONCURRENCY: int = 10
     # How long a request may wait for a free slot before it is told the server
     # is busy. Answering "try again shortly" in a minute is kinder than a
     # connection that hangs for half an hour and then dies anyway.

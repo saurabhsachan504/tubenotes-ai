@@ -318,7 +318,10 @@ async def vllm_client() -> httpx.AsyncClient:
         return _vllm_client
     # There is no await between this check and assignment, so tasks on the
     # worker's event loop cannot race and create duplicate clients.
-    timeout = httpx.Timeout(settings.VLLM_TIMEOUT_SECONDS, connect=15)
+    timeout = httpx.Timeout(
+        settings.VLLM_TIMEOUT_SECONDS,
+        connect=settings.VLLM_CONNECT_TIMEOUT_SECONDS,
+    )
     # Sized from the same number that gates the semaphore. httpx defaults to
     # 100 connections, which let this process open far more sockets than vLLM
     # could ever serve - the pool should not be able to outrun the gate.
