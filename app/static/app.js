@@ -389,6 +389,7 @@
 
     const wantNotes = requestedMode === "notes";
     const liveParts = [];
+    let notesStartedAt = 0;
     const target = targetOverride === undefined ? outLang() : targetOverride;
     setBusy(true);
     if (pdfProgress) {
@@ -671,15 +672,28 @@
         // is the honest description. Saying only "part 3 of 12" made a busy
         // server look like a stalled one.
         const inFlight = Math.max(0, (ev.started || 0) - ev.done);
-        const detail = ev.done > 0
-          ? `${ev.done} of ${ev.total} parts written` + (inFlight ? `, ${inFlight} in progress` : "")
-          : `${ev.total} parts` + (inFlight ? `, ${inFlight} being written now` : " queued");
+        // Nothing started yet means the server is full and this job is waiting
+        // its turn. Saying so is the honest thing: a bar parked on one number
+        // reads as broken, and people close the tab on it.
+        const queued = ev.done === 0 && inFlight === 0;
+        if (!notesStartedAt) notesStartedAt = Date.now();
+        const waited = Math.round((Date.now() - notesStartedAt) / 1000);
+        const detail = queued
+          ? `waiting for a free slot on the server — ${ev.total} parts queued (${waited}s)`
+          : ev.done > 0
+            ? `${ev.done} of ${ev.total} parts written` + (inFlight ? `, ${inFlight} in progress` : "")
+            : `${ev.total} parts, ${inFlight} being written now`;
         if (inPdfFlow) {
-          const percent = Math.max(26, Math.min(90, ev.percent));
-          updatePdfProgress(3, percent, "Writing detailed notes…", `${detail}. Every section is included in your PDF.`);
+          const percent = queued ? 26 : Math.max(26, Math.min(90, ev.percent));
+          updatePdfProgress(
+            3, percent,
+            queued ? "Queued — server is busy…" : "Writing detailed notes…",
+            queued ? `${detail}. Your place is held; this will start automatically.`
+                   : `${detail}. Every section is included in your PDF.`
+          );
         } else {
           $("rBar").style.width = Math.max(2, ev.percent) + "%";
-          status(`Writing detailed notes — ${detail}…`, true);
+          status((queued ? "Queued — " : "Writing detailed notes — ") + detail, true);
         }
       } else if (ev.type === "done") {
         text = ev.text || "";
