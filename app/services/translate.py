@@ -119,6 +119,8 @@ async def _vllm(chunk: str, target: str) -> str:
         "stream": False,
         "temperature": 0.1,
         "max_tokens": 4000,
+        # Translating what a person is waiting to read is interactive work.
+        "priority": settings.VLLM_PRIORITY_INTERACTIVE,
         "messages": [
             {"role": "system", "content": (
                 f"You are a professional translator. Translate the user text "

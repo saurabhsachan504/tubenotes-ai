@@ -273,6 +273,14 @@ class Settings(BaseSettings):
     # Reserving capacity does not slow the PDFs down much - they have the other
     # slots and they are not being watched - but it keeps the site responsive.
     VLLM_INTERACTIVE_RESERVE: int = 16
+    # vLLM scheduler priority (LOWER runs first). Reserving slots only decides
+    # who gets admitted; once running, every sequence shares the GPU equally -
+    # measured, 425 tok/s across 82 sequences is 5.2 tok/s each, so a 2-part
+    # video still took minutes. Priority decides who gets served, so a short
+    # video actually finishes quickly while PDFs are being written.
+    # Requires vLLM started with --scheduling-policy priority.
+    VLLM_PRIORITY_INTERACTIVE: int = 0
+    VLLM_PRIORITY_BATCH: int = 100
     # Past this fraction of failed sections the notes are not notes any more,
     # and full_notes() raises instead of returning a stub that would be cached
     # and rendered to PDF as though it were the real thing.

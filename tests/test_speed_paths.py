@@ -769,3 +769,38 @@ def test_the_load_endpoint_never_raises(monkeypatch):
     assert out["running"] is None, "unknown must be reported as unknown"
     assert out["capacity"] >= 1
     assert "jobs" in out and "share" in out
+
+
+def test_interactive_and_batch_requests_carry_different_priorities(monkeypatch):
+    """Reserving slots decides admission; priority decides service.
+
+    Measured: 425 tok/s spread over 82 running sequences is 5.2 tok/s each, so a
+    short video that was admitted instantly still took minutes to write. vLLM
+    serves by priority when started with --scheduling-policy priority, so the
+    two kinds of work must not be sent in looking alike.
+    """
+    sent = []
+
+    class _Stream(_FakeStream):
+        pass
+
+    fake = _FakeClient(lambda body: (sent.append(body), _Stream(200, _sse("x")))[1])
+
+    async def _client():
+        return fake
+
+    monkeypatch.setattr(summarizer, "vllm_client", _client)
+    summarizer._vllm_slots = None
+    summarizer._batch_slots = None
+
+    async def go():
+        await summarizer.collect_chat(model="m", system="s", content="c")
+        await summarizer.collect_chat(model="m", system="s", content="c", batch=True)
+
+    asyncio.run(go())
+
+    assert sent[0]["priority"] == settings.VLLM_PRIORITY_INTERACTIVE
+    assert sent[1]["priority"] == settings.VLLM_PRIORITY_BATCH
+    assert sent[0]["priority"] < sent[1]["priority"], "lower must mean sooner"
+    summarizer._vllm_slots = None
+    summarizer._batch_slots = None

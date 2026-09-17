@@ -528,6 +528,12 @@ async def stream_chat(
         "temperature": temperature,
         "top_p": 0.9,
         "max_tokens": num_predict,
+        # Lower runs first. Ignored unless vLLM was started with
+        # --scheduling-policy priority, so this is safe either way.
+        "priority": (
+            settings.VLLM_PRIORITY_BATCH if batch
+            else settings.VLLM_PRIORITY_INTERACTIVE
+        ),
     }
 
     client = await vllm_client()
