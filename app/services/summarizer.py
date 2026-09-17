@@ -745,14 +745,32 @@ async def _write_all(
 
     if on_progress:
         await on_progress(0, total, 0, 0.0)
-    semaphore = asyncio.Semaphore(_fair_share())
+    # NOT a fixed semaphore. A share decided once, when the request started, is
+    # only fair to the clients that were already running: a job that arrives
+    # later computes its own small share while everyone ahead keeps launching
+    # chunks at the allowance they locked in, so the newcomer waits and its
+    # progress bar sits at zero. Re-reading the share before each chunk means an
+    # arrival immediately shrinks everybody's allowance, and the machine
+    # rebalances as clients come and go.
+    in_flight = 0
 
     async def write_chunk(idx: int, chunk: str) -> None:
-        nonlocal done, started
+        nonlocal done, started, in_flight
         base = NOTES_FIRST_PROMPT if idx == 0 else NOTES_SEGMENT_PROMPT
         text = ""
         attempts = max(1, settings.NOTES_CHUNK_RETRIES)
-        async with semaphore:
+
+        # Wait until this video is entitled to another part in flight. Cheap:
+        # parts run for tens of seconds, so polling five times a second costs
+        # nothing and keeps the rule current instead of frozen at start time.
+        while True:
+            async with lock:
+                if in_flight < _fair_share():
+                    in_flight += 1
+                    break
+            await asyncio.sleep(0.2)
+
+        try:
             # A slot was taken, so this part is genuinely being written now.
             async with lock:
                 started += 1
@@ -818,6 +836,10 @@ async def _write_all(
                     # Back off, so a transient upstream hiccup is not answered
                     # with three requests in as many milliseconds.
                     await asyncio.sleep(min(8.0, 2.0 * (2 ** attempt)))
+        finally:
+            async with lock:
+                in_flight -= 1
+
         parts[idx] = (text or "").strip()
         async with lock:
             done += 1

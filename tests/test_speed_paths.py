@@ -702,3 +702,28 @@ def test_one_client_cannot_take_the_whole_machine(monkeypatch):
     assert crowded * 20 <= 96, "the shares together must not exceed the gate"
     # And nobody is ever starved down to serial work.
     assert swamped >= 2
+
+
+def test_a_late_arrival_shrinks_everyone_elses_share(monkeypatch):
+    """The share must follow the CURRENT number of jobs, not the starting one.
+
+    Reported from the browser: a request made while forty clients were already
+    running sat at zero. Its own share was computed correctly, but the forty
+    ahead of it had locked in a larger allowance when fewer were active and kept
+    launching parts at that rate, so nothing came free for the newcomer.
+    """
+    monkeypatch.setattr(settings, "VLLM_MAX_CONCURRENCY", 96)
+    monkeypatch.setattr(settings, "NOTES_CONCURRENCY", 30)
+
+    summarizer._active_notes = 1
+    assert summarizer._fair_share() == 30          # alone: the ceiling applies
+
+    summarizer._active_notes = 8
+    eight = summarizer._fair_share()
+    summarizer._active_notes = 40                  # a crowd arrives
+    forty = summarizer._fair_share()
+
+    assert forty < eight, "an arrival must reduce the share, not leave it fixed"
+    assert forty * 40 <= 96, "shares together must not exceed the gate"
+    assert forty >= 2, "nobody is starved down to serial work"
+    summarizer._active_notes = 0
