@@ -200,7 +200,7 @@ def test_notes_chunks_run_concurrently(monkeypatch):
     in_flight = 0
     peak = 0
 
-    async def fake_collect(*, model, system, content, num_predict=3000):
+    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None):
         nonlocal in_flight, peak
         in_flight += 1
         peak = max(peak, in_flight)
@@ -226,7 +226,7 @@ def test_notes_keep_transcript_order_despite_concurrency(monkeypatch):
 
     import re as _re
 
-    async def fake_collect(*, model, system, content, num_predict=3000):
+    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None):
         marker = _re.search(r"MARK(\d+)", content)
         # Finish out of order on purpose: the first chunk replies last.
         await asyncio.sleep(0.03 if "MARK0" in content else 0.005)
@@ -411,7 +411,7 @@ def test_a_failed_section_is_written_into_the_notes(monkeypatch):
     monkeypatch.setattr(settings, "NOTES_CHUNK_OVERLAP", 0)
     monkeypatch.setattr(settings, "NOTES_CHUNK_RETRIES", 2)
 
-    async def fake_collect(*, model, system, content, num_predict=3000):
+    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None):
         if "MARK2" in content:
             raise RuntimeError("Ollama exploded")
         return "## written\n\ndetails"
@@ -431,11 +431,71 @@ def test_a_failed_section_is_written_into_the_notes(monkeypatch):
     assert "## written" in notes, "the sections that DID work are still there"
 
 
+def test_a_mostly_empty_document_is_not_returned_as_notes(monkeypatch):
+    """The regression that a 30-way end-to-end run exposed.
+
+    Nearly every chunk failed, full_notes() filled the document with "section
+    missing" labels, and the caller could not tell: it looked like a normal
+    result, got cached, and was rendered to a 13 KB PDF that contained no notes
+    at all. Past a quarter missing this must raise.
+    """
+    monkeypatch.setattr(settings, "NOTES_CHUNK_CHARS", 300)
+    monkeypatch.setattr(settings, "NOTES_CHUNK_OVERLAP", 0)
+    monkeypatch.setattr(settings, "NOTES_CHUNK_RETRIES", 1)
+
+    async def mostly_broken(*, model, system, content, num_predict=3000, queue_wait=None):
+        if "MARK0" in content:
+            return "## written\n\ndetails"
+        raise summarizer.VLLMBusy("no slots")
+
+    monkeypatch.setattr(summarizer, "collect_chat", mostly_broken)
+    text = " ".join(f"MARK{i} " + "filler word " * 30 for i in range(6))
+
+    with pytest.raises(RuntimeError, match="sections could be written"):
+        asyncio.run(summarizer.full_notes(text, lang="en"))
+
+
+def test_a_busy_gate_is_retried_but_a_dead_server_is_not(monkeypatch):
+    """VLLMBusy means "come back later"; a read timeout means "stop asking"."""
+    monkeypatch.setattr(settings, "NOTES_CHUNK_CHARS", 400)
+    monkeypatch.setattr(settings, "NOTES_CHUNK_OVERLAP", 0)
+    monkeypatch.setattr(settings, "NOTES_CHUNK_RETRIES", 3)
+
+    busy_calls = {"n": 0}
+
+    async def busy_once_then_ok(*, model, system, content, num_predict=3000, queue_wait=None):
+        busy_calls["n"] += 1
+        if busy_calls["n"] == 1:
+            raise summarizer.VLLMBusy("no slots")
+        return "## written\n\ndetails"
+
+    monkeypatch.setattr(summarizer, "collect_chat", busy_once_then_ok)
+    # Skip the real backoff without recursing into the patched sleep.
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda *_a, **_k: real_sleep(0))
+    out = asyncio.run(summarizer.full_notes("word " * 200, lang="en"))
+    assert "## written" in out, "a busy slot should have been retried"
+
+    # One chunk, so the call count is unambiguous: 1 means no retry, 3 would
+    # mean NOTES_CHUNK_RETRIES fired.
+    monkeypatch.setattr(settings, "NOTES_CHUNK_CHARS", 100_000)
+    timeout_calls = {"n": 0}
+
+    async def always_times_out(*, model, system, content, num_predict=3000, queue_wait=None):
+        timeout_calls["n"] += 1
+        raise httpx.ReadTimeout("silent")
+
+    monkeypatch.setattr(summarizer, "collect_chat", always_times_out)
+    with pytest.raises(RuntimeError):
+        asyncio.run(summarizer.full_notes("word " * 200, lang="en"))
+    assert timeout_calls["n"] == 1, "a read timeout must not be retried"
+
+
 def test_clean_notes_carry_no_warning(monkeypatch):
     monkeypatch.setattr(settings, "NOTES_CHUNK_CHARS", 300)
     monkeypatch.setattr(settings, "NOTES_CHUNK_OVERLAP", 0)
 
-    async def fake_collect(*, model, system, content, num_predict=3000):
+    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None):
         return "## written\n\ndetails"
 
     monkeypatch.setattr(summarizer, "collect_chat", fake_collect)
@@ -488,7 +548,7 @@ def test_repeats_are_stripped_across_chunks_too(monkeypatch):
     monkeypatch.setattr(settings, "NOTES_CHUNK_CHARS", 300)
     monkeypatch.setattr(settings, "NOTES_CHUNK_OVERLAP", 0)
 
-    async def fake_collect(*, model, system, content, num_predict=3000):
+    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None):
         return "## वही शीर्षक\n\n- यह बिल्कुल वही विस्तृत बिंदु है जो हर हिस्से में आ रहा है।"
 
     monkeypatch.setattr(summarizer, "collect_chat", fake_collect)

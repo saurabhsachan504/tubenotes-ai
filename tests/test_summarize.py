@@ -499,7 +499,7 @@ def test_notes_read_the_entire_transcript_not_a_sample(monkeypatch):
 
     seen: list[str] = []
 
-    async def fake_chat(*, model, system, content, num_predict=3000):
+    async def fake_chat(*, model, system, content, num_predict=3000, queue_wait=None):
         seen.append(content)
         return f"## part {len(seen)}\nnotes"
 
@@ -545,7 +545,7 @@ def test_a_failing_chunk_is_reported_not_silently_dropped(monkeypatch):
 
     calls = {"n": 0}
 
-    async def flaky(*, model, system, content, num_predict=3000):
+    async def flaky(*, model, system, content, num_predict=3000, queue_wait=None):
         calls["n"] += 1
         if "BOOM" in content:
             raise RuntimeError("model exploded")
@@ -558,11 +558,18 @@ def test_a_failing_chunk_is_reported_not_silently_dropped(monkeypatch):
     async def on_warning(msg):
         warnings.append(msg)
 
-    transcript = ("good " * 700) + ("BOOM " * 700) + ("good " * 700)
+    # Small chunks so ONE section fails out of many. That is this test's
+    # subject: a document with a hole in it. A document that is mostly holes is
+    # a different case and full_notes() now raises for it - see
+    # test_a_mostly_empty_document_is_not_returned_as_notes.
+    monkeypatch.setattr(settings, "NOTES_CHUNK_CHARS", 500)
+    monkeypatch.setattr(settings, "NOTES_CHUNK_OVERLAP", 0)
+    transcript = ("good " * 900) + ("BOOM " * 60) + ("good " * 900)
     out = asyncio.run(
         summarizer.full_notes(transcript, lang="en", on_warning=on_warning)
     )
     assert out                       # the healthy parts still come through
+    assert "## ok" in out
     assert warnings, "a lost section must be reported"
     assert "could not be written" in warnings[0]
 
@@ -572,7 +579,7 @@ def test_notes_keep_chunk_order_even_when_run_concurrently(monkeypatch):
 
     monkeypatch.setattr(settings, "NOTES_CONCURRENCY", 4)
 
-    async def slow_for_early_chunks(*, model, system, content, num_predict=3000):
+    async def slow_for_early_chunks(*, model, system, content, num_predict=3000, queue_wait=None):
         # Make the first chunk the slowest: if ordering were by completion
         # time, the notes would come out shuffled.
         marker = content.strip().split()[0]

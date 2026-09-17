@@ -355,15 +355,22 @@ def vllm_slots() -> asyncio.Semaphore:
 
 
 @asynccontextmanager
-async def vllm_slot() -> AsyncIterator[None]:
+async def vllm_slot(wait: float | None = None) -> AsyncIterator[None]:
     """Hold a generation slot for the WHOLE stream, not just the request.
 
     vLLM keeps a sequence busy until its last token is out, so releasing when
     the response headers arrive would let straight back in everything this is
     meant to hold back.
+
+    `wait` is how long to queue for a slot. It is not one number for everything:
+    a person watching a summary appear should be told the server is busy within
+    a couple of minutes, while a chunk of a PDF is batch work that nobody is
+    staring at and should wait far longer. Getting this wrong is not academic -
+    with one 300s deadline for both, 30 concurrent PDFs lost most of their
+    sections to the timeout and produced near-empty documents.
     """
     sem = vllm_slots()
-    wait = settings.VLLM_QUEUE_TIMEOUT_SECONDS
+    wait = settings.VLLM_QUEUE_TIMEOUT_SECONDS if wait is None else wait
     if wait and wait > 0:
         try:
             await asyncio.wait_for(sem.acquire(), wait)
@@ -397,6 +404,7 @@ async def stream_chat(
     content: str,
     num_predict: int = 3000,
     temperature: float = 0.4,
+    queue_wait: float | None = None,
 ) -> AsyncIterator[str]:
     """Yield text deltas from vLLM's /v1/chat/completions SSE stream."""
     url = settings.VLLM_URL.rstrip("/") + "/chat/completions"
@@ -415,7 +423,7 @@ async def stream_chat(
     client = await vllm_client()
     # Every path into vLLM - summary, notes chunk, translation - goes through
     # this one gate, and holds it until the last token is out.
-    async with vllm_slot():
+    async with vllm_slot(queue_wait):
         async with client.stream(
             "POST", url, json=payload, headers=_vllm_headers()
         ) as res:
@@ -444,10 +452,14 @@ async def stream_chat(
                     yield token
 
 
-async def collect_chat(*, model: str, system: str, content: str, num_predict: int = 3000) -> str:
+async def collect_chat(
+    *, model: str, system: str, content: str, num_predict: int = 3000,
+    queue_wait: float | None = None,
+) -> str:
     parts: list[str] = []
     async for token in stream_chat(
-        model=model, system=system, content=content, num_predict=num_predict
+        model=model, system=system, content=content, num_predict=num_predict,
+        queue_wait=queue_wait,
     ):
         parts.append(token)
     return strip_think("".join(parts))
@@ -588,18 +600,27 @@ async def full_notes(
                         system=directive + "\n\n" + base + reminder,
                         content=chunk,
                         num_predict=_budget_for(chunk),
+                        queue_wait=settings.NOTES_QUEUE_TIMEOUT_SECONDS,
                     )
                     if text.strip():
                         break
-                except (httpx.TimeoutException, VLLMBusy) as exc:
-                    # A timeout means the server is saturated, not that this
-                    # chunk was unlucky. Re-sending it immediately - which is
-                    # what this loop used to do - piles more work onto the
-                    # queue that just failed it, and that feedback loop is how
-                    # a busy minute became a hang. Give up on the chunk; the
-                    # caller reports it as missing, which is honest and cheap.
+                except VLLMBusy as exc:
+                    # "Every slot is taken" means come back later, not that
+                    # anything is broken - so this one IS worth retrying, after
+                    # a wait. Treating it like a dead server is what emptied 19
+                    # of 30 PDFs in the end-to-end run: each chunk gave up on
+                    # first contact and left a "missing section" marker behind.
                     logger.warning(
-                        "notes chunk %s/%s gave up (server saturated): %s",
+                        "notes chunk %s/%s waiting for a slot (attempt %s): %s",
+                        idx + 1, total, attempt + 1, exc,
+                    )
+                except httpx.TimeoutException as exc:
+                    # A read timeout is different: the request WAS accepted and
+                    # then went quiet. Re-sending it adds load to a server that
+                    # is already not answering, and that feedback loop is how a
+                    # busy minute became a hang.
+                    logger.warning(
+                        "notes chunk %s/%s gave up (no answer): %s",
                         idx + 1, total, exc,
                     )
                     break
@@ -628,6 +649,18 @@ async def full_notes(
             f"{len(failed)} of {total} sections could not be written "
             f"(part {', '.join(str(n) for n in sorted(failed))}). "
             "Everything else is included - try again to fill the gaps."
+        )
+
+    # A handful of gaps is a document with holes, and the markers say so. Most
+    # of it missing is not a document at all, and handing one over - cached,
+    # rendered to PDF, counted a success - is worse than admitting the failure.
+    # This is exactly what a 30-way end-to-end run produced before the retry
+    # above was fixed: 19 of 30 "notes" were nothing but missing-section labels.
+    if total and len(failed) > total * settings.NOTES_MAX_FAILED_FRACTION:
+        raise RuntimeError(
+            f"Only {total - len(failed)} of {total} sections could be written. "
+            "The server is too busy to produce complete notes right now - "
+            "please try again shortly."
         )
 
     return "\n\n".join(p for p in parts if p).strip()

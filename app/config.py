@@ -213,6 +213,16 @@ class Settings(BaseSettings):
     # per-chunk independent, so it parallelises; the cap stops a single
     # 60-page set of notes from taking every vLLM slot on the box.
     TRANSLATE_CONCURRENCY: int = 30
+    # How long a NOTES chunk queues for a vLLM slot. Far longer than the
+    # interactive default: nobody is watching a PDF render, and 30 concurrent
+    # PDFs legitimately queue for a long time. At the interactive 300s a 30-way
+    # end-to-end run lost most sections of 19 documents to this timeout and
+    # produced PDFs containing nothing but "section missing" labels.
+    NOTES_QUEUE_TIMEOUT_SECONDS: int = 1800
+    # Past this fraction of failed sections the notes are not notes any more,
+    # and full_notes() raises instead of returning a stub that would be cached
+    # and rendered to PDF as though it were the real thing.
+    NOTES_MAX_FAILED_FRACTION: float = 0.25
     # Optional http(s) proxy for YouTube. Set this if your server's IP gets
     # rate-limited or blocked - e.g. http://user:pass@proxy-host:port
     YOUTUBE_PROXY: str = ""
