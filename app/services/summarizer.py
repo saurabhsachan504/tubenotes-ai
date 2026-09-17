@@ -782,13 +782,14 @@ async def _write_all(
             def seen(n: int, text: str, _idx: int = idx, _budget: int = budget) -> None:
                 # Expected length: what parts of THIS video have actually run
                 # to, falling back to a fraction of the allowance before any
-                # has finished. Never claim a part is done before it is - the
-                # cap at 0.95 leaves the last step to real completion.
+                # has finished. The cap keeps a sliver back so a part never
+                # reads as finished before it is - but only a sliver, so a
+                # nearly-done job shows as nearly done.
                 expected = (
                     sum(observed) / len(observed) if observed
                     else max(1.0, _budget * _UNCALIBRATED_SHARE)
                 )
-                fraction[_idx] = min(0.95, n / max(1.0, expected))
+                fraction[_idx] = min(0.999, n / max(1.0, expected))
                 if on_text is not None:
                     # The words themselves, as they are written. A progress bar
                     # is a proxy for this; people would rather read the notes

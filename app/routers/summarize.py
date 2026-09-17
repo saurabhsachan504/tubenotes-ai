@@ -578,11 +578,14 @@ async def notes(
                 # Token-level: counts how much of each part is actually written,
                 # so the bar advances continuously instead of resting on one
                 # number while every part is generated in parallel.
-                percent = round(min(100.0, max(0.0, fraction) * 100))
+                # Ceiling just below 100: only the "done" event means done, but
+                # a job that is all but finished should say so rather than
+                # sitting at 90.
+                percent = round(min(99.9, max(0.0, fraction) * 100), 1)
             else:
                 in_flight = max(0, started - done)
                 effective = done + in_flight * 0.5
-                percent = round(min(100.0, effective / total * 100)) if total else 0
+                percent = round(min(99.9, effective / total * 100), 1) if total else 0
             queue.append(
                 _event(
                     {

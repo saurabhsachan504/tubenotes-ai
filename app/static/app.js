@@ -642,7 +642,7 @@
         }
       } else if (ev.type === "status") {
         if (inPdfFlow) {
-          updatePdfProgress(4, 92, "Preparing PDF…", ev.message);
+          updatePdfProgress(4, 99.9, "Preparing PDF…", ev.message);
         } else {
           status(ev.message, true);
         }
@@ -684,7 +684,9 @@
             ? `${ev.done} of ${ev.total} parts written` + (inFlight ? `, ${inFlight} in progress` : "")
             : `${ev.total} parts, ${inFlight} being written now`;
         if (inPdfFlow) {
-          const percent = queued ? 26 : Math.max(26, Math.min(90, ev.percent));
+          // Ceiling 99.9, not 90: the last stretch of a long job is real
+          // progress and hiding it made a nearly-finished PDF look stuck.
+          const percent = queued ? 26 : Math.max(26, Math.min(99.9, ev.percent));
           updatePdfProgress(
             3, percent,
             queued ? "Queued — server is busy…" : "Writing detailed notes…",
