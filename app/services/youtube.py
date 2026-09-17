@@ -16,12 +16,14 @@ blocked; both paths pick it up automatically.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 import threading
 import time
 from collections import OrderedDict
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlparse
 
@@ -506,25 +508,61 @@ def fetch_transcript(video_id: str) -> Transcript:
 
 
 def _fetch_transcript_uncached(video_id: str) -> Transcript:
+    """The two sources, hedged rather than queued behind one another.
+
+    These used to run strictly in order: the captions API, and yt-dlp only once
+    it had given up. A captions request that times out therefore costs
+    YOUTUBE_REQUEST_TIMEOUT_SECONDS before the alternative is even attempted -
+    measured on a real request, 19.1s to a transcript yt-dlp produced in about
+    7 on its own.
+
+    So yt-dlp is started alongside after TRANSCRIPT_HEDGE_SECONDS and the first
+    usable answer wins. The common case is untouched: captions normally answer
+    in a second or two, well inside the hedge, and YouTube sees one request.
+    """
     errors: list[str] = []
 
-    for name, fn in (("captions", _fetch_via_api), ("yt-dlp", _fetch_via_ytdlp)):
-        try:
-            transcript = fn(video_id)
-            if len(transcript.text) > 40:
-                logger.info(
-                    "transcript for %s via %s (%s chars, lang=%s)",
-                    video_id,
-                    name,
-                    len(transcript.text),
-                    transcript.language,
-                )
-                _cache_transcript(video_id, transcript)
-                return transcript
-            errors.append(f"{name}: too short")
-        except Exception as exc:
-            errors.append(f"{name}: {type(exc).__name__}: {exc}".strip()[:200])
-            logger.info("transcript %s failed for %s: %s", name, video_id, exc)
+    def usable(name: str, transcript: Transcript) -> Transcript | None:
+        if len(transcript.text) > 40:
+            logger.info(
+                "transcript for %s via %s (%s chars, lang=%s)",
+                video_id, name, len(transcript.text), transcript.language,
+            )
+            _cache_transcript(video_id, transcript)
+            return transcript
+        errors.append(f"{name}: too short")
+        return None
+
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="transcript") as pool:
+        futures: dict = {pool.submit(_fetch_via_api, video_id): "captions"}
+        hedge = max(0.0, settings.TRANSCRIPT_HEDGE_SECONDS)
+        deadline = time.monotonic() + hedge
+        hedged = False
+
+        while futures:
+            timeout = None if hedged else max(0.0, deadline - time.monotonic())
+            done, _pending = wait(
+                list(futures), timeout=timeout, return_when=FIRST_COMPLETED
+            )
+            if not done and not hedged:
+                hedged = True
+                futures[pool.submit(_fetch_via_ytdlp, video_id)] = "yt-dlp"
+                continue
+
+            for fut in done:
+                name = futures.pop(fut)
+                try:
+                    got = usable(name, fut.result())
+                except Exception as exc:
+                    errors.append(f"{name}: {type(exc).__name__}: {exc}".strip()[:200])
+                    logger.info("transcript %s failed for %s: %s", name, video_id, exc)
+                    continue
+                if got is not None:
+                    return got
+
+            if not futures and not hedged:
+                hedged = True
+                futures[pool.submit(_fetch_via_ytdlp, video_id)] = "yt-dlp"
 
     raise TranscriptUnavailable(
         "This video has no usable subtitles, or YouTube is blocking this server. "

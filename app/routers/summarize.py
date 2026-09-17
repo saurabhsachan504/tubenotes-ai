@@ -421,11 +421,46 @@ async def summarize(
 
         collected: list[str] = []
         try:
-            async for delta in summarizer.stream_summary(
-                transcript.text, lang=write_lang, mode=payload.mode
-            ):
-                collected.append(delta)
-                yield _event({"type": "delta", "text": delta})
+            # Tokens are produced into a queue rather than yielded straight out,
+            # so this loop can send a keepalive while nothing is arriving.
+            #
+            # The wait before the FIRST token is the dangerous one: stream_chat
+            # blocks on a generation slot, and until it gets one this response
+            # carries no bytes at all. With the machine full of PDF parts that
+            # wait can pass Cloudflare's 100s idle cut-off, and the browser
+            # reports a broken stream while the server is working normally.
+            tokens: asyncio.Queue = asyncio.Queue()
+
+            async def produce() -> None:
+                try:
+                    async for delta in summarizer.stream_summary(
+                        transcript.text, lang=write_lang, mode=payload.mode
+                    ):
+                        await tokens.put(("delta", delta))
+                except Exception as exc:  # noqa: BLE001 - relayed below
+                    await tokens.put(("error", exc))
+                finally:
+                    await tokens.put((None, None))
+
+            producer = asyncio.create_task(produce())
+            try:
+                while True:
+                    try:
+                        kind, value = await asyncio.wait_for(
+                            tokens.get(), settings.STREAM_HEARTBEAT_SECONDS
+                        )
+                    except (asyncio.TimeoutError, TimeoutError):
+                        yield _event({"type": "ping"})
+                        continue
+                    if kind is None:
+                        break
+                    if kind == "error":
+                        raise value
+                    collected.append(value)
+                    yield _event({"type": "delta", "text": value})
+            finally:
+                if not producer.done():
+                    producer.cancel()
         except Exception as exc:  # noqa: BLE001 - surface it to the UI
             logger.exception("summary failed for %s", video_id)
             if collected:

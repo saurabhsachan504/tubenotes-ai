@@ -27,6 +27,7 @@ _PROMPT_TOKEN_ALLOWANCE = 900
 
 _vllm_client: httpx.AsyncClient | None = None
 _vllm_slots: asyncio.Semaphore | None = None
+_batch_slots: asyncio.Semaphore | None = None
 
 
 class VLLMBusy(RuntimeError):
@@ -358,8 +359,30 @@ def vllm_slots() -> asyncio.Semaphore:
     return _vllm_slots
 
 
+def batch_slots() -> asyncio.Semaphore:
+    """The sub-limit that keeps batch work from taking the whole machine.
+
+    Writing a PDF fans out into dozens of parts, and nobody is watching any one
+    of them. A summary IS being watched. Sharing one undifferentiated gate
+    meant twenty PDFs could fill every slot and a visitor's summary crawled at
+    a share of the machine - measured at 12 tok/s, turning 25 seconds into 100.
+
+    So batch work must hold one of these as well as a generation slot, and
+    there are fewer of them than there are slots. The difference is capacity
+    that only interactive work can use.
+    """
+    global _batch_slots
+    if _batch_slots is None:
+        allowed = max(
+            1,
+            max(1, settings.VLLM_MAX_CONCURRENCY) - max(0, settings.VLLM_INTERACTIVE_RESERVE),
+        )
+        _batch_slots = asyncio.Semaphore(allowed)
+    return _batch_slots
+
+
 @asynccontextmanager
-async def vllm_slot(wait: float | None = None) -> AsyncIterator[None]:
+async def vllm_slot(wait: float | None = None, *, batch: bool = False) -> AsyncIterator[None]:
     """Hold a generation slot for the WHOLE stream, not just the request.
 
     vLLM keeps a sequence busy until its last token is out, so releasing when
@@ -375,19 +398,38 @@ async def vllm_slot(wait: float | None = None) -> AsyncIterator[None]:
     """
     sem = vllm_slots()
     wait = settings.VLLM_QUEUE_TIMEOUT_SECONDS if wait is None else wait
-    if wait and wait > 0:
+    deadline = asyncio.get_running_loop().time() + wait if wait and wait > 0 else None
+
+    async def _take(s: asyncio.Semaphore) -> None:
+        if deadline is None:
+            await s.acquire()
+            return
+        left = deadline - asyncio.get_running_loop().time()
         try:
-            await asyncio.wait_for(sem.acquire(), wait)
+            await asyncio.wait_for(s.acquire(), max(0.01, left))
         except (asyncio.TimeoutError, TimeoutError):
             raise VLLMBusy(
                 "The AI server is busy with other videos right now. "
                 "Please try again in a few minutes."
             ) from None
-    else:
-        await sem.acquire()
+
+    # Batch work takes a batch permit FIRST, then a generation slot. Because
+    # there are fewer batch permits than slots, interactive callers can always
+    # find a free slot - so this ordering cannot deadlock.
+    batch_sem = batch_slots() if batch else None
+    if batch_sem is not None:
+        await _take(batch_sem)
+    try:
+        await _take(sem)
+    except BaseException:
+        if batch_sem is not None:
+            batch_sem.release()
+        raise
     try:
         yield
     finally:
+        if batch_sem is not None:
+            batch_sem.release()
         # Never await in here. This also runs while the generator is being
         # closed after a client disconnect, and awaiting during that unwind is
         # an error - releasing a semaphore is not.
@@ -409,6 +451,7 @@ async def stream_chat(
     num_predict: int = 3000,
     temperature: float = 0.4,
     queue_wait: float | None = None,
+    batch: bool = False,
 ) -> AsyncIterator[str]:
     """Yield text deltas from vLLM's /v1/chat/completions SSE stream."""
     url = settings.VLLM_URL.rstrip("/") + "/chat/completions"
@@ -427,7 +470,7 @@ async def stream_chat(
     client = await vllm_client()
     # Every path into vLLM - summary, notes chunk, translation - goes through
     # this one gate, and holds it until the last token is out.
-    async with vllm_slot(queue_wait):
+    async with vllm_slot(queue_wait, batch=batch):
         async with client.stream(
             "POST", url, json=payload, headers=_vllm_headers()
         ) as res:
@@ -458,12 +501,12 @@ async def stream_chat(
 
 async def collect_chat(
     *, model: str, system: str, content: str, num_predict: int = 3000,
-    queue_wait: float | None = None,
+    queue_wait: float | None = None, batch: bool = False,
 ) -> str:
     parts: list[str] = []
     async for token in stream_chat(
         model=model, system=system, content=content, num_predict=num_predict,
-        queue_wait=queue_wait,
+        queue_wait=queue_wait, batch=batch,
     ):
         parts.append(token)
     return strip_think("".join(parts))
@@ -655,6 +698,7 @@ async def full_notes(
                         content=chunk,
                         num_predict=_budget_for(chunk),
                         queue_wait=settings.NOTES_QUEUE_TIMEOUT_SECONDS,
+                        batch=True,
                     )
                     if text.strip():
                         break

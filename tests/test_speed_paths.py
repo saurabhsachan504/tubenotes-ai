@@ -200,7 +200,7 @@ def test_notes_chunks_run_concurrently(monkeypatch):
     in_flight = 0
     peak = 0
 
-    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None):
+    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
         nonlocal in_flight, peak
         in_flight += 1
         peak = max(peak, in_flight)
@@ -226,7 +226,7 @@ def test_notes_keep_transcript_order_despite_concurrency(monkeypatch):
 
     import re as _re
 
-    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None):
+    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
         marker = _re.search(r"MARK(\d+)", content)
         # Finish out of order on purpose: the first chunk replies last.
         await asyncio.sleep(0.03 if "MARK0" in content else 0.005)
@@ -411,7 +411,7 @@ def test_a_failed_section_is_written_into_the_notes(monkeypatch):
     monkeypatch.setattr(settings, "NOTES_CHUNK_OVERLAP", 0)
     monkeypatch.setattr(settings, "NOTES_CHUNK_RETRIES", 2)
 
-    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None):
+    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
         if "MARK2" in content:
             raise RuntimeError("Ollama exploded")
         return "## written\n\ndetails"
@@ -443,7 +443,7 @@ def test_a_mostly_empty_document_is_not_returned_as_notes(monkeypatch):
     monkeypatch.setattr(settings, "NOTES_CHUNK_OVERLAP", 0)
     monkeypatch.setattr(settings, "NOTES_CHUNK_RETRIES", 1)
 
-    async def mostly_broken(*, model, system, content, num_predict=3000, queue_wait=None):
+    async def mostly_broken(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
         if "MARK0" in content:
             return "## written\n\ndetails"
         raise summarizer.VLLMBusy("no slots")
@@ -463,7 +463,7 @@ def test_a_busy_gate_is_retried_but_a_dead_server_is_not(monkeypatch):
 
     busy_calls = {"n": 0}
 
-    async def busy_once_then_ok(*, model, system, content, num_predict=3000, queue_wait=None):
+    async def busy_once_then_ok(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
         busy_calls["n"] += 1
         if busy_calls["n"] == 1:
             raise summarizer.VLLMBusy("no slots")
@@ -481,7 +481,7 @@ def test_a_busy_gate_is_retried_but_a_dead_server_is_not(monkeypatch):
     monkeypatch.setattr(settings, "NOTES_CHUNK_CHARS", 100_000)
     timeout_calls = {"n": 0}
 
-    async def always_times_out(*, model, system, content, num_predict=3000, queue_wait=None):
+    async def always_times_out(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
         timeout_calls["n"] += 1
         raise httpx.ReadTimeout("silent")
 
@@ -495,7 +495,7 @@ def test_clean_notes_carry_no_warning(monkeypatch):
     monkeypatch.setattr(settings, "NOTES_CHUNK_CHARS", 300)
     monkeypatch.setattr(settings, "NOTES_CHUNK_OVERLAP", 0)
 
-    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None):
+    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
         return "## written\n\ndetails"
 
     monkeypatch.setattr(summarizer, "collect_chat", fake_collect)
@@ -548,7 +548,7 @@ def test_repeats_are_stripped_across_chunks_too(monkeypatch):
     monkeypatch.setattr(settings, "NOTES_CHUNK_CHARS", 300)
     monkeypatch.setattr(settings, "NOTES_CHUNK_OVERLAP", 0)
 
-    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None):
+    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
         return "## वही शीर्षक\n\n- यह बिल्कुल वही विस्तृत बिंदु है जो हर हिस्से में आ रहा है।"
 
     monkeypatch.setattr(summarizer, "collect_chat", fake_collect)
@@ -602,3 +602,41 @@ def test_a_long_silence_gets_a_heartbeat():
     assert Settings.model_fields["STREAM_HEARTBEAT_SECONDS"].default < 100, (
         "the heartbeat must fire well inside Cloudflare's 100s idle cut-off"
     )
+
+
+def test_batch_work_cannot_starve_an_interactive_summary(monkeypatch):
+    """Twenty PDFs must not leave a visitor's summary waiting.
+
+    Measured before this split: 377 tok/s spread over 32 sequences is ~12 tok/s
+    each, and a summary that takes 25s on a quiet box took 100.
+    """
+    monkeypatch.setattr(settings, "VLLM_MAX_CONCURRENCY", 10)
+    monkeypatch.setattr(settings, "VLLM_INTERACTIVE_RESERVE", 3)
+    monkeypatch.setattr(settings, "VLLM_QUEUE_TIMEOUT_SECONDS", 5)
+    summarizer._vllm_slots = None
+    summarizer._batch_slots = None
+
+    async def scenario():
+        held = []
+        # Fill the machine with batch work.
+        for _ in range(20):
+            cm = summarizer.vllm_slot(batch=True)
+            try:
+                await asyncio.wait_for(cm.__aenter__(), 0.05)
+                held.append(cm)
+            except (asyncio.TimeoutError, TimeoutError, summarizer.VLLMBusy):
+                break
+        # Batch is capped below the total, leaving room by construction.
+        assert len(held) == 10 - 3, f"batch took {len(held)} of 10 slots"
+
+        # An interactive caller still gets in immediately.
+        async with asyncio.timeout(1):
+            async with summarizer.vllm_slot():
+                pass
+
+        for cm in held:
+            await cm.__aexit__(None, None, None)
+
+    asyncio.run(scenario())
+    summarizer._vllm_slots = None
+    summarizer._batch_slots = None

@@ -182,6 +182,17 @@ class Settings(BaseSettings):
     TRANSCRIPT_CACHE_MAX_ENTRIES: int = 200
     # Applied to each request made by youtube-transcript-api and yt-dlp.
     YOUTUBE_REQUEST_TIMEOUT_SECONDS: int = 12
+    # The two transcript sources used to run one after the other: the captions
+    # API first, and yt-dlp only once it had failed - which, on a request that
+    # times out, means 12 seconds of waiting before the second one even starts.
+    # Measured on a real request: 19.1s to a transcript that yt-dlp could have
+    # produced in about 7.
+    #
+    # So yt-dlp now joins in after this many seconds rather than waiting its
+    # turn, and whichever answers first wins. Short enough to cut the stall,
+    # long enough that the common case - captions answering in ~1-3s - still
+    # costs YouTube exactly one request.
+    TRANSCRIPT_HEDGE_SECONDS: float = 4.0
     # ---- output cache ----------------------------------------------------
     # Ek baar bani summary sabke liye. Default BAND hai - table ban jaane aur
     # sab theek dikhne ke baad .env me OUTPUT_CACHE_ENABLED=true kijiye.
@@ -238,6 +249,13 @@ class Settings(BaseSettings):
     # end-to-end run lost most sections of 19 documents to this timeout and
     # produced PDFs containing nothing but "section missing" labels.
     NOTES_QUEUE_TIMEOUT_SECONDS: int = 1800
+    # Slots (per worker) that batch work may never occupy, so an interactive
+    # summary someone is watching is never stuck behind PDF parts nobody is.
+    # Measured: with 20 PDFs running, 377 tok/s spread over 32 sequences is
+    # ~12 tok/s each, and a 1,200-token summary that should take 25s took 100.
+    # Reserving capacity does not slow the PDFs down much - they have the other
+    # slots and they are not being watched - but it keeps the site responsive.
+    VLLM_INTERACTIVE_RESERVE: int = 8
     # Past this fraction of failed sections the notes are not notes any more,
     # and full_notes() raises instead of returning a stub that would be cached
     # and rendered to PDF as though it were the real thing.
