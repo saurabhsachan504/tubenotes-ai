@@ -300,6 +300,7 @@
             <div class="pdf-flow-copy" id="pdfFlowCopy">Reading the video and preparing your detailed notes. This may take a few moments.</div>
             <div class="pdf-flow-meter"><div class="progress"><i id="pdfFlowBar" style="width:4%"></i></div><span class="pdf-flow-percent" id="pdfFlowPercent">4%</span></div>
           </div>
+        <div class="pdf-flow-live" id="pdfFlowLive"></div>
           <div class="pdf-steps" aria-label="PDF generation progress">
             <div class="pdf-step active" data-pdf-step="1"><div class="pdf-step-dot">1</div>Reading<br>Video</div>
             <div class="pdf-step" data-pdf-step="2"><div class="pdf-step-dot">2</div>Analyzing<br>Content</div>
@@ -387,6 +388,7 @@
     if (!signedIn()) { openAuth("signup", "Create a free account to summarize — 5 videos free."); return; }
 
     const wantNotes = requestedMode === "notes";
+    const liveParts = [];
     const target = targetOverride === undefined ? outLang() : targetOverride;
     setBusy(true);
     if (pdfProgress) {
@@ -650,6 +652,16 @@
         } else {
           note("warn", warnings.map(escapeAttr).join("<br>"));
         }
+      } else if (ev.type === "part") {
+        // Live notes. Parts are written in parallel and arrive interleaved, so
+        // each is buffered by its own index and the whole document is
+        // reassembled in order on every update - watching the text appear beats
+        // watching a percentage.
+        if (!liveParts[ev.index]) liveParts[ev.index] = "";
+        liveParts[ev.index] += ev.text || "";
+        const joined = liveParts.filter((p) => p != null).join("\n\n");
+        const target = inPdfFlow ? $("pdfFlowLive") : $("rBody");
+        if (target) target.innerHTML = md2html(joined);
       } else if (ev.type === "ping") {
         // Keepalive only - the server is still working. It exists so the
         // connection is never silent long enough for Cloudflare to close it.

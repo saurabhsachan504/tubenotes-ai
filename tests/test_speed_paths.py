@@ -200,7 +200,7 @@ def test_notes_chunks_run_concurrently(monkeypatch):
     in_flight = 0
     peak = 0
 
-    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
+    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None, batch=False, on_token=None):
         nonlocal in_flight, peak
         in_flight += 1
         peak = max(peak, in_flight)
@@ -226,7 +226,7 @@ def test_notes_keep_transcript_order_despite_concurrency(monkeypatch):
 
     import re as _re
 
-    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
+    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None, batch=False, on_token=None):
         marker = _re.search(r"MARK(\d+)", content)
         # Finish out of order on purpose: the first chunk replies last.
         await asyncio.sleep(0.03 if "MARK0" in content else 0.005)
@@ -411,7 +411,7 @@ def test_a_failed_section_is_written_into_the_notes(monkeypatch):
     monkeypatch.setattr(settings, "NOTES_CHUNK_OVERLAP", 0)
     monkeypatch.setattr(settings, "NOTES_CHUNK_RETRIES", 2)
 
-    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
+    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None, batch=False, on_token=None):
         if "MARK2" in content:
             raise RuntimeError("Ollama exploded")
         return "## written\n\ndetails"
@@ -443,7 +443,7 @@ def test_a_mostly_empty_document_is_not_returned_as_notes(monkeypatch):
     monkeypatch.setattr(settings, "NOTES_CHUNK_OVERLAP", 0)
     monkeypatch.setattr(settings, "NOTES_CHUNK_RETRIES", 1)
 
-    async def mostly_broken(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
+    async def mostly_broken(*, model, system, content, num_predict=3000, queue_wait=None, batch=False, on_token=None):
         if "MARK0" in content:
             return "## written\n\ndetails"
         raise summarizer.VLLMBusy("no slots")
@@ -463,7 +463,7 @@ def test_a_busy_gate_is_retried_but_a_dead_server_is_not(monkeypatch):
 
     busy_calls = {"n": 0}
 
-    async def busy_once_then_ok(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
+    async def busy_once_then_ok(*, model, system, content, num_predict=3000, queue_wait=None, batch=False, on_token=None):
         busy_calls["n"] += 1
         if busy_calls["n"] == 1:
             raise summarizer.VLLMBusy("no slots")
@@ -481,7 +481,7 @@ def test_a_busy_gate_is_retried_but_a_dead_server_is_not(monkeypatch):
     monkeypatch.setattr(settings, "NOTES_CHUNK_CHARS", 100_000)
     timeout_calls = {"n": 0}
 
-    async def always_times_out(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
+    async def always_times_out(*, model, system, content, num_predict=3000, queue_wait=None, batch=False, on_token=None):
         timeout_calls["n"] += 1
         raise httpx.ReadTimeout("silent")
 
@@ -495,7 +495,7 @@ def test_clean_notes_carry_no_warning(monkeypatch):
     monkeypatch.setattr(settings, "NOTES_CHUNK_CHARS", 300)
     monkeypatch.setattr(settings, "NOTES_CHUNK_OVERLAP", 0)
 
-    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
+    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None, batch=False, on_token=None):
         return "## written\n\ndetails"
 
     monkeypatch.setattr(summarizer, "collect_chat", fake_collect)
@@ -548,7 +548,7 @@ def test_repeats_are_stripped_across_chunks_too(monkeypatch):
     monkeypatch.setattr(settings, "NOTES_CHUNK_CHARS", 300)
     monkeypatch.setattr(settings, "NOTES_CHUNK_OVERLAP", 0)
 
-    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
+    async def fake_collect(*, model, system, content, num_predict=3000, queue_wait=None, batch=False, on_token=None):
         return "## वही शीर्षक\n\n- यह बिल्कुल वही विस्तृत बिंदु है जो हर हिस्से में आ रहा है।"
 
     monkeypatch.setattr(summarizer, "collect_chat", fake_collect)

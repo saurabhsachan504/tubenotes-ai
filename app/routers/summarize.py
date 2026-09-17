@@ -567,14 +567,22 @@ async def notes(
     async def generate() -> AsyncIterator[bytes]:
         queue: list[bytes] = []
 
-        async def on_progress(done: int, total: int, started: int = 0) -> None:
+        async def on_progress(
+            done: int, total: int, started: int = 0, fraction: float | None = None
+        ) -> None:
             # A part that has started but not landed is real progress, so it
             # counts for half. Without this the bar could not move at all until
             # the first part finished - which, with parts running in parallel,
             # is most of the way through the job.
-            in_flight = max(0, started - done)
-            effective = done + in_flight * 0.5
-            percent = round(min(100.0, effective / total * 100)) if total else 0
+            if fraction is not None:
+                # Token-level: counts how much of each part is actually written,
+                # so the bar advances continuously instead of resting on one
+                # number while every part is generated in parallel.
+                percent = round(min(100.0, max(0.0, fraction) * 100))
+            else:
+                in_flight = max(0, started - done)
+                effective = done + in_flight * 0.5
+                percent = round(min(100.0, effective / total * 100)) if total else 0
             queue.append(
                 _event(
                     {
@@ -586,6 +594,11 @@ async def notes(
                     }
                 )
             )
+
+        def on_text(index: int, text: str) -> None:
+            # Synchronous on purpose: it is called from the token loop, and the
+            # queue is drained by the same generator a moment later.
+            queue.append(_event({"type": "part", "index": index, "text": text}))
 
         async def on_warning(message: str) -> None:
             # Anything that could make the notes incomplete is surfaced, never
@@ -616,6 +629,7 @@ async def notes(
                 lang=lang,
                 on_progress=on_progress,
                 on_warning=on_warning,
+                on_text=on_text,
             )
         )
         try:

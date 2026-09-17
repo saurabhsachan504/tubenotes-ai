@@ -499,7 +499,7 @@ def test_notes_read_the_entire_transcript_not_a_sample(monkeypatch):
 
     seen: list[str] = []
 
-    async def fake_chat(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
+    async def fake_chat(*, model, system, content, num_predict=3000, queue_wait=None, batch=False, on_token=None):
         seen.append(content)
         return f"## part {len(seen)}\nnotes"
 
@@ -548,7 +548,7 @@ def test_a_failing_chunk_is_reported_not_silently_dropped(monkeypatch):
 
     calls = {"n": 0}
 
-    async def flaky(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
+    async def flaky(*, model, system, content, num_predict=3000, queue_wait=None, batch=False, on_token=None):
         calls["n"] += 1
         if "BOOM" in content:
             raise RuntimeError("model exploded")
@@ -582,7 +582,7 @@ def test_notes_keep_chunk_order_even_when_run_concurrently(monkeypatch):
 
     monkeypatch.setattr(settings, "NOTES_CONCURRENCY", 4)
 
-    async def slow_for_early_chunks(*, model, system, content, num_predict=3000, queue_wait=None, batch=False):
+    async def slow_for_early_chunks(*, model, system, content, num_predict=3000, queue_wait=None, batch=False, on_token=None):
         # Make the first chunk the slowest: if ordering were by completion
         # time, the notes would come out shuffled.
         marker = content.strip().split()[0]
@@ -606,7 +606,7 @@ def test_notes_progress_counts_every_chunk(monkeypatch):
     monkeypatch.setattr(summarizer, "collect_chat", fake_chat)
     seen: list[tuple[int, int, int]] = []
 
-    async def on_progress(done, total, started=0):
+    async def on_progress(done, total, started=0, fraction=None):
         seen.append((done, total, started))
 
     transcript = "word " * 6000

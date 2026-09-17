@@ -501,14 +501,30 @@ async def stream_chat(
 
 async def collect_chat(
     *, model: str, system: str, content: str, num_predict: int = 3000,
-    queue_wait: float | None = None, batch: bool = False,
+    queue_wait: float | None = None, batch: bool = False, on_token=None,
 ) -> str:
+    """Collect a full answer. `on_token(n)` reports tokens so far as they land.
+
+    The caller needs that to show movement: the parts of a set of notes are
+    written in parallel and all land at roughly the same moment, so a bar that
+    only advances on completion sits frozen for the whole job and then jumps.
+    """
     parts: list[str] = []
+    pending: list[str] = []
     async for token in stream_chat(
         model=model, system=system, content=content, num_predict=num_predict,
         queue_wait=queue_wait, batch=batch,
     ):
         parts.append(token)
+        if on_token is not None:
+            pending.append(token)
+            # Batched, so the wire carries a readable phrase per message rather
+            # than one JSON envelope per token.
+            if len(pending) >= 16:
+                on_token(len(parts), "".join(pending))
+                pending.clear()
+    if on_token is not None and pending:
+        on_token(len(parts), "".join(pending))
     return strip_think("".join(parts))
 
 
@@ -627,7 +643,7 @@ def _budget_for(chunk: str) -> int:
 
 
 async def full_notes(
-    transcript: str, *, lang: str, on_progress=None, on_warning=None
+    transcript: str, *, lang: str, on_progress=None, on_warning=None, on_text=None
 ) -> str:
     """Exhaustive notes covering the WHOLE video - this is what the PDF shows.
 
@@ -670,13 +686,20 @@ async def full_notes(
     failed: list[int] = []
     done = 0
     started = 0
+    # How far each part has got, 0..1. A part that is half written is half of a
+    # part's worth of progress - which is what makes the bar move instead of
+    # resting on one number until everything finishes at once.
+    fraction: list[float] = [0.0] * total
     lock = asyncio.Lock()
 
     # Tell the caller the shape of the job before any of it finishes. Chunks
     # run in PARALLEL, so the first completion can be minutes away - and until
     # then the UI had nothing at all to show and sat on one frozen percentage.
+    def overall() -> float:
+        return (done + sum(fraction)) / total if total else 0.0
+
     if on_progress:
-        await on_progress(0, total, 0)
+        await on_progress(0, total, 0, 0.0)
     semaphore = asyncio.Semaphore(max(1, settings.NOTES_CONCURRENCY))
 
     async def write_chunk(idx: int, chunk: str) -> None:
@@ -689,7 +712,19 @@ async def full_notes(
             async with lock:
                 started += 1
                 if on_progress:
-                    await on_progress(done, total, started)
+                    await on_progress(done, total, started, overall())
+
+            budget = _budget_for(chunk)
+
+            def seen(n: int, text: str, _idx: int = idx, _budget: int = budget) -> None:
+                # Never let a part claim to be finished before it is: cap at
+                # 0.95 so the last step always belongs to the real completion.
+                fraction[_idx] = min(0.95, n / max(1, _budget))
+                if on_text is not None:
+                    # The words themselves, as they are written. A progress bar
+                    # is a proxy for this; people would rather read the notes
+                    # appearing than watch a number.
+                    on_text(_idx, text)
             for attempt in range(attempts):
                 try:
                     text = await collect_chat(
@@ -699,6 +734,7 @@ async def full_notes(
                         num_predict=_budget_for(chunk),
                         queue_wait=settings.NOTES_QUEUE_TIMEOUT_SECONDS,
                         batch=True,
+                        on_token=seen,
                     )
                     if text.strip():
                         break
@@ -734,13 +770,33 @@ async def full_notes(
         parts[idx] = (text or "").strip()
         async with lock:
             done += 1
+            fraction[idx] = 0.0          # folded into `done` now
             if not parts[idx]:
                 failed.append(idx + 1)
                 parts[idx] = _missing_marker(idx + 1, total, lang)
             if on_progress:
-                await on_progress(done, total, started)
+                await on_progress(done, total, started, overall())
 
-    await asyncio.gather(*(write_chunk(i, c) for i, c in enumerate(chunks)))
+    async def tick() -> None:
+        """Emit the running total every so often.
+
+        write_chunk() only reports when a part starts or ends, and the token
+        counts it records in between would otherwise never reach the caller.
+        Every second and a half is often enough to look continuous and rare
+        enough to stay invisible next to the generation itself.
+        """
+        while True:
+            await asyncio.sleep(1.5)
+            if on_progress:
+                async with lock:
+                    await on_progress(done, total, started, overall())
+
+    ticker = asyncio.create_task(tick()) if on_progress else None
+    try:
+        await asyncio.gather(*(write_chunk(i, c) for i, c in enumerate(chunks)))
+    finally:
+        if ticker is not None:
+            ticker.cancel()
 
     if failed and on_warning:
         await on_warning(

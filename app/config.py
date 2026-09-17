@@ -157,7 +157,15 @@ class Settings(BaseSettings):
     # right trade here because the box exists to serve many videos at once, and
     # total work finishes far sooner - but it is the number to revisit if
     # single-user latency ever matters more than throughput.
-    VLLM_MAX_CONCURRENCY: int = 32
+    # 96 = vLLM's --max-num-seqs, so ONE worker can fill the machine on its
+    # own. At 32 the batch permits worked out to 24, and a 20-browser run sat
+    # at "Running: 24" against a server sized for 96 - a quarter of the box,
+    # and the measured difference between 340 tok/s and 1,390.
+    #
+    # If load does spread over all three workers they can offer 288; vLLM runs
+    # 96 and queues the rest, which is safe now that the queue is bounded,
+    # retries back off, and batch work waits on NOTES_QUEUE_TIMEOUT_SECONDS.
+    VLLM_MAX_CONCURRENCY: int = 96
     # How long a request may wait for a free slot before it is told the server
     # is busy. Answering "try again shortly" in a minute is kinder than a
     # connection that hangs for half an hour and then dies anyway.
@@ -255,7 +263,7 @@ class Settings(BaseSettings):
     # ~12 tok/s each, and a 1,200-token summary that should take 25s took 100.
     # Reserving capacity does not slow the PDFs down much - they have the other
     # slots and they are not being watched - but it keeps the site responsive.
-    VLLM_INTERACTIVE_RESERVE: int = 8
+    VLLM_INTERACTIVE_RESERVE: int = 16
     # Past this fraction of failed sections the notes are not notes any more,
     # and full_notes() raises instead of returning a stub that would be cached
     # and rendered to PDF as though it were the real thing.
