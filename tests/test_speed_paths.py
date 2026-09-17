@@ -727,3 +727,26 @@ def test_a_late_arrival_shrinks_everyone_elses_share(monkeypatch):
     assert forty * 40 <= 96, "shares together must not exceed the gate"
     assert forty >= 2, "nobody is starved down to serial work"
     summarizer._active_notes = 0
+
+
+def test_progress_is_scaled_by_chunk_size_not_the_budget():
+    """The denominator has to match what a part really writes.
+
+    Measured over 232 cached sets of notes: 64,233 transcript characters in,
+    33,294 characters of notes out. Scaling by the token BUDGET instead put the
+    bar on the wrong scale - a full chunk was assumed to write ~614 tokens
+    against a real ~2,000 - so it raced to the 99.9% cap partway through the
+    work and then appeared to stall.
+    """
+    from app.services.summarizer import _expected_tokens
+
+    big = _expected_tokens(12000, 4096)
+    small = _expected_tokens(1000, 4096)
+
+    assert big > small, "a bigger part must be expected to write more"
+    # A full chunk should be expected to write a substantial share of a 4096
+    # budget - not the sixth the old flat guess assumed.
+    assert 1200 < big < 4096
+    # Never over the allowance, never absurd for a tiny tail.
+    assert _expected_tokens(10**6, 4096) <= 4096
+    assert _expected_tokens(1, 4096) >= 32

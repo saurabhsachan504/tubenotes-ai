@@ -25,10 +25,22 @@ logger = logging.getLogger("trialguard.summarizer")
 # Measured against the longest of these prompts with a wide margin.
 _PROMPT_TOKEN_ALLOWANCE = 900
 
-# Before any part of a video has finished there is nothing to calibrate
-# against, so assume a part uses about this share of its token allowance.
-# Measured across real videos: ~400 tokens written against a 4096 budget.
-_UNCALIBRATED_SHARE = 0.15
+# How much text a part writes, as a share of the text it was given. Measured
+# over 232 cached sets of notes: 64,233 transcript characters in, 33,294
+# characters of notes out.
+#
+# This replaces guessing from the token BUDGET. The budget is a ceiling and a
+# part rarely approaches it, so scaling progress by it put the bar on the wrong
+# scale entirely - it raced to the cap partway through the real work and then
+# crawled, which is what "slows down after 70%" looks like.
+_NOTES_OUTPUT_RATIO = 0.52
+
+
+def _expected_tokens(chunk_chars: int, budget: int) -> float:
+    """Roughly how many tokens a part of this size will write."""
+    est = (chunk_chars * _NOTES_OUTPUT_RATIO) / max(1.0, settings.CHARS_PER_TOKEN)
+    # Never above what the model is allowed to produce, never absurdly small.
+    return max(32.0, min(float(budget), est))
 
 _vllm_client: httpx.AsyncClient | None = None
 _vllm_slots: asyncio.Semaphore | None = None
@@ -794,7 +806,7 @@ async def _write_all(
                 # nearly-done job shows as nearly done.
                 expected = (
                     sum(observed) / len(observed) if observed
-                    else max(1.0, _budget * _UNCALIBRATED_SHARE)
+                    else _expected_tokens(len(chunk), _budget)
                 )
                 fraction[_idx] = min(0.999, n / max(1.0, expected))
                 if on_text is not None:
