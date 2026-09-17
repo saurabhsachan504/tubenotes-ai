@@ -722,6 +722,13 @@ async def _write_all(
     on_progress=None, on_warning=None, on_text=None,
 ) -> str:
     total = len(chunks)
+    # Short videos are not batch work. Making a two-part job queue behind forty
+    # fourteen-part ones is what made a 16-minute video feel as slow as a
+    # two-hour one; letting it use the interactive reserve costs the long jobs
+    # almost nothing and finishes the short one while someone is still watching.
+    is_short = total <= max(1, settings.NOTES_SHORT_JOB_CHUNKS)
+    if is_short:
+        logger.info("notes job is %s part(s): treating as interactive", total)
     parts: list[str] = [""] * total
     failed: list[int] = []
     done = 0
@@ -803,7 +810,7 @@ async def _write_all(
                         content=chunk,
                         num_predict=_budget_for(chunk),
                         queue_wait=settings.NOTES_QUEUE_TIMEOUT_SECONDS,
-                        batch=True,
+                        batch=not is_short,
                         on_token=seen,
                     )
                     if text.strip():

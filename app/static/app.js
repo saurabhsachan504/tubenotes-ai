@@ -590,6 +590,17 @@
       } else if (ev.type === "delta") {
         text += ev.text;
         body.innerHTML = md2html(text) + '<span class="cursor"></span>';
+        if (inPdfFlow) {
+          // The PDF flow runs /summarize before /notes, and progress events
+          // only exist for notes - so this whole phase used to leave the bar
+          // parked on the 24% its meta event set, for as long as the summary
+          // took. Advance it with the text actually arriving instead.
+          const share = Math.min(1, text.length / 3000);
+          updatePdfProgress(
+            2, 10 + share * 14, "Summarising…",
+            "Reading the video and writing the overview. The detailed notes start next."
+          );
+        }
       } else if (ev.type === "status") {
         status(ev.message, true);
       } else if (ev.type === "done") {

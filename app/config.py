@@ -256,6 +256,15 @@ class Settings(BaseSettings):
     # PDFs legitimately queue for a long time. At the interactive 300s a 30-way
     # end-to-end run lost most sections of 19 documents to this timeout and
     # produced PDFs containing nothing but "section missing" labels.
+    # A video short enough to need this many parts or fewer is treated as
+    # interactive work, not batch: it uses the reserved slots and skips the
+    # batch queue entirely.
+    #
+    # Shortest-job-first, and the reason is a measurement: a 16-minute video is
+    # two parts, but it used to wait for a batch permit exactly as long as a
+    # two-hour, fourteen-part job - so the quick thing felt as slow as the slow
+    # thing. Three parts is about 45 minutes of video at NOTES_CHUNK_CHARS.
+    NOTES_SHORT_JOB_CHUNKS: int = 3
     NOTES_QUEUE_TIMEOUT_SECONDS: int = 1800
     # Slots (per worker) that batch work may never occupy, so an interactive
     # summary someone is watching is never stuck behind PDF parts nobody is.
