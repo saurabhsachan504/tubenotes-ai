@@ -94,8 +94,13 @@ async def _obtain_transcript(payload: VideoRequest, video_id: str) -> youtube.Tr
             len(supplied),
             payload.transcript_lang,
         )
+        # clean_transcript() is a regex sweep over as much as 5 MB. On the
+        # event loop that stalls every other stream in this worker, which
+        # matters more now that the worker count is low and each worker
+        # carries many streams.
+        cleaned = await run_in_threadpool(youtube.clean_transcript, supplied)
         return youtube.Transcript(
-            text=youtube.clean_transcript(supplied),
+            text=cleaned,
             language=(payload.transcript_lang or "").split("-")[0].lower() or None,
             is_generated=True,
             source="client",

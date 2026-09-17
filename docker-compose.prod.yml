@@ -70,7 +70,7 @@ services:
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000
-                    --workers 3 --proxy-headers --forwarded-allow-ips='*'
+                    --workers 1 --proxy-headers --forwarded-allow-ips='*'
                     --timeout-graceful-shutdown 30"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/healthz || exit 1"]
@@ -90,8 +90,17 @@ volumes:
 # ke beech resident rehte hain (warna har `up` par 85s engine init), aur isi
 # wajah se --workers 3 mumkin hai - 26B model ki teen copy nahi chahiye.
 #
-# CONCURRENCY CONTRACT: --workers 3 (upar) x VLLM_MAX_CONCURRENCY=10 (.env)
-# = 30 = vLLM ka --max-num-seqs. Ye teen number hamesha saath me badalte hain.
+# CONCURRENCY CONTRACT: --workers 1 (upar) x VLLM_MAX_CONCURRENCY=30 (.env)
+# = 30 = vLLM ka --max-num-seqs.
+#
+# Ek hi worker jaan-boojh kar hai. 3 x 10 ka hisaab sahi tha par behaviour
+# nahi: 30 connection ka burst workers me barabar nahi batta - poora ka poora
+# ek worker par gaya, aur vLLM "Running: 10, Waiting: 0" par baith gaya jabki
+# do-tihai GPU khali thi. Per-worker gate ya to GPU kam use karega ya zyada
+# bhar dega; bilkul theek wo tabhi ho jab workers aapas me baat karein.
+# Ek worker se ye sawaal hi khatam. Kharcha kuch nahi: ye app per-request CPU
+# kaam karta hi nahi - token relay karta hai - aur har blocking call pehle se
+# thread pool me hai.
 networks:
   baota_net:
     external: true

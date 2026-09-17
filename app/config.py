@@ -110,11 +110,22 @@ class Settings(BaseSettings):
     # them at a time; the overflow sat in vLLM's queue until it timed out, and
     # the retry loop then fed it straight back in. That is the hang.
     #
-    # THIS IS PER UVICORN WORKER, so the number that reaches the GPU is
-    # (workers x VLLM_MAX_CONCURRENCY). The deployment runs 3 workers x 10 = 30
-    # in flight, matching vLLM's --max-num-seqs 30 exactly: the app is allowed
-    # to fill the server and never to overfill it.
-    VLLM_MAX_CONCURRENCY: int = 10
+    # THIS IS PER UVICORN WORKER, so what reaches the GPU is
+    # (workers x VLLM_MAX_CONCURRENCY).
+    #
+    # The deployment runs ONE worker, so this number IS the global limit and it
+    # is set to vLLM's --max-num-seqs exactly. That is deliberate. With three
+    # workers x 10 the arithmetic was right but the behaviour was not: a burst
+    # of connections does not spread evenly across workers, and a 30-request
+    # strain test landed entirely on one of them - vLLM sat at
+    # "Running: 10, Waiting: 0" while two thirds of the GPU went unused.
+    #
+    # A per-worker gate can only under-use the GPU or overfill it; it cannot be
+    # exactly right without cross-process coordination. One worker makes the
+    # question disappear, and costs nothing here: this app does no per-request
+    # CPU work worth parallelising - it relays tokens, and every blocking call
+    # it makes already runs in the thread pool.
+    VLLM_MAX_CONCURRENCY: int = 30
     # How long a request may wait for a free slot before it is told the server
     # is busy. Answering "try again shortly" in a minute is kinder than a
     # connection that hangs for half an hour and then dies anyway.
