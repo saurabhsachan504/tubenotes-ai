@@ -131,22 +131,24 @@ class Settings(BaseSettings):
     # that would have taken a millisecond. Several processes means several
     # GILs, which is the only thing that actually fixes it.
     #
-    # Set to vLLM's --max-num-seqs, not to a third of it, because the gate is
-    # per process and load does NOT spread evenly: a burst of connections lands
-    # on one worker. At 10 that worker drove vLLM at batch 10; measured
-    # throughput by batch size (2 reps, best-of, warmed) is
+    # PER UVICORN WORKER: 3 workers x 32 = 96, matching --max-num-seqs 96.
     #
-    #     batch 10 -> 311 tok/s     batch 24 -> 641 tok/s
-    #     batch 16 -> 465 tok/s     batch 30 -> 659 tok/s
+    # Sized from measurement, not intuition. Throughput on this box keeps
+    # climbing with batch size - there is no knee below the ceiling:
     #
-    # so the concentrated case was running at less than half the box's rate.
-    # At 30 a single worker can fill the server on its own.
+    #     batch 30 ->  650 tok/s      batch 64 -> 1132 tok/s
+    #     batch 48 ->  949 tok/s      batch 96 -> 1390 tok/s
     #
-    # If load DOES spread, three workers can offer 90 and vLLM will run 30 and
-    # queue the rest. That is now safe in a way it was not before the gate
-    # existed: the queue is bounded by this number, retries back off and never
-    # follow a timeout, and VLLM_QUEUE_TIMEOUT_SECONDS ends a genuine pile-up.
-    VLLM_MAX_CONCURRENCY: int = 30
+    # against 140 tok/s at the batch of 4 this deployment started with. KV
+    # cache is not the constraint either: 30 running sequences used 11.5% of
+    # 59 GiB.
+    #
+    # The cost is per-stream speed: 21.7 tok/s each at batch 30 against 14.5 at
+    # batch 96. A single user alone on the box sees a slower stream. That is the
+    # right trade here because the box exists to serve many videos at once, and
+    # total work finishes far sooner - but it is the number to revisit if
+    # single-user latency ever matters more than throughput.
+    VLLM_MAX_CONCURRENCY: int = 32
     # How long a request may wait for a free slot before it is told the server
     # is busy. Answering "try again shortly" in a minute is kinder than a
     # connection that hangs for half an hour and then dies anyway.
