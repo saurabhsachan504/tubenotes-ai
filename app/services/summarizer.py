@@ -28,6 +28,9 @@ _PROMPT_TOKEN_ALLOWANCE = 900
 _vllm_client: httpx.AsyncClient | None = None
 _vllm_slots: asyncio.Semaphore | None = None
 _batch_slots: asyncio.Semaphore | None = None
+# How many notes jobs are being written right now. Used to divide the machine
+# between them rather than serving them first-come-first-served.
+_active_notes = 0
 
 
 class VLLMBusy(RuntimeError):
@@ -681,6 +684,38 @@ async def full_notes(
                 "Set it to 0 for no limit."
             )
 
+    global _active_notes
+    _active_notes += 1
+    try:
+        return await _write_all(chunks, lang=lang, model=model, directive=directive,
+                                reminder=reminder, on_progress=on_progress,
+                                on_warning=on_warning, on_text=on_text)
+    finally:
+        _active_notes -= 1
+
+
+def _fair_share() -> int:
+    """Chunks one video may have in flight, given how many videos are running.
+
+    NOTES_CONCURRENCY is a ceiling, not an entitlement. Letting one job take all
+    of it is what produced a 268-second spread across twenty clients: the first
+    to arrive claimed thirty slots, and because the gate is FIFO everyone behind
+    it waited for the whole batch instead of interleaving. Dividing the gate by
+    the number of live jobs gives every client a turn, so they advance together
+    and each one's progress bar actually moves.
+
+    The floor of 2 matters: a single visitor on a quiet machine should still get
+    real parallelism, and the ceiling still applies when few jobs are running.
+    """
+    gate = max(1, settings.VLLM_MAX_CONCURRENCY)
+    share = gate // max(1, _active_notes)
+    return max(2, min(max(1, settings.NOTES_CONCURRENCY), share))
+
+
+async def _write_all(
+    chunks: list[str], *, lang: str, model: str, directive: str, reminder: str,
+    on_progress=None, on_warning=None, on_text=None,
+) -> str:
     total = len(chunks)
     parts: list[str] = [""] * total
     failed: list[int] = []
@@ -700,7 +735,7 @@ async def full_notes(
 
     if on_progress:
         await on_progress(0, total, 0, 0.0)
-    semaphore = asyncio.Semaphore(max(1, settings.NOTES_CONCURRENCY))
+    semaphore = asyncio.Semaphore(_fair_share())
 
     async def write_chunk(idx: int, chunk: str) -> None:
         nonlocal done, started

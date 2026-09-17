@@ -12,14 +12,16 @@ def _ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
 
 _socket.getaddrinfo = _ipv4_only_getaddrinfo
 
+import hashlib
 import logging
+import re
 import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from pathlib import Path
 
@@ -154,9 +156,29 @@ def meta():
 if settings.WEB_APP_ENABLED and STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+    def _asset_version() -> str:
+        """A cache-buster derived from app.js itself.
+
+        index.html used to carry a hand-written "?v=6", which meant every
+        change to app.js shipped behind a stale one: the server served the new
+        file and browsers kept the old, so a deploy silently did nothing on the
+        front end. Hashing the file makes the version impossible to forget.
+        """
+        js = STATIC_DIR / "app.js"
+        try:
+            return hashlib.sha256(js.read_bytes()).hexdigest()[:12]
+        except OSError:  # pragma: no cover - app.js always ships
+            return "dev"
+
+    _ASSET_VERSION = _asset_version()
+
     @app.get("/", include_in_schema=False)
     def home():
-        return FileResponse(STATIC_DIR / "index.html")
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        html = re.sub(r"app\.js\?v=[^\"\']*", f"app.js?v={_ASSET_VERSION}", html)
+        # The shell must always revalidate; the assets it points at are
+        # content-addressed, so they can be cached hard.
+        return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 else:  # pragma: no cover - API-only deployment
 

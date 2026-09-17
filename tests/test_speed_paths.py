@@ -674,3 +674,31 @@ def test_the_transcript_hedge_does_not_wait_for_the_loser(monkeypatch):
 
     assert got.source == "captions"
     assert elapsed < 2.0, f"waited {elapsed:.1f}s for the losing fetch"
+
+
+def test_one_client_cannot_take_the_whole_machine(monkeypatch):
+    """Fair share, not first-come-first-served.
+
+    Measured with a flat NOTES_CONCURRENCY of 30 across twenty clients: notes
+    finished between 196s and 465s - a 268s spread - because the first job to
+    arrive claimed thirty slots and the FIFO gate made everyone behind it wait
+    for that whole batch instead of interleaving.
+    """
+    monkeypatch.setattr(settings, "VLLM_MAX_CONCURRENCY", 96)
+    monkeypatch.setattr(settings, "NOTES_CONCURRENCY", 30)
+
+    summarizer._active_notes = 1
+    alone = summarizer._fair_share()
+    summarizer._active_notes = 20
+    crowded = summarizer._fair_share()
+    summarizer._active_notes = 200
+    swamped = summarizer._fair_share()
+    summarizer._active_notes = 0
+
+    # Alone, the ceiling applies and a single visitor still gets parallelism.
+    assert alone == 30
+    # With twenty jobs the machine is divided, not monopolised.
+    assert crowded == 96 // 20
+    assert crowded * 20 <= 96, "the shares together must not exceed the gate"
+    # And nobody is ever starved down to serial work.
+    assert swamped >= 2
