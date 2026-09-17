@@ -101,6 +101,28 @@ class Settings(BaseSettings):
     CF_ACCESS_CLIENT_SECRET: str = ""
     VLLM_TIMEOUT_SECONDS: int = 600
 
+    # Hard ceiling on how many requests THIS worker keeps in flight at vLLM at
+    # once, across every feature - summary, notes chunks and translation alike.
+    #
+    # NOTES_CONCURRENCY only shapes the fan-out inside a single video. Nothing
+    # bounded the number of videos, so N simultaneous users put
+    # N x NOTES_CONCURRENCY generations on a server that runs --max-num-seqs of
+    # them at a time; the overflow sat in vLLM's queue until it timed out, and
+    # the retry loop then fed it straight back in. That is the hang.
+    #
+    # THIS IS PER UVICORN WORKER, so the number that reaches the GPU is
+    # (workers x VLLM_MAX_CONCURRENCY). The deployment runs 3 workers x 10 = 30
+    # in flight, matching vLLM's --max-num-seqs 30 exactly: the app is allowed
+    # to fill the server and never to overfill it.
+    VLLM_MAX_CONCURRENCY: int = 10
+    # How long a request may wait for a free slot before it is told the server
+    # is busy. Answering "try again shortly" in a minute is kinder than a
+    # connection that hangs for half an hour and then dies anyway.
+    # 0 means wait forever. At 30-way load a slot can legitimately take a few
+    # minutes to come free, so this is generous - it exists to end a pile-up,
+    # not to police normal queueing.
+    VLLM_QUEUE_TIMEOUT_SECONDS: int = 300
+
     # A 350-400 word summary normally needs well under 1,000 tokens. Keeping
     # this bounded prevents a model that ignores the length instruction from
     # spending several minutes generating an unnecessarily long answer.
@@ -139,14 +161,25 @@ class Settings(BaseSettings):
     # Output budget per chunk. Notes are meant to be exhaustive, so this is
     # deliberately large.
     NOTES_NUM_PREDICT: int = 4096
-    # How many note chunks to send to vLLM at once. Keep this at or below
-    # vLLM's --max-num-seqs setting.
-    NOTES_CONCURRENCY: int = 4
+    # How many chunks of ONE video's notes to have in flight at once. It no
+    # longer needs to be conservative: VLLM_MAX_CONCURRENCY is the real cap, and
+    # it is enforced across every request instead of inside each one. Set this
+    # high and let the gate do the limiting.
+    NOTES_CONCURRENCY: int = 30
     # Attempts per chunk before it is reported as missing.
     NOTES_CHUNK_RETRIES: int = 3
+    # How many chunks of ONE translation to run at a time. Translation is
+    # per-chunk independent, so it parallelises; the cap stops a single
+    # 60-page set of notes from taking every vLLM slot on the box.
+    TRANSLATE_CONCURRENCY: int = 30
     # Optional http(s) proxy for YouTube. Set this if your server's IP gets
     # rate-limited or blocked - e.g. http://user:pass@proxy-host:port
     YOUTUBE_PROXY: str = ""
+
+    # Blocking work - the yt-dlp transcript fetch, and every database call an
+    # endpoint makes - runs on this pool. Starlette defaults to 40 threads,
+    # which a burst of long videos exhausts; then even a health check queues.
+    THREADPOOL_MAX_THREADS: int = 96
 
     # ---- transport / CORS ---------------------------------------------
     # Chrome extensions call the API from origin chrome-extension://<id>

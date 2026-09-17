@@ -195,7 +195,7 @@ Full notes 20-30 minute lete hain — gzip ON ke saath user ko utni der khali
 screen dikhegi. **aaPanel naye site mein gzip khud ON karta hai**, isliye ye
 line honi hi chahiye.
 
-**`proxy_read_timeout 3600s;`** — Ollama ek chunk par 60s se zyada le sakta hai
+**`proxy_read_timeout 3600s;`** — Gemma (vLLM) ek chunk par 60s se zyada le sakta hai
 aur us dauran kuch nahi bhejta. Nginx ka default 60s hai:
 
 ```
@@ -319,14 +319,14 @@ jab `.env` me wo line na ho. DGX par ye chaar line update/add karo:
 ```bash
 NOTES_CONCURRENCY=4              # pehle 2 tha
 NOTES_CHUNK_CHARS=6000           # pehle 3500 tha
-OLLAMA_SKIP_THINKING=true        # naya
+(hata diya gaya)=true        # naya
 TRANSCRIPT_CACHE_TTL_SECONDS=1800  # naya
 ```
 
 Phir `bash deploy/deploy.sh`.
 
-**1. Chunks 4 ek saath (pehle 2).** Aapke Ollama par `OLLAMA_NUM_PARALLEL=4` hai,
-to aadhi capacity khali ja rahi thi. Ye ussey aage nahi ja sakta — Ollama utni hi
+**1. Chunks 4 ek saath (pehle 2).** Aapke Gemma (vLLM) par `--max-num-seqs=4` hai,
+to aadhi capacity khali ja rahi thi. Ye ussey aage nahi ja sakta — Gemma (vLLM) utni hi
 requests ek saath chalata hai, baaki queue me lagti hain.
 
 **2. Chunk 3500 → 6000 chars.** Ek ghante ki video ke liye 16 ki jagah **9**
@@ -335,12 +335,12 @@ aur poore jawab ke saath aaram se samata hai.
 
 **3. Har call par naya HTTPS connection banta tha.** `httpx.AsyncClient` har
 request par naya banaya ja raha tha — yaani har chunk par naya TCP + TLS
-handshake, `https://ollama.trueworks.in` tak. Ab poore process ke liye ek hi
+handshake, `https://gemma4:8000` tak. Ab poore process ke liye ek hi
 client hai jo connections zinda rakhta hai.
 
 **4. `think:false`.** Sarvam pehle ek chhupa hua `<think>` block likhta hai aur
 `strip_think()` use phenk deta hai — us par kharch hue tokens poori tarah bekaar
-jate hain. Ab Ollama se wo skip karne ko kaha jata hai. Purane build ise HTTP 400
+jate hain. Ab Gemma (vLLM) se wo skip karne ko kaha jata hai. Purane build ise HTTP 400
 karte hain; wo ek baar detect hokar yaad rakh liya jata hai, phir kabhi nahi
 bheja jata. Aapka Q4 build accept karta hai ya nahi ye chalte hi pata chal
 jayega — dono surat me kuch tootta nahi.
@@ -357,7 +357,7 @@ deta, aur PDF **original language me** aa jata tha.
 ### Kitna farak — naapa hua
 
 Asli `full_notes()` chalakar, ek 60-minute ki Hindi video (49,450 chars) par,
-Ollama ko 40 token/second maankar:
+Gemma (vLLM) ko 40 token/second maankar:
 
 ```
 pehle (concurrency 2, chunk 3500)   16 chunks    1.00x
@@ -452,7 +452,7 @@ hue. Yaani ye khali PASS nahi chhaap rahe.
 
 Ek hi video ko das log summarize karte hain aur jawab har baar wahi hota hai. Ab
 pehla banda banwata hai, baaki sabko **DB se turant** milta hai — na YouTube,
-na Ollama.
+na Gemma (vLLM).
 
 Asli server + Postgres par naapa (dusra user, wahi video):
 
@@ -549,7 +549,7 @@ hue.
 2. **Web app ka domain.** Backend `WEB_APP_ENABLED=true` ke saath UI bhi serve
    karta hai, yaani `https://tubenotes.trueworks.in/` par TubeNotes khul
    jayega. Chaho to `tubenotes.trueworks.in` bhi isi par point kar do.
-3. **Ollama abhi seedha browser se call hota hai.** Koi technical banda
-   extension ka code padhkar TrialGuard hata sakta hai aur aapka Ollama free
-   mein use kar sakta hai. Pakka rokna ho to Ollama ko backend ke peeche daalna
+3. **Gemma (vLLM) abhi seedha browser se call hota hai.** Koi technical banda
+   extension ka code padhkar TrialGuard hata sakta hai aur aapka Gemma (vLLM) free
+   mein use kar sakta hai. Pakka rokna ho to Gemma (vLLM) ko backend ke peeche daalna
    padega — alag kaam hai.

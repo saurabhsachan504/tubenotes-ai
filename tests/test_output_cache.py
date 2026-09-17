@@ -26,12 +26,13 @@ OTHER = "https://youtu.be/aaaaaaaaaaa"
 def cache_on(monkeypatch):
     monkeypatch.setattr(settings, "OUTPUT_CACHE_ENABLED", True)
     monkeypatch.setattr(settings, "OUTPUT_CACHE_MIN_CHARS", 5)
-    # The public/unlisted check is a real network call; tests say "public"
-    # unless a test overrides it.
-    async def public(video_id):
+    # is_cacheable() is a pure, synchronous check on the Transcript we already
+    # hold - no network. An async fake here would return a coroutine, which is
+    # always truthy, so a "not cacheable" stub would silently cache anyway.
+    def public(transcript):
         return True
 
-    monkeypatch.setattr("app.routers.summarize.youtube.is_public", public)
+    monkeypatch.setattr("app.routers.summarize.youtube.is_cacheable", public)
     yield
 
 
@@ -178,10 +179,10 @@ def test_an_unlisted_video_is_never_cached(
     client, device, cache_on, stub_youtube, stub_model, monkeypatch, db
 ):
     """Someone's private video must not be handed to a stranger with the id."""
-    async def not_public(video_id):
+    def not_public(transcript):
         return False
 
-    monkeypatch.setattr("app.routers.summarize.youtube.is_public", not_public)
+    monkeypatch.setattr("app.routers.summarize.youtube.is_cacheable", not_public)
 
     _, headers, d = register(client, device=device)
     res = summarize(client, headers, d)
@@ -193,10 +194,10 @@ def test_a_failed_public_check_means_no_cache(
     client, device, cache_on, stub_youtube, stub_model, monkeypatch, db
 ):
     """If we cannot tell, the safe answer is not to share it."""
-    async def blows_up(video_id):
+    def blows_up(transcript):
         raise RuntimeError("YouTube blocked us")
 
-    monkeypatch.setattr("app.routers.summarize.youtube.is_public", blows_up)
+    monkeypatch.setattr("app.routers.summarize.youtube.is_cacheable", blows_up)
 
     _, headers, d = register(client, device=device)
     assert summarize(client, headers, d).status_code == 200
@@ -311,18 +312,34 @@ def test_idle_locks_are_dropped():
 
 
 # ---------------------------------------------------------------------------
-# The public/unlisted parser (no network)
+# What may be shared between users (no network)
+#
+# The old HTML-scraping looks_public() is gone. The question is no longer
+# "is this video public" but "where did the transcript come from": the server
+# fetches captions with no login at all, so anything it got by itself was
+# anonymously reachable. The extension runs with the user's own cookies and
+# can read a private video, so its transcripts are never shared.
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize(
-    "html,expected",
+    "source,availability,expected",
     [
-        ('{"isFamilySafe":true,"isUnlisted":false}', True),
-        ('{"isFamilySafe":true,"isUnlisted":true}', False),
-        ('{"isFamilySafe":false,"isPrivate":true}', False),
-        ('{"isFamilySafe":true,"status":"LOGIN_REQUIRED"}', False),
-        ("<html>consent wall</html>", None),
-        ("", None),
+        ("captions", None, True),
+        ("yt-dlp", "public", True),
+        ("yt-dlp", "unlisted", True),
+        ("yt-dlp", "private", False),
+        ("yt-dlp", "premium_only", False),
+        ("yt-dlp", "subscriber_only", False),
+        ("yt-dlp", "needs_auth", False),
+        ("client", None, False),
+        ("client", "public", False),
     ],
 )
-def test_looks_public(html, expected):
-    assert youtube.looks_public(html) is expected
+def test_is_cacheable(source, availability, expected):
+    t = youtube.Transcript(
+        text="x" * 100,
+        language="en",
+        is_generated=True,
+        source=source,
+        availability=availability,
+    )
+    assert youtube.is_cacheable(t) is expected

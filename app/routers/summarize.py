@@ -214,6 +214,20 @@ def _store_cached(
             logger.exception("cache session band karne me dikkat")
 
 
+@dataclasses.dataclass(slots=True)
+class _CachedText:
+    """A plain copy of a cache row, safe to read after the session is closed.
+
+    The ORM object is not: the session is closed before streaming starts (see
+    _charge_and_lookup), and touching a detached, expired instance after that
+    raises rather than returning the summary.
+    """
+
+    text: str
+    detected_lang: str
+    transcript_chars: int
+
+
 def _cache_lookup(db: Session, payload, video_id: str, *, mode: str | None = None):
     """(row, target, model). row None hai to cache me kuch nahi mila.
 
@@ -238,7 +252,50 @@ def _cache_lookup(db: Session, payload, video_id: str, *, mode: str | None = Non
     target = _resolve_target(payload.target_lang, detected)
     model = summarizer.plan_for(target)[0]
     output_mode = mode or payload.mode
-    return output_cache.get(db, video_id, output_mode, target, model), target, model
+    row = output_cache.get(db, video_id, output_mode, target, model)
+    snapshot = (
+        None
+        if row is None
+        else _CachedText(
+            text=row.text,
+            detected_lang=row.detected_lang or "",
+            transcript_chars=row.transcript_chars,
+        )
+    )
+    return snapshot, target, model
+
+
+def _charge_and_lookup(db: Session, user: User, payload, video_id: str, *, action: str, mode: str):
+    """Every database touch of this request, in ONE blocking call.
+
+    This runs on a worker thread, and that is the whole point. It used to run
+    inline in an `async def` endpoint, where entitlements.consume()'s
+    SELECT ... FOR UPDATE blocks a psycopg socket - and a blocked socket on the
+    event loop freezes the entire uvicorn worker, every other user's stream
+    along with it. Two such stalls froze the whole API.
+
+    The session is closed here too. Leaving it to the request-scoped dependency
+    meant the cache-lookup SELECT sat idle-in-transaction for as long as the
+    response streamed - up to half an hour for a set of notes.
+    """
+    try:
+        result = entitlements.consume(
+            db,
+            user,
+            payload.device,
+            action=action,
+            idempotency_key=f"video:{video_id}",
+            meta={"video_id": video_id, "mode": mode, "surface": "web"},
+        )
+        db.commit()
+        entitlement: EntitlementOut = result.entitlement
+        cached_row, cached_target, cached_model = _cache_lookup(
+            db, payload, video_id, mode=mode
+        )
+        return entitlement, cached_row, cached_target, cached_model
+    finally:
+        # Idempotent - get_db()'s own finally will call it again harmlessly.
+        db.close()
 
 
 async def _replay_cached(row, *, meta, target: str, model: str, entitlement):
@@ -282,22 +339,18 @@ async def summarize(
     """
     video_id = _video_id_or_400(payload.url)
 
-    # 1. Charge (or confirm we already charged for this video).
-    result = entitlements.consume(
+    # 1. Charge, and 2. look in the cache - both on a worker thread, and the
+    #    session closed before a single byte is streamed. Cache hit means the
+    #    same video, mode, language and model, so YouTube is never touched.
+    entitlement, cached_row, cached_target, cached_model = await run_in_threadpool(
+        _charge_and_lookup,
         db,
         user,
-        payload.device,
+        payload,
+        video_id,
         action=f"summarize:{payload.mode}",
-        idempotency_key=f"video:{video_id}",
-        meta={"video_id": video_id, "mode": payload.mode, "surface": "web"},
+        mode=payload.mode,
     )
-    db.commit()
-    entitlement: EntitlementOut = result.entitlement
-
-    # 2. Cache. Wahi video, wahi mode, wahi bhasha, wahi model = wahi jawab.
-    #     Ye transcript laane se pehle hai, isliye hit par YouTube ko chhua bhi
-    #     nahi jaata. (Cache band ho to ye chupchap None lautata hai.)
-    cached_row, cached_target, cached_model = _cache_lookup(db, payload, video_id)
     if cached_row is not None:
         meta = await youtube.fetch_metadata(video_id)
         return StreamingResponse(
@@ -393,7 +446,7 @@ async def summarize(
         # Jama karna SABSE AAKHIR me - user ka jawab ja chuka hai, to yahan
         # kuch bigde bhi to farq nahi padta. Cache band ho to _store_cached()
         # khud hi kuch nahi karta.
-        if youtube.is_cacheable(transcript):
+        if _may_cache(transcript):
             await run_in_threadpool(
                 _store_cached,
                 video_id,
@@ -425,19 +478,14 @@ async def notes(
     """
     video_id = _video_id_or_400(payload.url)
 
-    result = entitlements.consume(
+    entitlement, cached_row, cached_target, cached_model = await run_in_threadpool(
+        _charge_and_lookup,
         db,
         user,
-        payload.device,
+        payload,
+        video_id,
         action="notes",
-        idempotency_key=f"video:{video_id}",
-        meta={"video_id": video_id, "mode": "notes", "surface": "web"},
-    )
-    db.commit()
-    entitlement: EntitlementOut = result.entitlement
-
-    cached_row, cached_target, cached_model = _cache_lookup(
-        db, payload, video_id, mode="notes"
+        mode="notes",
     )
     if cached_row is not None:
         meta = await youtube.fetch_metadata(video_id)
@@ -500,19 +548,17 @@ async def notes(
             }
         )
 
-        try:
-            # full_notes reports progress through the callback; we drain the
-            # queue between chunks so the browser sees a live progress bar.
-            import asyncio
-
-            task = asyncio.create_task(
-                summarizer.full_notes(
-                    transcript.text,
-                    lang=lang,
-                    on_progress=on_progress,
-                    on_warning=on_warning,
-                )
+        # full_notes reports progress through the callback; we drain the queue
+        # between chunks so the browser sees a live progress bar.
+        task = asyncio.create_task(
+            summarizer.full_notes(
+                transcript.text,
+                lang=lang,
+                on_progress=on_progress,
+                on_warning=on_warning,
             )
+        )
+        try:
             while not task.done():
                 await asyncio.sleep(0.4)
                 while queue:
@@ -524,6 +570,17 @@ async def notes(
             logger.exception("notes failed for %s", video_id)
             yield _event({"type": "error", "message": _friendly(exc)})
             return
+        finally:
+            # The browser going away - tab closed, refresh, proxy timeout -
+            # cancels this generator at the await above. Without this the task
+            # carried on writing a 30-minute set of notes that nobody would
+            # ever read, holding a vLLM slot for every chunk of it. Every
+            # abandoned tab permanently cost the GPU.
+            #
+            # No await here: cancel() is a plain call, and awaiting during a
+            # GeneratorExit unwind is an error.
+            if not task.done():
+                task.cancel()
 
         if not text:
             yield _event({"type": "error", "message": "The model returned nothing. Please try again."})
@@ -540,7 +597,7 @@ async def notes(
 
         yield _event({"type": "done", "text": text, "language": target})
 
-        if youtube.is_cacheable(transcript):
+        if _may_cache(transcript):
             await run_in_threadpool(
                 _store_cached,
                 video_id,
@@ -571,8 +628,7 @@ async def translate_text(
     presentation of the same result. Rate-limited so it cannot be used as a free
     general-purpose translation API.
     """
-    ratelimit.hit(db, f"translate:{user.id}", limit=60, window_seconds=3600)
-    db.commit()
+    await run_in_threadpool(_rate_limit_translate, db, user.id)
 
     target = payload.target_lang.split("-")[0].lower()
     try:
@@ -588,7 +644,33 @@ async def translate_text(
     )
 
 
+def _rate_limit_translate(db: Session, user_id) -> None:
+    """The rate-limit write, on a worker thread, session closed after."""
+    try:
+        ratelimit.hit(db, f"translate:{user_id}", limit=60, window_seconds=3600)
+        db.commit()
+    finally:
+        db.close()
+
+
+def _may_cache(transcript) -> bool:
+    """Never let the caching DECISION break a summary that already shipped.
+
+    is_cacheable() is a pure check today, but it is the gate on sharing another
+    user's content - if it ever raises, the honest answer is "do not share",
+    not "abort the request the user already paid for".
+    """
+    try:
+        return bool(youtube.is_cacheable(transcript))
+    except Exception:  # noqa: BLE001
+        logger.warning("is_cacheable() failed; not caching", exc_info=True)
+        return False
+
+
 def _friendly(exc: Exception) -> str:
+    if isinstance(exc, summarizer.VLLMBusy):
+        # Already written for a human: the server is full, come back shortly.
+        return str(exc)
     text = str(exc)
     if "vLLM HTTP 404" in text:
         return f"The vLLM endpoint or model '{settings.VLLM_MODEL}' was not found."

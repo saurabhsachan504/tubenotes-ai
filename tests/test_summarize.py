@@ -67,10 +67,10 @@ def test_language_detection_and_model_routing():
     assert summarizer.detect_language(HINDI, hint="mr") == "mr"
     assert summarizer.detect_language("", hint="ta-IN") == "ta"
 
-    assert summarizer.model_for("en") == settings.OLLAMA_MODEL
-    assert summarizer.model_for("hi") == settings.OLLAMA_MODEL
-    assert summarizer.model_for("mr") == settings.OLLAMA_INDIC_MODEL
-    assert summarizer.model_for("ta") == settings.OLLAMA_INDIC_MODEL
+    assert summarizer.model_for("en") == settings.VLLM_MODEL
+    assert summarizer.model_for("hi") == settings.VLLM_MODEL
+    assert summarizer.model_for("mr") == settings.VLLM_MODEL
+    assert summarizer.model_for("ta") == settings.VLLM_MODEL
 
 
 def test_language_directive_names_the_language():
@@ -258,7 +258,7 @@ def test_model_failure_becomes_a_friendly_error_event(
     _, headers, _ = register(client, device=device)
 
     async def broken(**kwargs):
-        raise RuntimeError("Ollama HTTP 404: model not found")
+        raise RuntimeError("vLLM HTTP 404: model not found")
         yield  # pragma: no cover
 
     monkeypatch.setattr(summarizer, "stream_chat", broken)
@@ -269,7 +269,7 @@ def test_model_failure_becomes_a_friendly_error_event(
     )
     events = read_events(res)
     assert events[-1]["type"] == "error"
-    assert "not installed" in events[-1]["message"]
+    assert "was not found" in events[-1]["message"]
 
 
 def test_video_info_is_free(client, device, stub_youtube):
@@ -305,9 +305,13 @@ def test_prompt_labels_are_localised_not_english():
     """The English template was the bug: the model copied '## Overview' and then
     kept writing English. Labels must arrive already translated."""
     hi = summarizer.summary_prompt("hi")
-    assert "अवलोकन" in hi and "मुख्य बिंदु" in hi
+    # The template asks for real, descriptive section titles, so only the two
+    # fixed headings are injected. Both must already be in Hindi.
+    assert summarizer.LABELS["hi"]["overview"] in hi
+    assert summarizer.LABELS["hi"]["conclusion"] in hi
     assert "## Overview" not in hi
     assert "**Key Point:**" not in hi
+    assert "Conclusion & Key Takeaways" not in hi
 
     ta = summarizer.summary_prompt("ta")
     assert "மேலோட்டம்" in ta and "## Overview" not in ta
@@ -320,7 +324,7 @@ def test_prompt_labels_are_localised_not_english():
 def test_language_rule_is_first_and_last_in_the_system_prompt(monkeypatch):
     captured = {}
 
-    async def fake_stream(*, model, system, content, num_predict=3000):
+    async def fake_stream(*, model, system, content, num_predict=3000, **kw):
         captured["system"] = system
         captured["model"] = model
         yield "ok"
@@ -342,13 +346,13 @@ def test_language_rule_is_first_and_last_in_the_system_prompt(monkeypatch):
 @pytest.mark.parametrize(
     "target,model,write_lang,translate_to",
     [
-        ("hi", settings.OLLAMA_MODEL, "hi", None),
-        ("en", settings.OLLAMA_MODEL, "en", None),
-        ("ta", settings.OLLAMA_INDIC_MODEL, "ta", None),
-        ("mr", settings.OLLAMA_INDIC_MODEL, "mr", None),
+        ("hi", settings.VLLM_MODEL, "hi", None),
+        ("en", settings.VLLM_MODEL, "en", None),
+        ("ta", settings.VLLM_MODEL, "ta", None),
+        ("mr", settings.VLLM_MODEL, "mr", None),
         # A language neither model writes well: produce English, then translate.
-        ("sw", settings.OLLAMA_MODEL, "en", "sw"),
-        ("si", settings.OLLAMA_MODEL, "en", "si"),
+        ("sw", settings.VLLM_MODEL, "en", "sw"),
+        ("si", settings.VLLM_MODEL, "en", "si"),
     ],
 )
 def test_plan_for_language(target, model, write_lang, translate_to):
@@ -403,7 +407,7 @@ def test_target_lang_overrides_the_video_language(client, device, stub_youtube, 
     meta = read_events(res)[0]
     assert meta["detected_language"] == "hi"
     assert meta["language"] == "ta"
-    assert meta["model"] == settings.OLLAMA_INDIC_MODEL
+    assert meta["model"] == settings.VLLM_MODEL
 
 
 def test_translate_endpoint_does_not_charge_a_trial(client, device, monkeypatch):
@@ -441,7 +445,7 @@ def test_full_notes_actually_produce_text(client, device, stub_youtube, monkeypa
     """Guards the bug where the notes prompts were missing and every chunk died."""
     calls = []
 
-    async def fake_stream(*, model, system, content, num_predict=3000):
+    async def fake_stream(*, model, system, content, num_predict=3000, **kw):
         calls.append(system)
         yield "# विषय\n\n## भाग एक\nविस्तृत नोट्स यहाँ हैं।"
 

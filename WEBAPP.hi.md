@@ -22,9 +22,9 @@ hain, isliye CORS ka koi jhanjhat nahi.
 `.env` me sirf ek cheez check kar lena:
 
 ```bash
-OLLAMA_URL=https://ollama.trueworks.in     # wahi jo extension use karti hai
-OLLAMA_MODEL=gemma2:9b
-OLLAMA_INDIC_MODEL=sarvam-m-q4
+VLLM_URL=https://gemma4:8000     # wahi jo extension use karti hai
+VLLM_MODEL=gemma2:9b
+VLLM_MODEL=sarvam-m-q4
 ```
 
 ---
@@ -44,7 +44,7 @@ OLLAMA_INDIC_MODEL=sarvam-m-q4
    Marathi dono Devanagari me likhe jate hain aur sirf script dekhkar farq nahi
    pata chalta. Uske baad script se detect hota hai.
 5. **Model routing** — Marathi/Gujarati/Tamil/Telugu/Kannada/Malayalam/Bengali/
-   Punjabi/Urdu → `OLLAMA_INDIC_MODEL`. Baaki sab → `OLLAMA_MODEL`. Ye isliye ki
+   Punjabi/Urdu → `VLLM_MODEL`. Baaki sab → `VLLM_MODEL`. Ye isliye ki
    general model in bhashaon me English me bhagne lagta hai ya toota-phoota
    likhta hai.
 6. **Streaming** — summary token-by-token aati hai (NDJSON), isliye 2-3 second me
@@ -137,15 +137,15 @@ comparison, sawaal aur jawab likho. Koi length limit nahi — agar is hisse mein
 15 point hain to 15 hi likho."*
 
 **Speed:** lambe video mein kai minute lagenge (progress bar part-by-part
-dikhta hai). `NOTES_CONCURRENCY=2` default hai; agar aapke Ollama par
-`OLLAMA_NUM_PARALLEL` 1 se zyada hai to ise 3-4 karke tez kar sakte ho.
+dikhta hai). `NOTES_CONCURRENCY=2` default hai; agar aapke Gemma (vLLM) par
+`--max-num-seqs` 1 se zyada hai to ise 3-4 karke tez kar sakte ho.
 
 ### Model routing
 
 | Bhasha | Model | Kyun |
 |---|---|---|
-| Hindi, English, Spanish, French, German, Arabic, Russian, Japanese… | `OLLAMA_MODEL` | Ye model in bhashaon mein achha likhta hai |
-| Marathi, Gujarati, Tamil, Telugu, Kannada, Malayalam, Bengali, Punjabi, Urdu, Odia, Assamese, Nepali | `OLLAMA_INDIC_MODEL` | General model in par English mein bhaag jata hai |
+| Hindi, English, Spanish, French, German, Arabic, Russian, Japanese… | `VLLM_MODEL` | Ye model in bhashaon mein achha likhta hai |
+| Marathi, Gujarati, Tamil, Telugu, Kannada, Malayalam, Bengali, Punjabi, Urdu, Odia, Assamese, Nepali | `VLLM_MODEL` | General model in par English mein bhaag jata hai |
 | Baaki sab (Swahili, Sinhala…) | English mein likhkar Google se translate | Kamzor bhasha mein zabardasti likhwane se toota-phoota text aata hai |
 
 ---
@@ -222,7 +222,7 @@ kha jata tha. Production me 12 hi rehta hai, aur purane users ke password bhi
 chalte rehte hain kyunki cost hash ke andar hi likha hota hai.
 
 Naye test URL parsing, bhasha detection, model routing, chunking, streaming,
-trial ki ginti aur error handling cover karte hain. Transcript aur Ollama stub
+trial ki ginti aur error handling cover karte hain. Transcript aur Gemma (vLLM) stub
 kiye hue hain, isliye tests bina internet ke chalte hain.
 
 Browser me bhi poora flow chalakar dekha gaya: signup → summarize → Hindi

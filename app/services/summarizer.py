@@ -1,7 +1,9 @@
 """Summary generation via vLLM's OpenAI-compatible API.
 
-The summary is generated in the video's own language.  This deployment uses a
-single Gemma 4 model for all supported languages.
+ONE model, Gemma, serves every language. There is no second model to pick and
+no router to get wrong: `VLLM_MODEL` is the whole story. The only per-language
+decision left is whether Gemma writes that language well enough to be asked
+directly, or whether it should write English and have the result translated.
 """
 from __future__ import annotations
 
@@ -10,6 +12,7 @@ import json
 import logging
 import re
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import httpx
 
@@ -19,13 +22,19 @@ from app.services.youtube import sample_for_model
 logger = logging.getLogger("trialguard.summarizer")
 
 _vllm_client: httpx.AsyncClient | None = None
+_vllm_slots: asyncio.Semaphore | None = None
 
-# Languages the general model writes well natively.
-STRONG_LANGS = {
+
+class VLLMBusy(RuntimeError):
+    """Every generation slot was taken for longer than the caller would wait."""
+
+
+# Languages Gemma writes well enough to be asked for directly. Anything outside
+# this set is written in English and then translated - see plan_for().
+NATIVE_LANGS = {
+    # widely-spoken languages the model handles natively
     "en", "hi", "es", "fr", "de", "it", "pt", "ru", "ja", "zh", "ar", "nl", "tr", "ko", "id", "vi",
-}
-# Regional Indian languages -> the Indic model.
-INDIC_LANGS = {
+    # regional Indian languages
     "mr", "gu", "pa", "ta", "te", "kn", "ml", "bn", "or", "as", "ur", "sd", "ne", "kok", "mai",
 }
 
@@ -81,21 +90,25 @@ def language_name(code: str) -> str:
 
 
 def model_for(code: str) -> str:
-    # Gemma 4 is the single model served by this vLLM instance.
+    """The model that will answer. Gemma, always - the argument is ignored.
+
+    Kept as a function because the model name is part of the output-cache key,
+    and one place to read it from means the cache can never disagree with what
+    actually generated the row.
+    """
     return settings.VLLM_MODEL
 
 
 def plan_for(target: str) -> tuple[str, str, str | None]:
     """Decide (model, generation_language, translate_to) for a target language.
 
-    Three cases, same as the extension:
-      * Regional Indian language -> the Indic model writes it natively.
-      * A language the general model handles well -> write it directly.
-      * Anything else -> write in English, then translate. Forcing a weak model
-        into a language it writes badly produces broken text; translating clean
+    Two cases:
+      * Gemma writes this language well -> ask for it directly.
+      * It does not -> write in English, then translate. Forcing a model into a
+        language it writes badly produces broken text; translating clean
         English is far better.
     """
-    if target in INDIC_LANGS or target in STRONG_LANGS:
+    if target in NATIVE_LANGS:
         return settings.VLLM_MODEL, target, None
     return settings.VLLM_MODEL, "en", target
 
@@ -265,12 +278,12 @@ NOTES_SEGMENT_PROMPT = f"""Continue the COMPLETE, exhaustive notes for the SAME 
 - Never include caption noise like "[Music]" or anything in square brackets."""
 
 # ---------------------------------------------------------------------------
-# Reasoning models emit a hidden <think> block first - never show it.
+# vLLM serves Gemma with --default-chat-template-kwargs {"enable_thinking":
+# false}, so no <think> block is ever produced. This stays as a cheap guard on
+# the non-streaming path in case that flag is ever dropped; the streaming path
+# does not pay for it, because buffering a whole answer to look for a block
+# that cannot appear is exactly the latency this deployment is trying to avoid.
 # ---------------------------------------------------------------------------
-def is_reasoning_model(name: str) -> bool:
-    return bool(re.search(r"sarvam|deepseek-r1|qwq|reason|think", str(name or ""), re.I))
-
-
 def strip_think(text: str) -> str:
     if not text:
         return text
@@ -306,8 +319,65 @@ async def vllm_client() -> httpx.AsyncClient:
     # There is no await between this check and assignment, so tasks on the
     # worker's event loop cannot race and create duplicate clients.
     timeout = httpx.Timeout(settings.VLLM_TIMEOUT_SECONDS, connect=15)
-    _vllm_client = httpx.AsyncClient(timeout=timeout)
+    # Sized from the same number that gates the semaphore. httpx defaults to
+    # 100 connections, which let this process open far more sockets than vLLM
+    # could ever serve - the pool should not be able to outrun the gate.
+    slots = max(1, settings.VLLM_MAX_CONCURRENCY)
+    limits = httpx.Limits(
+        max_connections=slots + 2, max_keepalive_connections=slots + 2
+    )
+    _vllm_client = httpx.AsyncClient(timeout=timeout, limits=limits)
     return _vllm_client
+
+
+def vllm_slots() -> asyncio.Semaphore:
+    """The one gate in front of every call this process makes to vLLM.
+
+    NOTES_CONCURRENCY bounds the chunks of a SINGLE video, and for a long time
+    that was the only limit there was - so ten people on ten videos put ten
+    times that many generations on a server built to run --max-num-seqs of them
+    at once. The overflow queued inside vLLM, timed out, and was resent by the
+    retry loop into the very queue that had just failed it.
+
+    Bounding it here is what stops that: a request that cannot get a slot waits
+    in Python, where waiting is cheap and cancellation actually works, instead
+    of in vLLM, where it is neither.
+    """
+    global _vllm_slots
+    if _vllm_slots is None:
+        # No await between the check and the assignment, so two tasks on this
+        # worker's loop cannot race and build two different semaphores.
+        _vllm_slots = asyncio.Semaphore(max(1, settings.VLLM_MAX_CONCURRENCY))
+    return _vllm_slots
+
+
+@asynccontextmanager
+async def vllm_slot() -> AsyncIterator[None]:
+    """Hold a generation slot for the WHOLE stream, not just the request.
+
+    vLLM keeps a sequence busy until its last token is out, so releasing when
+    the response headers arrive would let straight back in everything this is
+    meant to hold back.
+    """
+    sem = vllm_slots()
+    wait = settings.VLLM_QUEUE_TIMEOUT_SECONDS
+    if wait and wait > 0:
+        try:
+            await asyncio.wait_for(sem.acquire(), wait)
+        except (asyncio.TimeoutError, TimeoutError):
+            raise VLLMBusy(
+                "The AI server is busy with other videos right now. "
+                "Please try again in a few minutes."
+            ) from None
+    else:
+        await sem.acquire()
+    try:
+        yield
+    finally:
+        # Never await in here. This also runs while the generator is being
+        # closed after a client disconnect, and awaiting during that unwind is
+        # an error - releasing a semaphore is not.
+        sem.release()
 
 
 async def close_vllm_client() -> None:
@@ -340,32 +410,35 @@ async def stream_chat(
     }
 
     client = await vllm_client()
-    async with client.stream(
-        "POST", url, json=payload, headers=_vllm_headers()
-    ) as res:
-        if res.status_code != 200:
-            body = (await res.aread()).decode("utf-8", "replace")[:500]
-            raise RuntimeError(f"vLLM HTTP {res.status_code}: {body}")
+    # Every path into vLLM - summary, notes chunk, translation - goes through
+    # this one gate, and holds it until the last token is out.
+    async with vllm_slot():
+        async with client.stream(
+            "POST", url, json=payload, headers=_vllm_headers()
+        ) as res:
+            if res.status_code != 200:
+                body = (await res.aread()).decode("utf-8", "replace")[:500]
+                raise RuntimeError(f"vLLM HTTP {res.status_code}: {body}")
 
-        async for line in res.aiter_lines():
-            line = line.strip()
-            if not line or line.startswith(":"):
-                continue
-            if line.startswith("data:"):
-                line = line[5:].strip()
-            if line == "[DONE]":
-                return
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            choices = obj.get("choices") or []
-            if not choices:
-                continue
-            delta = choices[0].get("delta") or {}
-            token = delta.get("content")
-            if token:
-                yield token
+            async for line in res.aiter_lines():
+                line = line.strip()
+                if not line or line.startswith(":"):
+                    continue
+                if line.startswith("data:"):
+                    line = line[5:].strip()
+                if line == "[DONE]":
+                    return
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                choices = obj.get("choices") or []
+                if not choices:
+                    continue
+                delta = choices[0].get("delta") or {}
+                token = delta.get("content")
+                if token:
+                    yield token
 
 
 async def collect_chat(*, model: str, system: str, content: str, num_predict: int = 3000) -> str:
@@ -391,10 +464,9 @@ async def stream_summary(
             f"body text - must be in {language_name(lang)}. Do not write in English."
         )
 
-    hide_reasoning = is_reasoning_model(model)
-    buffer = ""
-    emitted = 0
-
+    # Straight through. Gemma emits no reasoning block, so there is nothing to
+    # hide and no reason to buffer - the first token reaches the browser the
+    # moment vLLM produces it.
     async for token in stream_chat(
         model=model,
         system=system,
@@ -402,13 +474,7 @@ async def stream_summary(
         num_predict=settings.SUMMARY_NUM_PREDICT,
         temperature=0.7 if mode == "summary" else 0.4,
     ):
-        buffer += token
-        if hide_reasoning and "</think>" not in buffer.lower():
-            continue
-        visible = strip_think(buffer)
-        if len(visible) > emitted:
-            yield visible[emitted:]
-            emitted = len(visible)
+        yield token
 
 
 def split_into_chunks(text: str, size: int, overlap: int) -> list[str]:
@@ -426,6 +492,25 @@ def split_into_chunks(text: str, size: int, overlap: int) -> list[str]:
             break
         i = max(0, end - overlap)
     return chunks
+
+
+def _missing_marker(part: int, total: int, lang: str) -> str:
+    """The label that stands in for a section that could not be written.
+
+    It goes INSIDE the document, in the failed section's own place. The
+    on-screen warning disappears the moment the tab closes, and the PDF is what
+    the user keeps - a silent gap in it reads as though the video simply had
+    nothing to say there, which is the one impression these notes must never
+    give. Being told "part 3 is missing, try again" is always better.
+    """
+    note = (
+        f"_[Part {part} of {total}: this section could not be written, so "
+        f"{total} sections are missing one piece. Everything else is complete - "
+        f"run it again to fill this gap.]_"
+    )
+    if lang != "en":
+        note += f"\n\n_[{language_name(lang)}: {part}/{total}]_"
+    return note
 
 
 def _budget_for(chunk: str) -> int:
@@ -491,8 +576,9 @@ async def full_notes(
         nonlocal done
         base = NOTES_FIRST_PROMPT if idx == 0 else NOTES_SEGMENT_PROMPT
         text = ""
+        attempts = max(1, settings.NOTES_CHUNK_RETRIES)
         async with semaphore:
-            for attempt in range(max(1, settings.NOTES_CHUNK_RETRIES)):
+            for attempt in range(attempts):
                 try:
                     text = await collect_chat(
                         model=model,
@@ -502,16 +588,33 @@ async def full_notes(
                     )
                     if text.strip():
                         break
+                except (httpx.TimeoutException, VLLMBusy) as exc:
+                    # A timeout means the server is saturated, not that this
+                    # chunk was unlucky. Re-sending it immediately - which is
+                    # what this loop used to do - piles more work onto the
+                    # queue that just failed it, and that feedback loop is how
+                    # a busy minute became a hang. Give up on the chunk; the
+                    # caller reports it as missing, which is honest and cheap.
+                    logger.warning(
+                        "notes chunk %s/%s gave up (server saturated): %s",
+                        idx + 1, total, exc,
+                    )
+                    break
                 except Exception as exc:
                     logger.warning(
                         "notes chunk %s/%s attempt %s failed: %s",
                         idx + 1, total, attempt + 1, exc,
                     )
+                if attempt + 1 < attempts:
+                    # Back off, so a transient upstream hiccup is not answered
+                    # with three requests in as many milliseconds.
+                    await asyncio.sleep(min(8.0, 2.0 * (2 ** attempt)))
         parts[idx] = (text or "").strip()
         async with lock:
             done += 1
             if not parts[idx]:
                 failed.append(idx + 1)
+                parts[idx] = _missing_marker(idx + 1, total, lang)
             if on_progress:
                 await on_progress(done, total)
 

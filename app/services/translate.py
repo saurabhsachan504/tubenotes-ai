@@ -12,6 +12,7 @@ Used for two things:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 
@@ -131,44 +132,90 @@ async def _vllm(chunk: str, target: str) -> str:
         ],
     }
     url = settings.VLLM_URL.rstrip("/") + "/chat/completions"
-    timeout = httpx.Timeout(settings.VLLM_TIMEOUT_SECONDS, connect=15)
-    async with httpx.AsyncClient(timeout=timeout) as c:
+    # The shared, connection-pooled client, behind the same process-wide gate
+    # every other vLLM call uses. Opening a fresh AsyncClient per chunk - which
+    # is what this did - meant a new TCP+TLS handshake for each of the hundreds
+    # of chunks in a long set of notes, and left translation invisible to the
+    # concurrency limit that protects the GPU.
+    #
+    # Headers come from _vllm_headers() so the Cloudflare Access service token
+    # is sent here too - translation goes through the same protected tunnel as
+    # every other call.
+    from app.services.summarizer import vllm_client, vllm_slot
+
+    c = await vllm_client()
+    async with vllm_slot():
         res = await c.post(url, json=payload, headers=_vllm_headers())
-        if res.status_code != 200:
-            raise RuntimeError(f"vLLM HTTP {res.status_code}: {res.text[:500]}")
-        data = res.json()
-        choices = data.get("choices") or []
-        if not choices:
-            return ""
-        return ((choices[0].get("message") or {}).get("content") or "").strip()
+    if res.status_code != 200:
+        raise RuntimeError(f"vLLM HTTP {res.status_code}: {res.text[:500]}")
+    data = res.json()
+    choices = data.get("choices") or []
+    if not choices:
+        return ""
+    return ((choices[0].get("message") or {}).get("content") or "").strip()
+
+
+_google_client: httpx.AsyncClient | None = None
+
+
+def _get_google_client() -> httpx.AsyncClient:
+    global _google_client
+    if _google_client is None or _google_client.is_closed:
+        _google_client = httpx.AsyncClient(timeout=45)
+    return _google_client
+
+
+async def close_google_client() -> None:
+    global _google_client
+    client, _google_client = _google_client, None
+    if client is not None and not client.is_closed:
+        await client.aclose()
 
 
 async def _google(chunk: str, target: str) -> str:
     """Purana raasta - ab sirf fallback."""
-    async with httpx.AsyncClient(timeout=45) as c:
-        res = await c.get(ENDPOINT, params={
-            "client": "gtx", "sl": "auto", "tl": target, "dt": "t", "q": chunk})
-        if res.status_code != 200:
-            raise RuntimeError(f"Translate HTTP {res.status_code}")
-        data = res.json()
-        return "".join((x[0] or "") for x in (data[0] if data and data[0] else []) if x)
+    res = await _get_google_client().get(
+        ENDPOINT,
+        params={"client": "gtx", "sl": "auto", "tl": target, "dt": "t", "q": chunk},
+    )
+    if res.status_code != 200:
+        raise RuntimeError(f"Translate HTTP {res.status_code}")
+    data = res.json()
+    return "".join((x[0] or "") for x in (data[0] if data and data[0] else []) if x)
 
 
 async def translate(text: str, target: str) -> str:
-    """Markdown ko `target` bhasha me, line structure sambhalte hue."""
+    """Markdown ko `target` bhasha me, line structure sambhalte hue.
+
+    Chunks do not depend on one another, so they are translated concurrently
+    rather than one after the next - a 60-page set of notes used to mean
+    hundreds of sequential round trips. Results are written back by index, so
+    the document still reassembles in its original order.
+    """
     if not text or not target:
         return text
-    out: list[str] = []
-    for chunk in _chunk(text, size=2000):
+
+    chunks = _chunk(text, size=2000)
+    out: list[str] = list(chunks)
+    # Bounded, so one enormous translation cannot take every slot on the box.
+    gate = asyncio.Semaphore(max(1, settings.TRANSLATE_CONCURRENCY))
+
+    async def one(idx: int, chunk: str) -> None:
         if not chunk.strip():
-            out.append(chunk)
-            continue
-        try:
-            piece = await _vllm(chunk, target)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("vLLM translate (%s) fail, Google par: %s", target, exc)
-            piece = await _google(chunk, target)
-        out.append(piece or chunk)
+            return
+        async with gate:
+            try:
+                piece = await _vllm(chunk, target)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("vLLM translate (%s) fail, Google par: %s", target, exc)
+                try:
+                    piece = await _google(chunk, target)
+                except Exception:  # noqa: BLE001 - keep the original text
+                    logger.warning("Google translate (%s) bhi fail", target)
+                    piece = ""
+        out[idx] = piece or chunk
+
+    await asyncio.gather(*(one(i, c) for i, c in enumerate(chunks)))
     return "\n".join(out)
 
 

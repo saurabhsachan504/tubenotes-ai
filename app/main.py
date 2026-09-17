@@ -29,6 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import engine, init_db
 from app.routers import admin, auth, billing, summarize, usage, webhooks
+from app.services import translate as translate_service
 from app.services import youtube
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -47,6 +48,21 @@ _INSECURE_DEFAULTS = {
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Every blocking call this app makes - the yt-dlp transcript fetch, and now
+    # each endpoint's database work - runs on Starlette's thread pool. Its
+    # default of 40 is not enough for a burst of long videos: once it is full,
+    # unrelated requests queue behind a transcript download, and /healthz stops
+    # answering while the app is in fact fine.
+    try:
+        import anyio.to_thread
+
+        anyio.to_thread.current_default_thread_limiter().total_tokens = max(
+            10, settings.THREADPOOL_MAX_THREADS
+        )
+        logger.info("thread pool sized to %s", settings.THREADPOOL_MAX_THREADS)
+    except Exception:  # pragma: no cover - anyio internals moved
+        logger.warning("could not resize the thread pool", exc_info=True)
+
     if settings.ENV == "prod":
         if settings.SECRET_KEY in _INSECURE_DEFAULTS or (
             settings.DEVICE_HASH_SECRET in _INSECURE_DEFAULTS
@@ -62,6 +78,7 @@ async def lifespan(app: FastAPI):
         init_db()
     yield
     await summarize.summarizer.close_vllm_client()
+    await translate_service.close_google_client()
     await youtube.close_oembed_client()
     engine.dispose()
 

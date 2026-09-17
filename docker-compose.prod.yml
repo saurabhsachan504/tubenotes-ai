@@ -45,9 +45,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # Lets the container reach Ollama running on the DGX itself, so you can set
-    # OLLAMA_URL=http://host.docker.internal:11434 instead of going out to the
-    # public https://ollama.trueworks.in and straight back in.
+    # Lets the container reach a service on the DGX itself by
+    # host.docker.internal instead of going out to the public internet and
+    # straight back in. vLLM is normally reached as http://gemma4:8000/v1 over
+    # baota_net, which never leaves the box at all.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -69,7 +70,8 @@ services:
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000
-                    --workers 2 --proxy-headers --forwarded-allow-ips='*'"
+                    --workers 3 --proxy-headers --forwarded-allow-ips='*'
+                    --timeout-graceful-shutdown 30"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/healthz || exit 1"]
       interval: 30s
@@ -80,9 +82,16 @@ services:
 volumes:
   pgdata:
 
-# Ollama apne alag stack me chalta hai. Uske network se judne par
-# api seedhe us container se baat karta hai - host ka port beech me aata hi
-# nahi, isliye Ollama na LAN se dikhta hai na internet se.
+# vLLM (gemma4) apne alag stack me chalta hai - ~/gemma4-vllm/compose.yaml.
+# Uske network se judne par api seedhe us container se baat karta hai; host ka
+# port beech me aata hi nahi, isliye vLLM na LAN se dikhta hai na internet se.
+#
+# Model ko alag container me rakhna jaan-boojh kar hai: weights app ke deploy
+# ke beech resident rehte hain (warna har `up` par 85s engine init), aur isi
+# wajah se --workers 3 mumkin hai - 26B model ki teen copy nahi chahiye.
+#
+# CONCURRENCY CONTRACT: --workers 3 (upar) x VLLM_MAX_CONCURRENCY=10 (.env)
+# = 30 = vLLM ka --max-num-seqs. Ye teen number hamesha saath me badalte hain.
 networks:
   baota_net:
     external: true

@@ -15,9 +15,10 @@ Three things this file is careful about:
      should generate it. A per-key lock plus a re-check after acquiring it means
      the other nine wait a moment and then read the finished row.
 
-  3. PRIVACY. Unlisted and private videos are never written here - see
-     youtube.is_public(). Someone summarising their own unlisted video must not
-     have it handed to a stranger who knows the id.
+  3. PRIVACY. Nothing a stranger could not have fetched for themselves is
+     written here - see youtube.is_cacheable(). A transcript the extension read
+     with the user's own cookies is never shared, because the server could not
+     have obtained it alone.
 """
 from __future__ import annotations
 
@@ -61,6 +62,10 @@ def detected_lang_for(db: Session, video_id: str) -> str | None:
         .order_by(CachedOutput.last_used_at.desc())
         .limit(1)
     ).scalar_one_or_none()
+    # End the transaction this SELECT opened. The session belongs to a request
+    # that may stream for half an hour, and an open read transaction pins the
+    # connection "idle in transaction" for all of it.
+    db.rollback()
     return row or None
 
 
@@ -80,6 +85,8 @@ def get(db: Session, video_id: str, mode: str, lang: str, model: str) -> CachedO
     ).scalar_one_or_none()
 
     if row is None:
+        # Same reason as above: do not hold a connection open on a miss.
+        db.rollback()
         return None
 
     row.hits += 1

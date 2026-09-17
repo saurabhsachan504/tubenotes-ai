@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.deps import get_admin_user
 from app.models import (
@@ -18,6 +19,7 @@ from app.models import (
 )
 from app.schemas import MessageOut, UserOut
 from app.services import devices as device_service
+from app.services import output_cache
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(get_admin_user)])
 
@@ -94,3 +96,21 @@ def reset_device_trials(payload: BlockDeviceRequest, db: Session = Depends(get_d
     ledger.trials_used = 0
     db.commit()
     return MessageOut(detail="device trial counter reset")
+
+
+class PurgeResponse(BaseModel):
+    removed: int
+    older_than_days: int
+
+
+@router.post("/cache/purge", response_model=PurgeResponse)
+def purge_cache(older_than_days: int | None = None, db: Session = Depends(get_db)):
+    """Drop shared summaries nobody has opened in a long time.
+
+    OUTPUT_CACHE_TTL_DAYS decides the cut-off; pass older_than_days to override
+    it for one call. Without this the cache only ever grew - the TTL was
+    configured and then never acted on by anything.
+    """
+    days = older_than_days if older_than_days is not None else settings.OUTPUT_CACHE_TTL_DAYS
+    removed = output_cache.purge_stale(db, days)
+    return PurgeResponse(removed=removed, older_than_days=days)

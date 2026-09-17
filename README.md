@@ -283,6 +283,76 @@ Both are already implemented — it is an env-var change, not a code change.
 
 ---
 
+## Concurrency: the one contract to not break
+
+The summariser talks to a single Gemma model served by vLLM. vLLM runs a fixed
+number of sequences at once (`--max-num-seqs`); everything beyond that waits in
+its queue. So the app must never have more requests in flight than the server
+can run.
+
+**The contract is a multiplication:**
+
+```
+uvicorn --workers  x  VLLM_MAX_CONCURRENCY  ==  vLLM --max-num-seqs
+        3                      10                        30
+```
+
+`VLLM_MAX_CONCURRENCY` is **per worker** — each uvicorn worker is its own
+process with its own semaphore. Change any one of the three numbers and you
+must change the others. They live in `docker-compose.prod.yml` (workers),
+`.env` (`VLLM_MAX_CONCURRENCY`) and `~/gemma4-vllm/compose.yaml`
+(`--max-num-seqs`).
+
+Every call into vLLM — an on-screen summary, a chunk of full notes, a chunk of
+a translation — passes through the same process-wide gate in
+`app/services/summarizer.py` (`vllm_slot()`), and holds its slot until the last
+token is out.
+
+### Why this exists
+
+`NOTES_CONCURRENCY` used to be the only limit, and it was constructed *inside*
+`full_notes()` — so it bounded the chunks of a **single video** and nothing
+bounded the number of videos. Three people on three videos put
+`3 x NOTES_CONCURRENCY` generations onto a server built to run four. The
+overflow sat in vLLM's queue until it hit the read timeout, and the retry loop
+— which had no backoff — sent it straight back into the queue that had just
+failed it. That feedback loop is what turned a busy minute into a hang.
+
+vLLM's own logs during the incident:
+
+```
+Running: 4 reqs, Waiting: 8 reqs, GPU KV cache usage: 1.8%
+```
+
+Four running, eight queued, and 98% of the KV cache idle — the queue was the
+cap, never the memory.
+
+### If you need more throughput
+
+In order of leverage, measured on a GB10 (273 GB/s, unified memory):
+
+1. **Raise the batch size.** Decode on this box is memory-bandwidth bound, and
+   a bigger batch amortises the weight read across more sequences. This is the
+   free win and it is why `--max-num-seqs` is 30, not 4.
+2. **Generate fewer tokens.** A 1:1 latency saving. `NOTES_NUM_PREDICT` is
+   already scaled per chunk by `_budget_for()`.
+3. **Prefix caching** (already on). Every request shares the same system
+   prompt, so most of the prefill is a cache hit.
+4. **Speculative decoding** (`--speculative-config`). Summaries reuse the
+   transcript's own phrasing, which n-gram speculation is good at. Untried
+   here; worth a measurement before anything below this line.
+5. **Custom kernels.** Only worth it once the memory bus is actually saturated.
+   At NVFP4 the active weights are ~2 GB, so the ceiling is roughly 136
+   token-steps/s; until measurements sit near that, hand-written kernels buy
+   single-digit percentages for a great deal of work.
+
+Note what is *not* on the list: the web layer. uvicorn relays a few KB/s of
+JSON per stream and does no per-request CPU work — it is nowhere near being the
+constraint, and neither is the HTTP hop to vLLM (sub-millisecond against ~28 ms
+per decoded token). Keeping vLLM in its own container is deliberate: the
+weights stay resident across app deploys, and running three app workers is only
+possible because the model is not embedded in them.
+
 ## Layout
 
 ```
@@ -296,7 +366,7 @@ app/
   routers/           auth, usage, billing, webhooks, admin
   services/
     youtube.py       URL parsing, transcript (captions -> yt-dlp), metadata
-    summarizer.py    language routing + Ollama streaming, prompts
+    summarizer.py    prompts, vLLM streaming, the concurrency gate
     devices.py       fingerprint → hash, device registration, per-device caps
     entitlements.py  THE trial/subscription decision engine
     billing.py       applies webhook events to subscription state
