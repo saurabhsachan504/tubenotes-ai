@@ -21,6 +21,10 @@ from app.services.youtube import sample_for_model
 
 logger = logging.getLogger("trialguard.summarizer")
 
+# Headroom for the system prompt, the language directive and the chat template.
+# Measured against the longest of these prompts with a wide margin.
+_PROMPT_TOKEN_ALLOWANCE = 900
+
 _vllm_client: httpx.AsyncClient | None = None
 _vllm_slots: asyncio.Semaphore | None = None
 
@@ -528,16 +532,54 @@ def _missing_marker(part: int, total: int, lang: str) -> str:
     return note
 
 
-def _budget_for(chunk: str) -> int:
-    """Scale the notes output allowance for short and final chunks.
+def effective_chunk_chars() -> int:
+    """NOTES_CHUNK_CHARS, clamped to what the model can actually accept.
 
-    A full 6,000-character chunk keeps the configured exhaustive-notes budget.
-    Giving the same 4,096-token allowance to a 300-character tail encourages
-    padding/repetition and can keep the GPU busy long after the useful answer.
+    A chunk has to share the context window with the system prompt and with the
+    answer the model is asked to write. Nothing was checking that: set
+    NOTES_CHUNK_CHARS high enough and every notes request would be rejected for
+    exceeding max_model_len, which is a configuration mistake that only shows up
+    under load. Deriving the ceiling instead means the chunk size can be tuned
+    freely and the worst case is a slightly smaller chunk than requested.
     """
+    budget_tokens = (
+        max(1, settings.VLLM_MAX_MODEL_LEN)
+        - max(1, settings.NOTES_NUM_PREDICT)
+        - _PROMPT_TOKEN_ALLOWANCE
+    )
+    if budget_tokens <= 0:
+        # NOTES_NUM_PREDICT alone does not fit; leave room for a minimal chunk.
+        budget_tokens = max(1, settings.VLLM_MAX_MODEL_LEN // 4)
+    ceiling = int(budget_tokens * max(1.0, settings.CHARS_PER_TOKEN))
+    wanted = max(1, settings.NOTES_CHUNK_CHARS)
+    if wanted > ceiling:
+        logger.warning(
+            "NOTES_CHUNK_CHARS=%s exceeds what max_model_len=%s leaves for input "
+            "(%s chars); using %s",
+            wanted, settings.VLLM_MAX_MODEL_LEN, ceiling, ceiling,
+        )
+        return ceiling
+    return wanted
+
+
+def _budget_for(chunk: str) -> int:
+    """Scale the notes output allowance to how much material the chunk holds.
+
+    A FULL chunk keeps the configured exhaustive-notes budget; a 300-character
+    tail does not, because giving it the same 4,096 tokens invites padding and
+    repetition and keeps the GPU busy long after the useful answer.
+
+    "Full" means NOTES_CHUNK_CHARS. That used to be hardcoded to 6000, which
+    quietly broke the scaling the moment the chunk size was configured to
+    anything else: at 12,000-char chunks every half-full chunk still claimed the
+    entire budget.
+    """
+    full = effective_chunk_chars()
     cap = max(1, settings.NOTES_NUM_PREDICT)
-    floor = min(768, cap)
-    proportional = (len(chunk) * cap + 5999) // 6000
+    # A floor proportional to the budget rather than a fixed 768, so it keeps
+    # meaning the same thing if NOTES_NUM_PREDICT is tuned.
+    floor = max(1, cap // 5)
+    proportional = (len(chunk) * cap + full - 1) // full
     return min(cap, max(floor, proportional))
 
 
@@ -568,7 +610,7 @@ async def full_notes(
     )
 
     chunks = split_into_chunks(
-        transcript, settings.NOTES_CHUNK_CHARS, settings.NOTES_CHUNK_OVERLAP
+        transcript, effective_chunk_chars(), settings.NOTES_CHUNK_OVERLAP
     )
     if settings.NOTES_MAX_CHUNKS and len(chunks) > settings.NOTES_MAX_CHUNKS:
         dropped = len(chunks) - settings.NOTES_MAX_CHUNKS

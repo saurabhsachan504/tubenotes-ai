@@ -505,7 +505,7 @@ def test_notes_read_the_entire_transcript_not_a_sample(monkeypatch):
 
     monkeypatch.setattr(summarizer, "collect_chat", fake_chat)
 
-    # ~200k chars - well past the old 30-chunk / 180k ceiling.
+    # ~200k chars - far more than any sampling window would pass through.
     transcript = " ".join(f"sentence{i}." for i in range(20000))
     out = asyncio.run(summarizer.full_notes(transcript, lang="en"))
 
@@ -513,8 +513,11 @@ def test_notes_read_the_entire_transcript_not_a_sample(monkeypatch):
     # Every sentence of the source reached the model.
     for probe in ("sentence0.", "sentence9999.", "sentence19999."):
         assert probe in joined, probe
-    # Chunks are in order and overlap, so nothing falls between two of them.
-    assert len(seen) > 30
+    # The chunk COUNT depends on NOTES_CHUNK_CHARS, so asserting a fixed number
+    # only encodes today's tuning. What must hold is that the whole transcript
+    # was covered - i.e. roughly length/chunk_size chunks, not a fixed sample.
+    expected = len(transcript) / summarizer.effective_chunk_chars()
+    assert len(seen) >= expected * 0.9, f"{len(seen)} chunks for {expected:.0f} expected"
     assert len(joined) > len(transcript)
     assert out.count("## part") == len(seen)
 

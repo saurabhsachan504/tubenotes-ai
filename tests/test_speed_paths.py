@@ -253,7 +253,7 @@ def test_chunk_size_default_keeps_round_trips_down():
     # set - otherwise an old .env would make the test lie.
     from app.config import Settings
 
-    assert Settings.model_fields["NOTES_CHUNK_CHARS"].default == 6000
+    assert Settings.model_fields["NOTES_CHUNK_CHARS"].default == 12000
     # NOTES_CONCURRENCY is deliberately high now: VLLM_MAX_CONCURRENCY is the
     # real cap, and unlike this one it is enforced across every request.
     assert Settings.model_fields["NOTES_CONCURRENCY"].default == 30
@@ -562,5 +562,28 @@ def test_a_tiny_chunk_gets_a_small_token_budget():
 
 
 def test_a_normal_chunk_still_gets_the_full_budget():
-    """The cap must never truncate a real video's notes."""
-    assert summarizer._budget_for("x" * 6000) == settings.NOTES_NUM_PREDICT
+    """The cap must never truncate a real video's notes.
+
+    "Full" is whatever NOTES_CHUNK_CHARS says, not a hardcoded 6000 - that
+    assumption is exactly what broke when the chunk size was retuned.
+    """
+    full = summarizer.effective_chunk_chars()
+    assert summarizer._budget_for("x" * full) == settings.NOTES_NUM_PREDICT
+    # and a half-full chunk gets about half, rather than the whole allowance
+    assert summarizer._budget_for("x" * (full // 2)) < settings.NOTES_NUM_PREDICT
+
+
+def test_the_chunk_size_is_clamped_to_the_context_window(monkeypatch):
+    """A chunk must never be configured larger than the model can accept."""
+    monkeypatch.setattr(settings, "VLLM_MAX_MODEL_LEN", 10000)
+    monkeypatch.setattr(settings, "NOTES_NUM_PREDICT", 4096)
+    monkeypatch.setattr(settings, "NOTES_CHUNK_CHARS", 10**6)
+    clamped = summarizer.effective_chunk_chars()
+    # input chars must leave room for the answer and the prompt
+    max_input_tokens = 10000 - 4096 - summarizer._PROMPT_TOKEN_ALLOWANCE
+    assert clamped <= max_input_tokens * settings.CHARS_PER_TOKEN
+    assert clamped > 0
+
+    # a sane value is passed through untouched
+    monkeypatch.setattr(settings, "NOTES_CHUNK_CHARS", 9000)
+    assert summarizer.effective_chunk_chars() == 9000

@@ -100,6 +100,15 @@ class Settings(BaseSettings):
     CF_ACCESS_CLIENT_ID: str = ""
     CF_ACCESS_CLIENT_SECRET: str = ""
     VLLM_TIMEOUT_SECONDS: int = 600
+    # The context window vLLM was started with (--max-model-len). Nothing here
+    # can change it; it is declared so the app can SIZE ITSELF against it
+    # instead of hoping a chunk fits. See effective_chunk_chars().
+    VLLM_MAX_MODEL_LEN: int = 10000
+    # Rough bytes-per-token for the languages this serves. Latin script runs
+    # ~4; Devanagari and Tamil are denser per token, so this errs low on
+    # purpose - a chunk slightly too small merely costs a round trip, while one
+    # too big is a request the model refuses.
+    CHARS_PER_TOKEN: float = 3.0
     # Generous on purpose. Under load the delay is this process's own
     # scheduling lag, not vLLM being unreachable, and 15s was short
     # enough to turn that lag into a failed summary.
@@ -196,7 +205,15 @@ class Settings(BaseSettings):
     # 6k keeps a chunk within the model context while requiring substantially
     # fewer model round trips than the old 3.5k default. Overlap stops a point
     # from falling between two chunks.
-    NOTES_CHUNK_CHARS: int = 6000
+    # 12,000 chars is about 3,000 tokens in, which with the prompt and a
+    # 4,096-token answer sits comfortably inside max_model_len 10,000. Halving
+    # the chunk count halves the per-chunk prompt overhead and the overlap that
+    # gets written twice - and, because a chunk's answer is capped at
+    # NOTES_NUM_PREDICT however much material it covers, it also roughly halves
+    # the total tokens generated for a video. That is the speed/detail dial:
+    # bigger chunks mean faster, denser notes; smaller means slower, more
+    # exhaustive ones.
+    NOTES_CHUNK_CHARS: int = 12000
     NOTES_CHUNK_OVERLAP: int = 400
     # 0 = no limit. Anything above 0 truncates long videos, and the user is
     # told when that happens - it is never silent.
