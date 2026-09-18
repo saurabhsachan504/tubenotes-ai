@@ -109,6 +109,16 @@ class Settings(BaseSettings):
     # purpose - a chunk slightly too small merely costs a round trip, while one
     # too big is a request the model refuses.
     CHARS_PER_TOKEN: float = 3.0
+    # Measured against this model's own tokenizer: English 6.95 chars/token,
+    # Hindi 4.27, a mix of the two 5.33 - Devanagari costs about 1.6x the
+    # tokens of Latin script for the same text, which is why a Hindi video is
+    # genuinely slower to write than an English one of the same length.
+    #
+    # Deliberately separate from CHARS_PER_TOKEN above. That one sizes chunks
+    # and erring LOW is safe there - a smaller chunk only costs a round trip.
+    # This one estimates how much work is left, where erring low makes the
+    # progress bar expect tokens that never arrive and lag behind the work.
+    OUTPUT_CHARS_PER_TOKEN: float = 5.3
     # Generous on purpose. Under load the delay is this process's own
     # scheduling lag, not vLLM being unreachable, and 15s was short
     # enough to turn that lag into a failed summary.

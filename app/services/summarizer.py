@@ -38,7 +38,7 @@ _NOTES_OUTPUT_RATIO = 0.52
 
 def _expected_tokens(chunk_chars: int, budget: int) -> float:
     """Roughly how many tokens a part of this size will write."""
-    est = (chunk_chars * _NOTES_OUTPUT_RATIO) / max(1.0, settings.CHARS_PER_TOKEN)
+    est = (chunk_chars * _NOTES_OUTPUT_RATIO) / max(1.0, settings.OUTPUT_CHARS_PER_TOKEN)
     # Never above what the model is allowed to produce, never absurdly small.
     return max(32.0, min(float(budget), est))
 
