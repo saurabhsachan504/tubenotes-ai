@@ -11,7 +11,31 @@
 
 import { getDeviceFingerprint } from './device.js';
 
-export const API_BASE = 'http://localhost:8000/api/v1'; // <- change for prod
+// Production by default, so a freshly packed extension talks to the real
+// backend instead of a localhost that is not there. It used to default to
+// localhost with a "change for prod" comment, which is a step every build had
+// to remember and any build could forget.
+//
+// For local work, set tg_api_base in chrome.storage.local (or define
+// TG_API_BASE before this module loads) and it is used instead.
+const DEFAULT_API_BASE = 'https://tubenotes.trueworks.in/api/v1';
+
+export let API_BASE =
+  (typeof TG_API_BASE !== 'undefined' && TG_API_BASE) || DEFAULT_API_BASE;
+
+/** Point the client somewhere else - call once at startup, before any request. */
+export function setApiBase(base) {
+  if (base) API_BASE = String(base).replace(/\/+$/, '');
+}
+
+/** Read an override from extension storage, if one was set for local work. */
+export async function loadApiBase() {
+  try {
+    const { tg_api_base } = await chrome.storage.local.get('tg_api_base');
+    if (tg_api_base) setApiBase(tg_api_base);
+  } catch (_) { /* not in an extension context, or storage unavailable */ }
+  return API_BASE;
+}
 
 const TOKENS_KEY = 'tg_tokens';
 const CACHE_KEY = 'tg_entitlement';

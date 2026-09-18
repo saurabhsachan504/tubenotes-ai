@@ -808,3 +808,36 @@ def test_interactive_and_batch_requests_carry_different_priorities(monkeypatch):
     assert sent[0]["priority"] < sent[1]["priority"], "lower must mean sooner"
     summarizer._vllm_slots = None
     summarizer._batch_slots = None
+
+
+# ---------------------------------------------------------------------------
+# The extension allowlist: configured for a long time, enforced only now
+# ---------------------------------------------------------------------------
+def test_extension_allowlist(monkeypatch):
+    """ALLOWED_EXTENSION_IDS existed in settings and nothing read it.
+
+    Scope matters as much as the rule: it must gate chrome-extension origins
+    and leave the web app alone, and an empty list must keep letting everything
+    through so turning it on is a deliberate act.
+    """
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    mine = "abcdefghijklmnopabcdefghijklmnop"
+    theirs = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+
+    # Empty list: every extension still works, exactly as before.
+    monkeypatch.setattr(settings, "ALLOWED_EXTENSION_IDS", "")
+    r = client.get("/healthz", headers={"Origin": f"chrome-extension://{theirs}"})
+    assert r.status_code == 200
+
+    monkeypatch.setattr(settings, "ALLOWED_EXTENSION_IDS", mine)
+    # Mine is allowed...
+    assert client.get("/healthz", headers={"Origin": f"chrome-extension://{mine}"}).status_code == 200
+    # ...a stranger's build is not...
+    blocked = client.get("/healthz", headers={"Origin": f"chrome-extension://{theirs}"})
+    assert blocked.status_code == 403
+    # ...and the web app is not an extension, so it is never affected.
+    assert client.get("/healthz", headers={"Origin": "https://tubenotes.trueworks.in"}).status_code == 200
+    assert client.get("/healthz").status_code == 200

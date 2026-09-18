@@ -109,6 +109,34 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def enforce_extension_allowlist(request: Request, call_next):
+    """Only let the extensions you named call this API.
+
+    ALLOWED_EXTENSION_IDS and its allowed_extension_ids property existed in the
+    settings but nothing ever read them - the lock was configured and never
+    installed, so any packed extension could call the API as readily as yours.
+
+    Scope is deliberately narrow. It applies ONLY to chrome-extension://
+    origins, so the web app and ordinary browsers are untouched, and an empty
+    list keeps today's behaviour of allowing every extension. Auth and the
+    trial ledger still do the real work; this just stops a stranger's build
+    using your backend as free infrastructure.
+    """
+    allowed = settings.allowed_extension_ids
+    if allowed:
+        origin = request.headers.get("origin") or ""
+        if origin.startswith("chrome-extension://"):
+            ext_id = origin.removeprefix("chrome-extension://").strip("/")
+            if ext_id not in allowed:
+                logger.warning("blocked extension origin %s", origin)
+                return JSONResponse(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    content={"detail": "This extension is not allowed to use this API."},
+                )
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def add_timing_and_security_headers(request: Request, call_next):
     started = time.perf_counter()
     response = await call_next(request)
