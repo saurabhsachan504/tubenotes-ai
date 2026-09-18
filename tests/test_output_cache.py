@@ -383,3 +383,58 @@ def test_a_public_video_still_never_overrides_a_private_availability():
         source="yt-dlp", availability="private",
     )
     assert youtube.is_cacheable(t, video_public=True) is False
+
+
+# ---------------------------------------------------------------------------
+# Cross-language reuse: a cached English row answering a request that would
+# have been written in English and translated anyway.
+# ---------------------------------------------------------------------------
+def test_a_non_native_target_reuses_the_english_row(monkeypatch, db):
+    """plan_for() writes English and translates for languages the model does
+    not handle well. So an English row IS what generation would have produced -
+    reusing it skips the transcript fetch and the generation, and the user gets
+    the same text by the same route.
+    """
+    monkeypatch.setattr(settings, "OUTPUT_CACHE_ENABLED", True)
+    monkeypatch.setattr(settings, "OUTPUT_CACHE_MIN_CHARS", 5)
+    from app.routers import summarize as R
+
+    model = summarizer.plan_for("en")[0]
+    output_cache.put(db, "xlangvid123", "summary", "en", model, "English summary text",
+                     detected_lang="en", transcript_chars=100)
+
+    # Swahili: not a language this model writes natively, so plan_for says
+    # "write English, then translate".
+    assert summarizer.plan_for("sw")[2] == "sw"
+
+    class P:
+        target_lang = "sw"
+        mode = "summary"
+
+    row, target, _m = R._cache_lookup(db, P(), "xlangvid123")
+    assert row is not None, "the English row should have been reused"
+    assert target == "sw"
+    assert row.translate_to == "sw", "it must be marked for translation"
+    assert row.text == "English summary text"
+
+
+def test_a_native_target_does_not_borrow_another_language(monkeypatch, db):
+    """Hindi is written natively, so serving a translated English row instead
+    would be a quality change dressed up as a cache hit."""
+    monkeypatch.setattr(settings, "OUTPUT_CACHE_ENABLED", True)
+    monkeypatch.setattr(settings, "OUTPUT_CACHE_MIN_CHARS", 5)
+    from app.routers import summarize as R
+
+    model = summarizer.plan_for("en")[0]
+    output_cache.put(db, "nativevid456", "summary", "en", model, "English summary text",
+                     detected_lang="en", transcript_chars=100)
+
+    assert summarizer.plan_for("hi")[2] is None, "hi is written natively"
+
+    class P:
+        target_lang = "hi"
+        mode = "summary"
+
+    row, target, _m = R._cache_lookup(db, P(), "nativevid456")
+    assert row is None, "a native target must be generated, not translated"
+    assert target == "hi"

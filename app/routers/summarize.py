@@ -242,6 +242,9 @@ class _CachedText:
     text: str
     detected_lang: str
     transcript_chars: int
+    # Set when this row is in a DIFFERENT language than asked for and must be
+    # translated before it is served. See _cache_lookup().
+    translate_to: str | None = None
 
 
 def _cache_lookup(db: Session, payload, video_id: str, *, mode: str | None = None):
@@ -269,16 +272,47 @@ def _cache_lookup(db: Session, payload, video_id: str, *, mode: str | None = Non
     model = summarizer.plan_for(target)[0]
     output_mode = mode or payload.mode
     row = output_cache.get(db, video_id, output_mode, target, model)
-    snapshot = (
-        None
-        if row is None
-        else _CachedText(
-            text=row.text,
-            detected_lang=row.detected_lang or "",
-            transcript_chars=row.transcript_chars,
+    if row is not None:
+        return (
+            _CachedText(
+                text=row.text,
+                detected_lang=row.detected_lang or "",
+                transcript_chars=row.transcript_chars,
+            ),
+            target,
+            model,
         )
-    )
-    return snapshot, target, model
+
+    # Miss on the exact language. For a target the model does not write well,
+    # plan_for() would have written ENGLISH and translated it anyway - so an
+    # English row for this video is the very thing that generation would have
+    # produced. Reusing it skips the transcript fetch (measured 3.3-19.1s) and
+    # the whole generation, and the user gets the same text they would have
+    # got, by the same route.
+    #
+    # Deliberately NOT done when the model writes the target natively: there
+    # the honest answer is a native write, and translating an English one
+    # instead would be a quality change dressed up as a cache hit.
+    _model, write_lang, translate_to = summarizer.plan_for(target)
+    if translate_to and write_lang != target:
+        source = output_cache.get(db, video_id, output_mode, write_lang, model)
+        if source is not None:
+            logger.info(
+                "cache reuse for %s/%s: %s row -> %s by translation",
+                video_id, output_mode, write_lang, target,
+            )
+            return (
+                _CachedText(
+                    text=source.text,
+                    detected_lang=source.detected_lang or "",
+                    transcript_chars=source.transcript_chars,
+                    translate_to=target,
+                ),
+                target,
+                model,
+            )
+
+    return None, target, model
 
 
 def _charge_and_lookup(db: Session, user: User, payload, video_id: str, *, action: str, mode: str):
@@ -314,7 +348,10 @@ def _charge_and_lookup(db: Session, user: User, payload, video_id: str, *, actio
         db.close()
 
 
-async def _replay_cached(row, *, meta, target: str, model: str, entitlement):
+async def _replay_cached(
+    row, *, meta, target: str, model: str, entitlement, video_id: str = "",
+    output_mode: str = "summary",
+):
     """Cache se mili summary ko usi shakl me bhejo jaisi taazi banti hai.
 
     Ek hi delta me poora text - saamanya raaste jaisa hi kram (meta, delta,
@@ -335,8 +372,39 @@ async def _replay_cached(row, *, meta, target: str, model: str, entitlement):
             "entitlement": json.loads(entitlement.model_dump_json()),
         }
     )
-    yield _event({"type": "delta", "text": row.text})
-    yield _event({"type": "done", "text": row.text, "language": target, "cached": True})
+    text = row.text
+
+    if row.translate_to:
+        # A row in the language generation would have written, reused for a
+        # language it would then have translated into. Do that translation now
+        # - the transcript fetch and the generation are both already saved.
+        yield _event({
+            "type": "status",
+            "message": f"Translating to {summarizer.language_name(row.translate_to)}…",
+        })
+        ttask = asyncio.create_task(translate.translate(text, row.translate_to))
+        queue: list[bytes] = []
+        try:
+            async for beat in _drain_until_done(ttask, queue):
+                yield beat
+            text = await ttask
+        except Exception:  # noqa: BLE001 - a failed translation must not lose the text
+            logger.warning("cache-reuse translation to %s failed", row.translate_to)
+            text = row.text
+        finally:
+            if not ttask.done():
+                ttask.cancel()
+
+        # Store the translation so the next person for this language is a
+        # plain hit and pays for none of this.
+        if video_id and text and text != row.text:
+            await run_in_threadpool(
+                _store_cached, video_id, output_mode, target, model, text,
+                row.detected_lang or target, row.transcript_chars, "server",
+            )
+
+    yield _event({"type": "delta", "text": text})
+    yield _event({"type": "done", "text": text, "language": target, "cached": True})
 
 
 @router.post("/summarize")
@@ -376,6 +444,8 @@ async def summarize(
                 target=cached_target,
                 model=cached_model,
                 entitlement=entitlement,
+                video_id=video_id,
+                output_mode=payload.mode if hasattr(payload, "mode") else "notes",
             ),
             media_type="application/x-ndjson",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
@@ -548,6 +618,8 @@ async def notes(
                 target=cached_target,
                 model=cached_model,
                 entitlement=entitlement,
+                video_id=video_id,
+                output_mode=payload.mode if hasattr(payload, "mode") else "notes",
             ),
             media_type="application/x-ndjson",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
