@@ -123,7 +123,9 @@ def apply_event(db: Session, event: NormalizedEvent) -> Subscription | None:
     return sub
 
 
-def start_checkout_record(db: Session, user: User, provider: str) -> Subscription:
+def start_checkout_record(
+    db: Session, user: User, provider: str, *, plan=None
+) -> Subscription:
     """Placeholder row so a webhook that arrives before we store ids still lands."""
     existing = db.execute(
         select(Subscription).where(
@@ -135,12 +137,20 @@ def start_checkout_record(db: Session, user: User, provider: str) -> Subscriptio
     if existing is not None:
         return existing
 
+    # The authenticated checkout route supplies the server-selected plan.
+    # The mock-confirm endpoint may call this directly in development, where
+    # retaining the legacy USD default keeps the isolated test harness useful.
+    if plan is not None:
+        price_cents, currency = plan.price_cents, plan.currency
+    else:
+        price_cents, currency = settings.PLAN_PRICE_CENTS, settings.PLAN_CURRENCY
+
     sub = Subscription(
         user_id=user.id,
         provider=provider,
         status=SubscriptionStatus.incomplete,
-        price_cents=settings.PLAN_PRICE_CENTS,
-        currency=settings.PLAN_CURRENCY,
+        price_cents=price_cents,
+        currency=currency,
     )
     db.add(sub)
     db.flush()

@@ -63,9 +63,19 @@ class Settings(BaseSettings):
 
     # ---- billing -------------------------------------------------------
     PAYMENT_PROVIDER: Literal["mock", "stripe", "razorpay"] = "mock"
+    # Legacy default used by the old single-price Stripe/mock flow. New
+    # checkout code uses the explicit India/international settings below.
     PLAN_PRICE_CENTS: int = 500  # $5.00
     PLAN_CURRENCY: str = "USD"
     PLAN_INTERVAL: str = "month"
+    INDIA_PLAN_PRICE_SUBUNITS: int = 29_900  # Rs 299.00, expressed in paise
+    INTERNATIONAL_PLAN_PRICE_CENTS: int = 500  # $5.00, expressed in cents
+
+    # Cloudflare adds CF-IPCountry only when it proxies the visitor request.
+    # Keep this false for a directly exposed origin: an arbitrary caller could
+    # otherwise forge the header. Enable it only when the origin accepts
+    # traffic exclusively from Cloudflare (for example, through a Tunnel).
+    TRUST_CLOUDFLARE_COUNTRY_HEADER: bool = False
 
     # Shared secret for the mock provider's test endpoints. Empty (the default)
     # means the mock checkout/webhook routes are disabled outright.
@@ -77,7 +87,11 @@ class Settings(BaseSettings):
 
     RAZORPAY_KEY_ID: str = ""
     RAZORPAY_KEY_SECRET: str = ""
+    # Keep RAZORPAY_PLAN_ID as a temporary backwards-compatible fallback for
+    # the USD plan. Production should set both explicit IDs below.
     RAZORPAY_PLAN_ID: str = ""
+    RAZORPAY_PLAN_ID_INR: str = ""
+    RAZORPAY_PLAN_ID_USD: str = ""
     RAZORPAY_WEBHOOK_SECRET: str = ""
 
     BILLING_SUCCESS_URL: str = "https://example.com/billing/success"
@@ -354,7 +368,14 @@ class Settings(BaseSettings):
 
     APP_BASE_URL: str = "http://localhost:8000"
 
-    ADMIN_API_KEY: str = Field(default="", description="Static key for /admin routes")
+    # Old integrations may still use this header key.  The browser dashboard
+    # itself uses the signed-in admin account below, so this key is never sent
+    # to or stored in the browser.
+    ADMIN_API_KEY: str = Field(default="", description="Legacy static key for server-to-server admin routes")
+    # Comma-separated emergency/bootstrap admin emails.  Keep this in the
+    # untracked .env.local/.env file, never in source control.  Users marked
+    # is_admin in the database are admins too.
+    ADMIN_EMAILS: str = ""
 
     # ---- Google sign-in --------------------------------------------------
     # false rakhne par /auth/google 404 deta hai aur UI me button dikhta hi
@@ -378,6 +399,14 @@ class Settings(BaseSettings):
     @property
     def allowed_extension_ids(self) -> list[str]:
         return [e.strip() for e in self.ALLOWED_EXTENSION_IDS.split(",") if e.strip()]
+
+    @property
+    def admin_emails(self) -> set[str]:
+        return {
+            email.strip().lower()
+            for email in self.ADMIN_EMAILS.split(",")
+            if email.strip()
+        }
 
     @property
     def is_sqlite(self) -> bool:

@@ -36,21 +36,22 @@ class RazorpayProvider(PaymentProvider):
     def __init__(self) -> None:
         if not (settings.RAZORPAY_KEY_ID and settings.RAZORPAY_KEY_SECRET):
             raise RuntimeError("RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET are not configured")
-        if not settings.RAZORPAY_PLAN_ID:
-            raise RuntimeError(
-                "RAZORPAY_PLAN_ID is not configured - create a $5/month plan in the "
-                "Razorpay dashboard and put its plan_xxx id here"
-            )
         self.client = razorpay.Client(
             auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET)
         )
 
     def create_checkout_session(
-        self, user: User, *, success_url: str, cancel_url: str
+        self, user: User, *, plan, success_url: str, cancel_url: str
     ) -> CheckoutSession:
+        if not plan.razorpay_plan_id:
+            label = "INR Rs 299" if plan.currency == "INR" else "USD $5"
+            raise RuntimeError(
+                f"The Razorpay {label} Plan ID is not configured. "
+                "Create the plan in Razorpay and set its environment variable."
+            )
         subscription = self.client.subscription.create(
             {
-                "plan_id": settings.RAZORPAY_PLAN_ID,
+                "plan_id": plan.razorpay_plan_id,
                 "customer_notify": 1,
                 "total_count": 120,  # up to 10 years of monthly cycles
                 "notes": {"user_id": user.id, "email": user.email},

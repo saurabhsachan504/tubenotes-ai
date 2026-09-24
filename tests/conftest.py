@@ -9,6 +9,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("DEVICE_HASH_SECRET", "test-pepper")
 os.environ.setdefault("PAYMENT_PROVIDER", "mock")
 os.environ.setdefault("MOCK_BILLING_SECRET", "test-mock-secret")
+os.environ.setdefault("TRUST_CLOUDFLARE_COUNTRY_HEADER", "true")
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 os.environ.setdefault("EMAIL_BACKEND", "console")
 # Password hashing is deliberately slow in production; at the default cost it
@@ -68,11 +69,20 @@ def device() -> dict:
     return make_device()
 
 
-def register(client, email="user@example.com", password="Str0ngPass1", device=None):
+def register(
+    client,
+    email="user@example.com",
+    password="Str0ngPass1",
+    device=None,
+):
     device = device or make_device()
     res = client.post(
         f"{API}/auth/signup",
-        json={"email": email, "password": password, "device": device},
+        json={
+            "email": email,
+            "password": password,
+            "device": device,
+        },
     )
     assert res.status_code == 201, res.text
     body = res.json()

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,6 +22,7 @@ from app.schemas import (
 from app.security import constant_time_equals
 from app.services import billing as billing_service
 from app.services.payments import get_provider
+from app.services.pricing import plan_for_headers, plans
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
@@ -30,20 +31,45 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 def list_plans():
     return [
         PlanOut(
-            id="pro-monthly",
+            id=plan.id,
             name=f"{settings.APP_NAME} Pro",
-            price_cents=settings.PLAN_PRICE_CENTS,
-            currency=settings.PLAN_CURRENCY,
-            interval=settings.PLAN_INTERVAL,
-            description="Unlimited usage, billed monthly. Cancel any time.",
+            price_cents=plan.price_cents,
+            currency=plan.currency,
+            interval=plan.interval,
+            description=plan.description,
             free_trials=settings.FREE_TRIAL_LIMIT,
         )
+        for plan in plans()
     ]
+
+
+def _plan_out(plan) -> PlanOut:
+    return PlanOut(
+        id=plan.id,
+        name=f"{settings.APP_NAME} Pro",
+        price_cents=plan.price_cents,
+        currency=plan.currency,
+        interval=plan.interval,
+        description=plan.description,
+        free_trials=settings.FREE_TRIAL_LIMIT,
+    )
+
+
+@router.get("/price", response_model=PlanOut)
+def current_price(request: Request, response: Response):
+    """Public display price, derived from the trusted Cloudflare header.
+
+    This response is country-specific, so browser/CDN caches must never reuse
+    one visitor's price for another visitor.
+    """
+    response.headers["Cache-Control"] = "private, no-store"
+    return _plan_out(plan_for_headers(request.headers))
 
 
 @router.post("/checkout", response_model=CheckoutSessionOut)
 def create_checkout(
     payload: CheckoutRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -57,12 +83,15 @@ def create_checkout(
             detail="You already have an active subscription.",
         )
 
+    plan = plan_for_headers(request.headers)
+
     session = provider.create_checkout_session(
         user,
+        plan=plan,
         success_url=payload.success_url or settings.BILLING_SUCCESS_URL,
         cancel_url=payload.cancel_url or settings.BILLING_CANCEL_URL,
     )
-    sub = billing_service.start_checkout_record(db, user, provider.name)
+    sub = billing_service.start_checkout_record(db, user, provider.name, plan=plan)
     if provider.name == "razorpay":
         # Razorpay creates the subscription up front, so we already know its id.
         sub.provider_subscription_id = session.session_id

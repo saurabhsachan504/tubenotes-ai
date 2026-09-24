@@ -25,7 +25,7 @@ class MockProvider(PaymentProvider):
     name = "mock"
 
     def create_checkout_session(
-        self, user: User, *, success_url: str, cancel_url: str
+        self, user: User, *, plan, success_url: str, cancel_url: str
     ) -> CheckoutSession:
         session_id = f"mock_cs_{sha256(user.id + str(datetime.now(timezone.utc)))[:24]}"
         url = (

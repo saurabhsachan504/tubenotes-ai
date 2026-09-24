@@ -47,16 +47,29 @@ def get_current_user(
 
 
 def get_admin_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
     x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
-) -> None:
+) -> User | None:
     # Constant-time compare so the endpoint cannot be used as an oracle that
     # leaks the key one character at a time.
+    # Preserve the existing server-to-server key for the extension and older
+    # operator scripts.  The new web dashboard deliberately does *not* expose
+    # this secret; it authenticates with the normal user JWT.
     if (
-        not settings.ADMIN_API_KEY
-        or not x_admin_key
-        or not constant_time_equals(x_admin_key, settings.ADMIN_API_KEY)
+        settings.ADMIN_API_KEY
+        and x_admin_key
+        and constant_time_equals(x_admin_key, settings.ADMIN_API_KEY)
     ):
+        return None
+
+    if credentials is None or not credentials.credentials:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    user = get_current_user(credentials, db)
+    if user.is_admin or user.email.lower() in settings.admin_emails:
+        return user
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
 
 
 def get_client_ip(request: Request) -> str:

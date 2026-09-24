@@ -10,13 +10,13 @@ from tests.conftest import activate_subscription, make_device, register
 API = settings.API_PREFIX
 
 
-def test_plan_is_five_dollars_monthly(client):
+def test_plans_offer_india_and_international_monthly_prices(client):
     plans = client.get(f"{API}/billing/plans").json()
-    assert len(plans) == 1
-    assert plans[0]["price_cents"] == 500
-    assert plans[0]["currency"] == "USD"
-    assert plans[0]["interval"] == "month"
-    assert plans[0]["free_trials"] == 5
+    assert {(p["currency"], p["price_cents"]) for p in plans} == {
+        ("INR", 29_900),
+        ("USD", 500),
+    }
+    assert all(p["interval"] == "month" and p["free_trials"] == 5 for p in plans)
 
 
 def test_checkout_requires_auth(client):
@@ -30,6 +30,34 @@ def test_checkout_returns_a_url(client, device):
     body = res.json()
     assert body["provider"] == "mock"
     assert body["checkout_url"].startswith("http")
+
+
+def test_automatic_country_price_uses_trusted_cloudflare_header(client, device):
+    international_price = client.get(f"{API}/billing/price")
+    assert international_price.headers["cache-control"] == "private, no-store"
+    assert international_price.json()["currency"] == "USD"
+    india_price = client.get(
+        f"{API}/billing/price", headers={"CF-IPCountry": "IN"}
+    ).json()
+    assert india_price["currency"] == "INR"
+    assert india_price["price_cents"] == 29_900
+
+    _, headers, _ = register(client, email="india@example.com", device=device)
+    checkout = client.post(
+        f"{API}/billing/checkout",
+        json={},
+        headers={**headers, "CF-IPCountry": "IN"},
+    )
+    assert checkout.status_code == 200, checkout.text
+    sub = activate_subscription(client, headers)
+    assert sub["currency"] == "INR"
+    assert sub["price_cents"] == 29_900
+
+
+def test_country_header_is_ignored_when_not_trusted(client, monkeypatch):
+    monkeypatch.setattr(settings, "TRUST_CLOUDFLARE_COUNTRY_HEADER", False)
+    price = client.get(f"{API}/billing/price", headers={"CF-IPCountry": "IN"}).json()
+    assert price["currency"] == "USD"
 
 
 def test_cannot_checkout_twice_while_active(client, device):

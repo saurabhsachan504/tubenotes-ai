@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>TubeNotes — Admin Panel</title>
+  <link rel="stylesheet" href="/static/admin.css?v=1">
+  <link rel="stylesheet" href="/static/admin-extra.css?v=12">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Admin navigation">
+      <a class="brand" href="/"><span class="brand-mark">▶</span><span><b>TubeNotes</b><small>Admin Panel</small></span></a>
+      <nav class="nav">
+        <button class="nav-item active" data-section="dashboard"><span>▣</span>Dashboard</button>
+        <button class="nav-item" data-section="users"><span>♟</span>Users</button>
+        <button class="nav-item" data-section="recent"><span>◷</span>Recent Video Jobs</button>
+        <button class="nav-item" data-section="jobs"><span>▶</span>Summary Generation</button>
+        <button class="nav-item" data-section="pdf"><span>▤</span>PDF Generation</button>
+        <button class="nav-item" data-section="translations"><span>◎</span>Translations</button>
+        <button class="nav-item" data-section="analytics"><span>⌁</span>Analytics</button>
+        <button class="nav-item" data-section="health"><span>✚</span>System Health</button>
+        <button class="nav-item" data-section="errors"><span>⚠</span>Error Logs</button>
+        <button class="nav-item" data-section="model"><span>◉</span>Model Usage</button>
+        <button class="nav-item" data-section="reports"><span>▥</span>Reports</button>
+        <button class="nav-item" data-section="settings"><span>⚙</span>Settings</button>
+      </nav>
+      <div class="side-bottom">
+        <div class="admin-person"><span class="avatar" id="adminInitial">A</span><span><b id="adminName">Admin</b><small id="adminEmail">Checking access…</small></span></div>
+        <a class="logout" href="/"><span>↪</span> Back to TubeNotes</a>
+        <button id="adminSignoutBtn" class="logout admin-signout" type="button">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <label class="search"><span>⌕</span><input id="search" type="search" placeholder="Search users, videos, or job ID…"></label>
+        <div class="toolbar"><span id="updated">Loading…</span><select id="range" aria-label="Date range"><option value="7">Last 7 days</option><option value="10" selected>Last 10 days</option><option value="30">Last 30 days</option></select><button id="refresh" class="icon-btn" title="Refresh">↻</button></div>
+      </header>
+
+      <section id="dashboard" class="page-section">
+        <h1>Welcome, <span id="welcomeName">Admin</span> <span class="wave">👋</span></h1>
+        <p class="lead">Here’s what’s happening with your TubeNotes platform.</p>
+
+        <div class="metrics">
+          <button class="metric metric-link blue" type="button" data-dashboard-action="users"><span class="metric-icon">♟</span><span><small>Total Users</small><strong id="totalUsers">—</strong><em id="subscriptions">— active subscriptions</em></span></button>
+          <button class="metric metric-link green" type="button" data-dashboard-action="active_today"><span class="metric-icon">●</span><span><small>Active Users (Today)</small><strong id="activeToday">—</strong><em>Unique users with activity</em></span></button>
+          <button class="metric metric-link purple" type="button" data-dashboard-action="recent"><span class="metric-icon">▶</span><span><small>Videos Processed</small><strong id="videoJobs">—</strong><em id="rangeJobs">In selected period</em></span></button>
+          <button class="metric metric-link emerald" type="button" data-dashboard-action="successful_summaries"><span class="metric-icon">✓</span><span><small>Successful Summaries</small><strong id="summaryOutputs">—</strong><em>Completed summary jobs</em></span></button>
+          <button class="metric metric-link coral" type="button" data-dashboard-action="pdf"><span class="metric-icon">▤</span><span><small>PDF Generated</small><strong id="pdfGenerated">—</strong><em>Completed PDF downloads</em></span></button>
+          <button class="metric metric-link gold" type="button" data-dashboard-action="completed_translations"><span class="metric-icon">◎</span><span><small>Translations</small><strong id="translations">—</strong><em>Completed translations</em></span></button>
+        </div>
+
+        <section class="payment-summary" aria-label="Subscription payment summary">
+          <div class="panel-head"><h2>Subscription Payments</h2><span class="muted">Latest verified subscription status per user</span></div>
+          <div class="payment-metrics">
+            <button class="metric payment-paid payment-filter-card" type="button" data-user-filter="paid" aria-label="Open paid users"><span class="metric-icon">Paid</span><span><small>Paid Users</small><strong id="paidUsers">-</strong><em>Active paid subscriptions</em></span></button>
+            <button class="metric payment-pro payment-filter-card" type="button" data-user-filter="subscribed" aria-label="Open active Pro users"><span class="metric-icon">Pro</span><span><small>Active Pro Users</small><strong id="activeProUsers">-</strong><em>Currently granted Pro access</em></span></button>
+            <button class="metric payment-warning payment-filter-card" type="button" data-user-filter="payment_issue" aria-label="Open unpaid and past-due users"><span class="metric-icon">!</span><span><small>Unpaid / Past Due</small><strong id="paymentIssueUsers">-</strong><em>Unpaid, past-due or incomplete</em></span></button>
+            <button class="metric payment-cancelled payment-filter-card" type="button" data-user-filter="cancelled" aria-label="Open cancelled users"><span class="metric-icon">X</span><span><small>Cancelled</small><strong id="cancelledUsers">-</strong><em>Latest subscription is cancelled</em></span></button>
+          </div>
+        </section>
+
+        <div id="analytics" class="charts-grid">
+          <article class="panel chart-panel"><div class="panel-head"><h2>User Activity</h2><select id="activityRangeSelect" class="chart-range range-control" aria-label="User activity date range"><option value="7">Last 7 Days</option><option value="10" selected>Last 10 Days</option><option value="15">Last 15 Days</option><option value="30">Last 30 Days</option></select><span id="activityRange" class="hidden"></span></div><div id="activityChart" class="line-chart" aria-label="User activity chart"></div></article>
+          <article class="panel chart-panel"><div class="panel-head"><h2>Video Processing Status</h2><select id="jobsRange" class="chart-range range-control" aria-label="Video processing date range"><option value="7">Last 7 Days</option><option value="10" selected>Last 10 Days</option><option value="15">Last 15 Days</option><option value="30">Last 30 Days</option></select></div><span class="legend"><i class="summary"></i>Successful <i class="notes"></i>Failed <i class="pdf"></i>Processing</span><div id="jobsChart" class="bar-chart" aria-label="Video jobs chart"></div></article>
+          <article class="panel chart-panel country-panel"><div class="panel-head"><h2>Users by Country</h2><select id="countryRange" class="chart-range range-control" aria-label="Users by country date range"><option value="7">Last 7 Days</option><option value="10" selected>Last 10 Days</option><option value="15">Last 15 Days</option><option value="30">Last 30 Days</option></select></div><div id="countryChart" class="country-chart"></div></article>
+        </div>
+
+        <div class="wide-grid">
+          <article id="jobs" class="panel table-panel"><div class="panel-head"><h2>Recent Video Jobs</h2><button class="view-all-link" type="button" data-view-all="recent">View all &rarr;</button></div><div class="table-wrap"><table><thead><tr><th>#</th><th>User Email</th><th>City</th><th>Country</th><th>Video URL</th><th>Title</th><th>Status</th><th>PDF</th><th>Language</th><th>Time</th><th>Tokens*</th></tr></thead><tbody id="jobsRows"></tbody></table></div></article>
+          <article id="health" class="panel health-panel"><div class="panel-head"><h2>System Health</h2><button class="view-all-link" type="button" data-view-all="health">View details &rarr;</button></div><div id="healthRows" class="health-rows"></div></article>
+        </div>
+
+        <div class="bottom-grid">
+          <article id="topUsers" class="panel compact-panel"><div class="panel-head"><h2>Top Users by Activity</h2><button class="view-all-link" type="button" data-view-all="users">View all</button></div><table><thead><tr><th>#</th><th>User Email</th><th>Videos</th><th>PDFs</th><th>Translations</th></tr></thead><tbody id="usersRows"></tbody></table></article>
+          <article id="pdf" class="panel compact-panel"><div class="panel-head"><h2>Top Videos</h2><button class="view-all-link" type="button" data-view-all="jobs">View all</button></div><table><thead><tr><th>#</th><th>Title</th><th>Processed</th><th>Success rate</th></tr></thead><tbody id="videosRows"></tbody></table></article>
+          <article id="recentErrors" class="panel compact-panel"><div class="panel-head"><h2>Recent Errors</h2><button class="view-all-link" type="button" data-view-all="errors">View all</button></div><div class="table-wrap"><table><thead><tr><th>Time</th><th>User Email</th><th>Error message</th></tr></thead><tbody id="errorsRows"></tbody></table></div></article>
+        </div>
+
+        <div class="admin-notes">
+          <article id="model" class="panel note-panel"><h2>Model Usage</h2><p>vLLM queue, running requests and GPU telemetry are shown in System Health. NVIDIA temperature/utilisation appears automatically on machines with <code>nvidia-smi</code>.</p></article>
+          <article id="reports" class="panel note-panel"><h2>Reports</h2><p><b>* Tokens</b> are a consistent output-size estimate based on generated characters. Every new job stores its real title, selected output language, status, PDF state and elapsed time.</p></article>
+          <article id="settings" class="panel note-panel"><h2>Access</h2><p>This page requires a signed-in administrator. Configure <code>ADMIN_EMAILS</code> in your private environment file, then restart the backend.</p></article>
+        </div>
+      </section>
+
+      <section id="systemHealth" class="page-section operations-page hidden" aria-labelledby="systemHealthHeading">
+        <div class="users-title-row"><div><h1 id="systemHealthHeading">System Health</h1><p class="lead">Live server, model, GPU, storage and queue status.</p></div><button id="healthRefresh" class="action-button" type="button">Refresh health</button></div>
+        <article class="panel health-detail-panel"><div class="panel-head"><h2>Live service status</h2><span id="healthDetailUpdated" class="live"><i></i> Loading...</span></div><div id="healthDetailRows" class="health-rows"></div></article>
+      </section>
+
+      <section id="users" class="page-section users-page hidden" aria-labelledby="usersHeading">
+        <div class="users-title-row">
+          <div><h1 id="usersHeading">Users</h1><p class="lead">Account, subscription, activity and device information from your real database.</p></div>
+          <button id="usersRefresh" class="action-button" type="button">Refresh users</button>
+        </div>
+        <div class="users-filters panel">
+          <label class="search"><span>Search</span><input id="userSearch" type="search" placeholder="Search name, email or recorded country"></label>
+          <label class="filter-label">Account type
+            <select id="userStatus"><option value="all">All users</option><option value="active_today">Active today</option><option value="paid">Paid users</option><option value="subscribed">Subscribed / Pro</option><option value="free">Free trial</option><option value="payment_issue">Unpaid / past due</option><option value="cancelled">Cancelled</option><option value="disabled">Disabled</option></select>
+          </label>
+        </div>
+        <article class="panel table-panel users-directory"><div class="panel-head"><h2>All Users</h2><span id="usersCount" class="muted">Loading...</span></div><div class="table-wrap"><table><thead><tr><th>User</th><th>Signup</th><th>Last login</th><th>Country</th><th>Plan</th><th>Trials</th><th>Videos</th><th>PDFs</th><th>Translations</th><th>Devices</th><th>Status</th><th></th></tr></thead><tbody id="directoryRows"></tbody></table></div></article>
+      </section>
+
+      <section id="operations" class="page-section operations-page hidden" aria-labelledby="operationsHeading">
+        <div class="users-title-row">
+          <div><h1 id="operationsHeading">Video Jobs</h1><p id="operationsLead" class="lead">Summary jobs created in the selected period.</p></div>
+          <button id="operationsRefresh" class="action-button" type="button">Refresh list</button>
+        </div>
+        <div class="operation-metrics">
+          <article class="panel operation-card"><small>Unique users</small><strong id="operationUsers">-</strong><em id="operationUsersLabel">Created summaries</em></article>
+          <article class="panel operation-card"><small>Total jobs</small><strong id="operationTotal">-</strong><em id="operationTotalLabel">In selected period</em></article>
+          <article class="panel operation-card success-card"><small>Successful</small><strong id="operationSuccess">-</strong><em>Completed operations</em></article>
+          <article class="panel operation-card failed-card"><small>Failed / processing</small><strong id="operationState">-</strong><em id="operationStateLabel">Awaiting data</em></article>
+        </div>
+        <div class="users-filters panel"><label class="search"><span>Search</span><input id="operationSearch" type="search" placeholder="Search user, video title, URL or language"></label></div>
+        <article class="panel table-panel operations-directory"><div class="panel-head"><h2 id="operationsTableTitle">Video Jobs</h2><span id="operationsCount" class="muted">Loading...</span></div><div class="table-wrap"><table><thead><tr><th>User</th><th>City</th><th>Country</th><th>Video URL</th><th>Title</th><th>Type</th><th>Status</th><th>PDF</th><th>Language</th><th>Time</th><th>Tokens*</th><th>Started</th></tr></thead><tbody id="operationsRows"></tbody></table></div></article>
+      </section>
+
+      <section id="errorLogs" class="page-section operations-page hidden" aria-labelledby="errorLogsHeading">
+        <div class="users-title-row"><div><h1 id="errorLogsHeading">Error Logs</h1><p class="lead">Failed jobs recorded in the selected period.</p></div><button id="errorsRefresh" class="action-button" type="button">Refresh errors</button></div>
+        <div class="operation-metrics"><article class="panel operation-card failed-card"><small>Failed jobs</small><strong id="errorTotal">-</strong><em>In selected period</em></article><article class="panel operation-card"><small>Affected users</small><strong id="errorUsers">-</strong><em>Unique accounts</em></article></div>
+        <div class="users-filters panel"><label class="search"><span>Search</span><input id="errorSearch" type="search" placeholder="Search user, video title, language or error message"></label></div>
+        <article class="panel table-panel operations-directory"><div class="panel-head"><h2>All Failed Jobs</h2><span id="errorCount" class="muted">Loading...</span></div><div class="table-wrap"><table><thead><tr><th>User</th><th>Video URL</th><th>Title</th><th>Type</th><th>Language</th><th>Error message</th><th>Started</th></tr></thead><tbody id="errorLogRows"></tbody></table></div></article>
+      </section>
+
+      <section id="adminSettings" class="page-section settings-page hidden" aria-labelledby="settingsHeading">
+        <div class="users-title-row"><div><h1 id="settingsHeading">Settings &amp; Maintenance</h1><p class="lead">Safe administrative controls and read-only service status. Secrets are never displayed here.</p></div><button id="settingsRefresh" class="action-button" type="button">Refresh status</button></div>
+        <div class="settings-grid">
+          <article class="panel settings-card"><div class="panel-head"><h2>Trial limits &amp; user management</h2><button id="settingsOpenUsers" class="view-all-link" type="button">Open Users</button></div><div id="trialConfig" class="settings-status">Loading...</div><form id="grantTrialsForm" class="settings-form"><label>User email<input id="grantTrialsEmail" type="email" autocomplete="email" required placeholder="user@example.com"></label><label>New total free trials<input id="grantTrialsLimit" type="number" min="0" max="10000" value="5" required></label><button class="action-button" type="submit">Set trial allowance</button></form><p class="settings-note">This sets one user’s total free-trial allowance; it does not expose device fingerprints.</p><p id="trialActionResult" class="action-result"></p></article>
+          <article class="panel settings-card"><div class="panel-head"><h2>Payment &amp; webhook health</h2><span class="pill">Read only</span></div><div id="billingConfig" class="settings-status">Loading...</div><p class="settings-note">Keys, webhook secrets, customer IDs and payment IDs are never returned to the browser.</p></article>
+          <article class="panel settings-card"><div class="panel-head"><h2>vLLM, GPU &amp; queue</h2><span class="pill">Read only</span></div><div id="modelConfig" class="settings-status">Loading...</div><p class="settings-note">Change production model or queue configuration only through the server environment and restart process.</p></article>
+          <article class="panel settings-card"><div class="panel-head"><h2>Cache cleanup</h2><span class="pill">Confirmation required</span></div><div id="cacheConfig" class="settings-status">Loading...</div><div class="settings-inline"><label>Remove cache entries older than <input id="purgeDays" type="number" min="0" max="3650" value="90"> days</label><button id="purgeCache" class="danger-button" type="button">Purge cache</button></div><p id="cacheActionResult" class="action-result"></p></article>
+          <article class="panel settings-card"><div class="panel-head"><h2>Maintenance &amp; error logs</h2><span class="pill">Safe tools</span></div><div id="maintenanceConfig" class="settings-status">Loading...</div><div class="settings-actions"><button id="settingsOpenErrors" class="action-button" type="button">Open Error Logs</button><button id="exportErrors" class="secondary-button" type="button">Download errors CSV</button></div><p id="maintenanceActionResult" class="action-result"></p></article>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div id="userDrawer" class="drawer-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
+    <section class="drawer-card">
+      <div class="drawer-head"><div><p class="eyebrow">User profile</p><h2 id="drawerTitle">User details</h2></div><button id="closeUserDrawer" class="icon-btn" type="button" aria-label="Close user details">Close</button></div>
+      <div id="userProfile" class="profile-summary"></div>
+      <section class="detail-section"><h3>Subscriptions and payment status</h3><div id="userSubscriptions" class="detail-table-wrap"></div></section>
+      <section class="detail-section"><h3>Registered devices</h3><div id="userDevices" class="detail-table-wrap"></div></section>
+      <section class="detail-section"><h3>Recent video jobs</h3><div id="userJobs" class="detail-table-wrap"></div></section>
+      <section class="detail-section"><h3>Recent errors</h3><div id="userErrors" class="detail-table-wrap"></div></section>
+    </section>
+  </div>
+  <div id="blocked" class="blocked hidden"><div><span class="blocked-logo">▶</span><h2>Admin access required</h2><p id="blockedText">Sign in with the admin account first.</p><a href="/" class="sign-in">Open TubeNotes sign in</a></div></div>
+  <script src="/static/admin.js?v=15" defer></script>
+</body>
+</html>

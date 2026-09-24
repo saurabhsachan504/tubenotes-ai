@@ -22,6 +22,19 @@ def test_signup_returns_tokens_and_entitlement(client, device):
     assert me.json()["email"] == "user@example.com"
 
 
+def test_signup_records_trusted_country_for_admin_analytics(client, db, device):
+    res = client.post(
+        f"{API}/auth/signup",
+        json={"email": "india@example.com", "password": "Str0ngPass1", "device": device},
+        headers={"CF-IPCountry": "IN"},
+    )
+    assert res.status_code == 201, res.text
+
+    from app.models import User
+
+    assert db.query(User).filter_by(email="india@example.com").one().billing_country == "IN"
+
+
 def test_password_is_never_returned_or_stored_in_clear(client, db, device):
     register(client, device=device)
     from app.models import User

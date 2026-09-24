@@ -99,6 +99,7 @@ class UserOut(BaseModel):
     full_name: str | None
     email_verified: bool
     is_active: bool
+    is_admin: bool
     trials_used: int
     created_at: datetime
 

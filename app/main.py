@@ -184,6 +184,15 @@ def meta():
 if settings.WEB_APP_ENABLED and STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+    @app.get("/admin", include_in_schema=False)
+    def admin_dashboard():
+        """The shell is public; every dashboard API call requires an admin JWT."""
+        return FileResponse(
+            STATIC_DIR / "admin.html",
+            media_type="text/html",
+            headers={"Cache-Control": "no-cache"},
+        )
+
     def _asset_version() -> str:
         """A cache-buster derived from app.js itself.
 

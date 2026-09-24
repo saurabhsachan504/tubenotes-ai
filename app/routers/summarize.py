@@ -15,7 +15,7 @@ import re
 import time
 from collections.abc import AsyncIterator
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -24,12 +24,14 @@ from starlette.concurrency import run_in_threadpool
 from app.config import settings
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import User
+from app.models import ProcessingJob, User
 from app.schemas import DeviceFingerprint, EntitlementOut
 from app.services import (
     entitlements,
+    job_audit,
     output_cache,
     pdf,
+    pricing,
     ratelimit,
     summarizer,
     translate,
@@ -38,6 +40,11 @@ from app.services import (
 
 logger = logging.getLogger("trialguard.summarize")
 router = APIRouter(tags=["summarize"])
+
+
+def _job_country(request: Request) -> str:
+    """Country snapshot for an operation, without guessing a city or location."""
+    return pricing.country_code_for_headers(request.headers) or "Unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -350,7 +357,7 @@ def _charge_and_lookup(db: Session, user: User, payload, video_id: str, *, actio
 
 async def _replay_cached(
     row, *, meta, target: str, model: str, entitlement, video_id: str = "",
-    output_mode: str = "summary",
+    output_mode: str = "summary", job_id: str = "",
 ):
     """Cache se mili summary ko usi shakl me bhejo jaisi taazi banti hai.
 
@@ -369,6 +376,7 @@ async def _replay_cached(
             "transcript_chars": row.transcript_chars,
             "transcript_source": "cache",
             "cached": True,
+            "job_id": job_id,
             "entitlement": json.loads(entitlement.model_dump_json()),
         }
     )
@@ -410,6 +418,7 @@ async def _replay_cached(
 @router.post("/summarize")
 async def summarize(
     payload: SummarizeRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -422,6 +431,9 @@ async def summarize(
       {"type":"error", "message": "..."}
     """
     video_id = _video_id_or_400(payload.url)
+    # _charge_and_lookup closes the request session before streaming, so keep
+    # the scalar identity before that happens.
+    user_id = user.id
 
     # 1. Charge, and 2. look in the cache - both on a worker thread, and the
     #    session closed before a single byte is streamed. Cache hit means the
@@ -435,8 +447,22 @@ async def summarize(
         action=f"summarize:{payload.mode}",
         mode=payload.mode,
     )
+    job_id = await run_in_threadpool(
+        job_audit.start,
+        user_id=user_id,
+        video_id=video_id,
+        video_url=payload.url,
+        kind=payload.mode,
+        language=payload.target_lang,
+        request_city="Unknown",
+        request_country=_job_country(request),
+    )
     if cached_row is not None:
         meta = await youtube.fetch_metadata(video_id)
+        await run_in_threadpool(
+            job_audit.finish, job_id, status="success", title=meta.title,
+            language=cached_target, cached=True, output_text=cached_row.text,
+        )
         return StreamingResponse(
             _replay_cached(
                 cached_row,
@@ -446,6 +472,7 @@ async def summarize(
                 entitlement=entitlement,
                 video_id=video_id,
                 output_mode=payload.mode if hasattr(payload, "mode") else "notes",
+                job_id=job_id,
             ),
             media_type="application/x-ndjson",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
@@ -458,6 +485,7 @@ async def summarize(
             payload, video_id
         )
     except youtube.TranscriptUnavailable as exc:
+        await run_in_threadpool(job_audit.finish, job_id, status="failed", error_message=str(exc))
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
     detected = summarizer.detect_language(transcript.text, hint=transcript.language)
@@ -486,6 +514,7 @@ async def summarize(
                     "transcript": round(transcript_ms, 1),
                 },
                 "entitlement": json.loads(entitlement.model_dump_json()),
+                "job_id": job_id,
             }
         )
 
@@ -533,6 +562,12 @@ async def summarize(
                     producer.cancel()
         except Exception as exc:  # noqa: BLE001 - surface it to the UI
             logger.exception("summary failed for %s", video_id)
+            await run_in_threadpool(
+                job_audit.finish, job_id, status="partial" if collected else "failed",
+                title=meta.title, language=target,
+                output_text="".join(collected) if collected else None,
+                error_message=str(exc),
+            )
             if collected:
                 # Partial output is still useful - hand it over rather than
                 # throwing away what the model already wrote.
@@ -562,6 +597,10 @@ async def summarize(
                     }
                 )
 
+        await run_in_threadpool(
+            job_audit.finish, job_id, status="success", title=meta.title,
+            language=target, output_text=text,
+        )
         yield _event({"type": "done", "text": text, "language": target})
 
         # Jama karna SABSE AAKHIR me - user ka jawab ja chuka hai, to yahan
@@ -590,6 +629,7 @@ async def summarize(
 @router.post("/notes")
 async def notes(
     payload: VideoRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -599,6 +639,7 @@ async def notes(
     video is not charged again for the PDF.
     """
     video_id = _video_id_or_400(payload.url)
+    user_id = user.id
 
     entitlement, cached_row, cached_target, cached_model = await run_in_threadpool(
         _charge_and_lookup,
@@ -609,8 +650,22 @@ async def notes(
         action="notes",
         mode="notes",
     )
+    job_id = await run_in_threadpool(
+        job_audit.start,
+        user_id=user_id,
+        video_id=video_id,
+        video_url=payload.url,
+        kind="notes",
+        language=payload.target_lang,
+        request_city="Unknown",
+        request_country=_job_country(request),
+    )
     if cached_row is not None:
         meta = await youtube.fetch_metadata(video_id)
+        await run_in_threadpool(
+            job_audit.finish, job_id, status="success", title=meta.title,
+            language=cached_target, cached=True, output_text=cached_row.text,
+        )
         return StreamingResponse(
             _replay_cached(
                 cached_row,
@@ -620,6 +675,7 @@ async def notes(
                 entitlement=entitlement,
                 video_id=video_id,
                 output_mode=payload.mode if hasattr(payload, "mode") else "notes",
+                job_id=job_id,
             ),
             media_type="application/x-ndjson",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
@@ -630,6 +686,7 @@ async def notes(
             payload, video_id
         )
     except youtube.TranscriptUnavailable as exc:
+        await run_in_threadpool(job_audit.finish, job_id, status="failed", error_message=str(exc))
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
     detected = summarizer.detect_language(transcript.text, hint=transcript.language)
@@ -693,6 +750,7 @@ async def notes(
                     "metadata": round(metadata_ms, 1),
                     "transcript": round(transcript_ms, 1),
                 },
+                "job_id": job_id,
             }
         )
 
@@ -720,6 +778,10 @@ async def notes(
             text = await task
         except Exception as exc:  # noqa: BLE001
             logger.exception("notes failed for %s", video_id)
+            await run_in_threadpool(
+                job_audit.finish, job_id, status="failed", title=meta.title,
+                language=target, error_message=str(exc),
+            )
             yield _event({"type": "error", "message": _friendly(exc)})
             return
         finally:
@@ -735,6 +797,10 @@ async def notes(
                 task.cancel()
 
         if not text:
+            await run_in_threadpool(
+                job_audit.finish, job_id, status="failed", title=meta.title,
+                language=target, error_message="The model returned nothing.",
+            )
             yield _event({"type": "error", "message": "The model returned nothing. Please try again."})
             return
 
@@ -762,6 +828,10 @@ async def notes(
                 if not ltask.done():
                     ltask.cancel()
 
+        await run_in_threadpool(
+            job_audit.finish, job_id, status="success", title=meta.title,
+            language=target, output_text=text,
+        )
         yield _event({"type": "done", "text": text, "language": target})
 
         if _may_cache(transcript, meta):
@@ -804,6 +874,7 @@ async def server_load():
 @router.post("/translate", response_model=TranslateOut)
 async def translate_text(
     payload: TranslateRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -813,17 +884,37 @@ async def translate_text(
     presentation of the same result. Rate-limited so it cannot be used as a free
     general-purpose translation API.
     """
-    await run_in_threadpool(_rate_limit_translate, db, user.id)
+    # _rate_limit_translate closes the request session; retain the scalar first.
+    user_id = user.id
+    await run_in_threadpool(_rate_limit_translate, db, user_id)
 
     target = payload.target_lang.split("-")[0].lower()
+    job_id = await run_in_threadpool(
+        job_audit.start,
+        user_id=user_id,
+        video_id=None,
+        video_url=None,
+        kind="translation",
+        language=target,
+        request_city="Unknown",
+        request_country=_job_country(request),
+    )
     try:
         text = await translate.translate(payload.text, target)
     except Exception as exc:  # noqa: BLE001
         logger.warning("translate failed: %s", exc)
+        await run_in_threadpool(
+            job_audit.finish, job_id, status="failed", language=target,
+            error_message=str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Translation service is unreachable right now. Please try again.",
         )
+    await run_in_threadpool(
+        job_audit.finish, job_id, status="success", title="Translated output",
+        language=target, output_text=text,
+    )
     return TranslateOut(
         text=text, target_lang=target, language_name=summarizer.language_name(target)
     )
@@ -833,9 +924,38 @@ class PdfRequest(VideoRequest):
     """Same shape as /notes - the PDF is a rendering of those same notes."""
 
 
+class PdfReadyRequest(BaseModel):
+    """Browser print flow confirms it prepared a PDF-ready document."""
+
+    job_id: str = Field(min_length=36, max_length=36)
+
+
+@router.post("/jobs/pdf-ready")
+async def mark_browser_pdf_ready(
+    payload: PdfReadyRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Mark a user-owned notes/summary job as PDF-ready.
+
+    The current web product builds the colourful document in the browser and
+    opens the browser's print/save dialog.  There is no server PDF request in
+    that flow, so this authenticated acknowledgement is the truthful point at
+    which the dashboard can show the PDF icon.  It cannot mark another user's
+    job because ownership is checked in the same transaction.
+    """
+    job = db.get(ProcessingJob, payload.job_id)
+    if job is None or job.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    job.pdf_generated = True
+    db.commit()
+    return {"detail": "PDF-ready document recorded"}
+
+
 @router.post("/notes/pdf")
 async def notes_pdf(
     payload: PdfRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -850,12 +970,27 @@ async def notes_pdf(
     connection - that is the pattern that produces half-hour requests.
     """
     video_id = _video_id_or_400(payload.url)
+    user_id = user.id
 
     entitlement, cached_row, target, model = await run_in_threadpool(
         _charge_and_lookup, db, user, payload, video_id, action="notes_pdf", mode="notes"
     )
+    job_id = await run_in_threadpool(
+        job_audit.start,
+        user_id=user_id,
+        video_id=video_id,
+        video_url=payload.url,
+        kind="pdf",
+        language=target or payload.target_lang,
+        request_city="Unknown",
+        request_country=_job_country(request),
+    )
 
     if cached_row is None:
+        await run_in_threadpool(
+            job_audit.finish, job_id, status="failed", language=target,
+            error_message="Full notes were not available for PDF rendering.",
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -875,23 +1010,39 @@ async def notes_pdf(
             subtitle=f"{meta.author or 'YouTube'} - {youtube.watch_url(video_id)}",
         )
     except pdf.PDFBusy as exc:
+        await run_in_threadpool(
+            job_audit.finish, job_id, status="failed", title=meta.title,
+            language=target, error_message=str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
             headers={"Retry-After": "30"},
         )
     except pdf.PDFTooLarge as exc:
+        await run_in_threadpool(
+            job_audit.finish, job_id, status="failed", title=meta.title,
+            language=target, error_message=str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)
         )
     except Exception:  # noqa: BLE001
         logger.exception("pdf render failed for %s", video_id)
+        await run_in_threadpool(
+            job_audit.finish, job_id, status="failed", title=meta.title,
+            language=target, error_message="The PDF could not be rendered.",
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="The PDF could not be rendered. The notes themselves are fine.",
         )
 
     safe = re.sub(r"[^A-Za-z0-9 _-]+", "", meta.title or "notes")[:60].strip() or "notes"
+    await run_in_threadpool(
+        job_audit.finish, job_id, status="success", title=meta.title,
+        language=target, pdf_generated=True, cached=True, output_text=cached_row.text,
+    )
     return Response(
         content=data,
         media_type="application/pdf",

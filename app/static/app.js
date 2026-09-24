@@ -162,7 +162,8 @@
       headers.Authorization = h;
     }
     const init = { method: opts.method || "GET", headers,
-      body: opts.body === undefined ? undefined : JSON.stringify(opts.body) };
+      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+      cache: opts.cache };
 
     let res = await fetch(API + path, init);
     if (res.status === 401 && opts.auth !== false) {
@@ -651,7 +652,7 @@
         }
         lastNotes = {
           videoId: ev.video.video_id, title: ev.video.title, url: ev.video.url,
-          markdown: "", lang: ev.language,
+          markdown: "", lang: ev.language, jobId: ev.job_id || null,
         };
         const translated = ev.detected_language && ev.detected_language !== ev.language;
         $("rMeta").innerHTML =
@@ -728,7 +729,7 @@
           (translated ? `<span class="tag">video: ${escapeAttr(ev.detected_language_name)}</span>` : "");
         lastNotes = {
           videoId: ev.video.video_id, title: ev.video.title, url: ev.video.url,
-          markdown: "", lang: ev.language,
+          markdown: "", lang: ev.language, jobId: ev.job_id || null,
         };
         if (inPdfFlow) {
           updatePdfProgress(2, 24, "Analyzing content…", "Transcript is ready. Planning the detailed notes in the video’s language.");
@@ -977,6 +978,13 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     const html = buildPrintHtml(false);
     if (!html) return;
 
+    // The browser, not the server, renders this colourful document. Record
+    // that the authenticated user reached the PDF-ready stage so Admin sees
+    // the same PDF icon that the user sees in this flow.
+    if (lastNotes && lastNotes.jobId) {
+      api("/jobs/pdf-ready", { method: "POST", body: { job_id: lastNotes.jobId } }).catch(() => {});
+    }
+
     const old = document.getElementById("tnPrintFrame");
     if (old) old.remove();
 
@@ -1133,6 +1141,38 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   // Auth UI
   // =====================================================================
   let authMode = "login";
+  let accountUser = null;
+  let currentBillingPlan = null;
+
+  function priceForPlan(plan) {
+    if (!plan) return null;
+    return plan.currency === "INR"
+      ? { label: "₹299/month", detail: "₹299/month" }
+      : { label: "$5/month", detail: "$5/month" };
+  }
+
+  function setHeroBillingPrice(plan) {
+    const price = priceForPlan(plan);
+    if (price && mode === "summary") {
+      $("heroHint").textContent = `5 free videos on signup · then ${price.label} · works with Hindi, English & 40+ languages`;
+    }
+  }
+
+  function paintBillingPrice(pro) {
+    const price = priceForPlan(currentBillingPlan);
+    $("upgradeBtn").textContent = pro
+      ? "Subscription active"
+      : price
+        ? `Subscribe — ${price.label}`
+        : "Subscribe";
+    setHeroBillingPrice(currentBillingPlan);
+  }
+
+  async function loadBillingPrice() {
+    currentBillingPlan = await api("/billing/price", { auth: false, cache: "no-store" });
+    setHeroBillingPrice(currentBillingPlan);
+    return currentBillingPlan;
+  }
 
   function openAuth(which, lead) {
     $("authModal").classList.remove("hidden");
@@ -1163,7 +1203,12 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     $("acctPane").classList.remove("hidden");
     $("acctMsg").textContent = "";
     try {
-      const [user, ent] = await Promise.all([api("/auth/me"), api("/entitlement/check", { method: "POST", body: { device: device() } })]);
+      const [user, ent, plan] = await Promise.all([
+        api("/auth/me"),
+        api("/entitlement/check", { method: "POST", body: { device: device() } }),
+        loadBillingPrice(),
+      ]);
+      accountUser = user;
       $("acctEmail").textContent = user.email;
       paintChip(ent);
       const pro = ent.plan === "subscription";
@@ -1172,10 +1217,17 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
         ? "Subscription active"
         : left > 0 ? `${left} of ${ent.trials_limit} free videos left` : "Free videos used up";
       $("acctMeter").style.width = pro ? "100%" : `${((ent.trials_limit - left) / ent.trials_limit) * 100}%`;
+      const price = priceForPlan(plan);
       $("acctDetail").textContent = pro
-        ? (ent.current_period_end ? "Renews " + new Date(ent.current_period_end).toLocaleDateString() : "Billed $5/month")
+        ? (ent.current_period_end ? "Renews " + new Date(ent.current_period_end).toLocaleDateString() : `Billed ${price ? price.label : "monthly"}`)
         : "One video = one credit. Re-running a video you already did is free.";
+      paintBillingPrice(pro);
       $("upgradeBtn").classList.toggle("hidden", pro);
+      // The link itself is cosmetic. /admin and every data endpoint verify
+      // the signed JWT on the server, so revealing it cannot grant access.
+      api("/admin/session")
+        .then(() => $("adminPanelBtn").classList.remove("hidden"))
+        .catch(() => $("adminPanelBtn").classList.add("hidden"));
     } catch (e) {
       if (e.status === 401) { tokens.clear(); openAuth("login"); return; }
       $("acctMsg").textContent = "Can't reach the server.";
@@ -1194,7 +1246,9 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     b.classList.add("on");
     mode = b.dataset.mode;
     $("heroHint").textContent = {
-      summary: "A structured ~400-word summary with sections and takeaways.",
+      summary: currentBillingPlan
+        ? `5 free videos on signup · then ${priceForPlan(currentBillingPlan).label} · works with Hindi, English & 40+ languages`
+        : "A structured ~400-word summary with sections and takeaways.",
       key_points: "Just the main points, numbered, in the order they're discussed.",
       notes: "Reads the ENTIRE transcript, part by part. Nothing is dropped — a long lecture can run to dozens of pages.",
       transcript: "The raw transcript is shown with the summary — pick another mode to generate.",
@@ -1243,11 +1297,14 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
         password: $("password").value,
         device: device(),
       };
-      if (authMode === "signup") body.full_name = $("fullName").value.trim() || null;
+      if (authMode === "signup") {
+        body.full_name = $("fullName").value.trim() || null;
+      }
       const data = await api(authMode === "signup" ? "/auth/signup" : "/auth/login",
         { auth: false, method: "POST", body });
       tokens.set(data.tokens);
       paintChip(data.entitlement);
+      setHeroBillingPrice(currentBillingPlan);
       closeModal();
       if ($("url").value.trim()) run(mode);
     } catch (e2) {
@@ -1276,12 +1333,15 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   $("upgradeBtn").onclick = async () => {
     $("upgradeBtn").disabled = true;
     try {
+      if (!accountUser) throw new Error("Open your account again before continuing.");
       const s = await api("/billing/checkout", { method: "POST", body: {} });
       window.open(s.checkout_url, "_blank", "noopener");
       $("acctMsg").textContent = "Finish the payment in the new tab, then reopen this panel.";
       $("acctMsg").className = "msg ok";
     } catch (e) {
-      $("acctMsg").textContent = e.status === 409 ? "You already have an active subscription." : "Couldn't start checkout.";
+      $("acctMsg").textContent = e.status === 409
+        ? "You already have an active subscription."
+        : (e.message || "Couldn't start checkout.");
       $("acctMsg").className = "msg";
     } finally { $("upgradeBtn").disabled = false; }
   };
@@ -1328,10 +1388,14 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
       const data = await api("/auth/google", {
         auth: false,
         method: "POST",
-        body: { credential: resp.credential, device: device() },
+        body: {
+          credential: resp.credential,
+          device: device(),
+        },
       });
       tokens.set(data.tokens);
       paintChip(data.entitlement);
+      setHeroBillingPrice(currentBillingPlan);
       closeModal();
       if ($("url").value.trim()) run(mode);
     } catch (e) {
@@ -1349,6 +1413,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   // ---- boot ----
   if ($("outLang")) fillLangSelect($("outLang"), { includeAuto: true });
   initGoogle();
+  loadBillingPrice().catch(() => {});
   try {
     const t = localStorage.getItem("tn_theme");
     if (t) { document.documentElement.dataset.theme = t; $("themeBtn").textContent = t === "dark" ? "☀️" : "🌙"; }

@@ -4,9 +4,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.models import SubscriptionStatus, User
+
+if TYPE_CHECKING:
+    from app.services.pricing import BillingPlan
 
 
 @dataclass(slots=True)
@@ -42,9 +45,9 @@ class PaymentProvider(ABC):
 
     @abstractmethod
     def create_checkout_session(
-        self, user: User, *, success_url: str, cancel_url: str
+        self, user: User, *, plan: "BillingPlan", success_url: str, cancel_url: str
     ) -> CheckoutSession:
-        """Start a hosted subscription checkout for $5/month."""
+        """Start a hosted subscription checkout for the server-selected plan."""
 
     @abstractmethod
     def parse_webhook(self, payload: bytes, headers: dict[str, str]) -> NormalizedEvent:

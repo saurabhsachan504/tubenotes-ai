@@ -46,7 +46,7 @@ class StripeProvider(PaymentProvider):
 
     # -- checkout --------------------------------------------------------
     def create_checkout_session(
-        self, user: User, *, success_url: str, cancel_url: str
+        self, user: User, *, plan, success_url: str, cancel_url: str
     ) -> CheckoutSession:
         price = settings.STRIPE_PRICE_ID
         line_item: dict[str, Any]

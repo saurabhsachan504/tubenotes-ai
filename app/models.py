@@ -88,6 +88,10 @@ class User(TimestampMixin, Base):
     # "password" | "google" | "google+password" - sirf jaankari ke liye.
     auth_provider: Mapped[str | None] = mapped_column(String(24), default="password")
     full_name: Mapped[str | None] = mapped_column(String(120))
+    # ISO country code recorded once at signup from a trusted Cloudflare
+    # header. Checkout pricing is still derived afresh from that request's
+    # trusted header, never from this stored analytics value.
+    billing_country: Mapped[str | None] = mapped_column(String(8), index=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -203,6 +207,49 @@ class UsageEvent(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="usage_events")
+
+
+# ---------------------------------------------------------------------------
+# Processing audit trail (admin dashboard)
+# ---------------------------------------------------------------------------
+class ProcessingJob(Base):
+    """One visible summary, notes, PDF, or translation operation.
+
+    UsageEvent is deliberately a billing ledger: it is written before work
+    starts, so it cannot truthfully tell an operator whether the model later
+    succeeded, how long it took, or whether a PDF was actually rendered.  This
+    table is a separate operational audit trail for the admin dashboard.
+    """
+
+    __tablename__ = "processing_jobs"
+    __table_args__ = (
+        Index("ix_processing_jobs_started_at", "started_at"),
+        Index("ix_processing_jobs_user_started", "user_id", "started_at"),
+        Index("ix_processing_jobs_status_started", "status", "started_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    video_id: Mapped[str | None] = mapped_column(String(16), index=True)
+    video_url: Mapped[str | None] = mapped_column(String(500))
+    title: Mapped[str | None] = mapped_column(String(500))
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)  # summary|notes|pdf|translation
+    language: Mapped[str | None] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="processing")
+    pdf_generated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    cached: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_chars: Mapped[int | None] = mapped_column(Integer)
+    # Location snapshot at the moment the operation began. City is currently
+    # intentionally recorded as Unknown; no IP geolocation provider is used.
+    request_city: Mapped[str] = mapped_column(String(120), default="Unknown", nullable=False)
+    request_country: Mapped[str] = mapped_column(String(8), default="Unknown", nullable=False)
+    error_message: Mapped[str | None] = mapped_column(String(500))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+
+    user: Mapped[User] = relationship()
 
 
 # ---------------------------------------------------------------------------

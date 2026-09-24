@@ -46,7 +46,7 @@ from app.security import (
 from app.services import devices as device_service
 from app.services import google_auth
 from app.services import email as email_service
-from app.services import entitlements, ratelimit
+from app.services import entitlements, pricing, ratelimit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -124,6 +124,7 @@ def signup(
         password_hash=hash_password(payload.password),
         full_name=payload.full_name,
         signup_ip=ip,
+        billing_country=pricing.country_code_for_headers(request.headers),
     )
     db.add(user)
     try:
@@ -155,6 +156,7 @@ def signup(
 @router.post("/google", response_model=AuthResponse)
 def google_login(
     payload: GoogleLoginRequest,
+    request: Request,
     db: Session = Depends(get_db),
     ip: str = Depends(get_client_ip),
 ):
@@ -215,6 +217,7 @@ def google_login(
                 password_hash=hash_password(secrets.token_urlsafe(48)),
                 full_name=identity.name,
                 signup_ip=ip,
+                billing_country=pricing.country_code_for_headers(request.headers),
                 google_sub=identity.sub,
                 auth_provider="google",
                 email_verified=True,
