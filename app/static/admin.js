@@ -16,6 +16,29 @@
   let autoUpdateInFlight = false;
   let lastSettingsAutoUpdate = 0;
 
+  function currentTheme() { return document.documentElement.dataset.adminTheme === "light" ? "light" : "dark"; }
+  function applyTheme(theme, persist = true) {
+    const next = theme === "light" ? "light" : "dark";
+    document.documentElement.dataset.adminTheme = next;
+    if (persist) { try { localStorage.setItem("tn_admin_theme", next); } catch (_) {} }
+    const button = $("themeToggle");
+    if (!button) return;
+    const switchTo = next === "light" ? "dark" : "light";
+    button.textContent = switchTo === "light" ? "Light" : "Dark";
+    button.title = "Switch to " + switchTo + " mode";
+    button.setAttribute("aria-label", button.title);
+    button.setAttribute("aria-pressed", String(next === "light"));
+  }
+  function installThemeToggle() {
+    const button = document.createElement("button");
+    button.id = "themeToggle";
+    button.type = "button";
+    button.className = "icon-btn theme-toggle";
+    $("refresh").before(button);
+    button.onclick = () => applyTheme(currentTheme() === "light" ? "dark" : "light");
+    applyTheme(currentTheme(), false);
+  }
+
   function tokens() { try { return JSON.parse(localStorage.getItem("tn_tokens") || "null"); } catch (_) { return null; } }
   async function bearer() {
     const saved = tokens();
@@ -460,6 +483,7 @@
     try { const session = await api("/session"); $("adminName").textContent = session.name; $("welcomeName").textContent = session.name; $("adminEmail").textContent = session.email; $("adminInitial").textContent = (session.name || "A").trim().charAt(0).toUpperCase(); } catch (_) {}
     load();
   }
+  installThemeToggle();
   $("refresh").onclick = () => window.location.reload();
   $("adminSignoutBtn").onclick = signOutAdmin;
   $("range").classList.add("range-control");

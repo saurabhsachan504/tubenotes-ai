@@ -6,7 +6,8 @@
   <meta name="robots" content="noindex,nofollow">
   <title>TubeNotes — Admin Panel</title>
   <link rel="stylesheet" href="/static/admin.css?v=1">
-  <link rel="stylesheet" href="/static/admin-extra.css?v=12">
+  <script>try { if (localStorage.getItem("tn_admin_theme") === "light") document.documentElement.dataset.adminTheme = "light"; } catch (_) {}</script>
+  <link rel="stylesheet" href="/static/admin-extra.css?v=13">
 </head>
 <body>
   <div class="app-shell">
@@ -150,6 +151,6 @@
     </section>
   </div>
   <div id="blocked" class="blocked hidden"><div><span class="blocked-logo">▶</span><h2>Admin access required</h2><p id="blockedText">Sign in with the admin account first.</p><a href="/" class="sign-in">Open TubeNotes sign in</a></div></div>
-  <script src="/static/admin.js?v=15" defer></script>
+  <script src="/static/admin.js?v=16" defer></script>
 </body>
 </html>
