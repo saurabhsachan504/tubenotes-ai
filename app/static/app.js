@@ -163,7 +163,7 @@
     }
     const init = { method: opts.method || "GET", headers,
       body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
-      cache: opts.cache };
+      cache: opts.cache, signal: opts.signal };
 
     let res = await fetch(API + path, init);
     if (res.status === 401 && opts.auth !== false) {
@@ -840,7 +840,7 @@
 
   /** Convert the summary that is already on screen into another language. */
   async function translateTo(code) {
-    if (!lastNotes || !lastNotes.markdown || !code) return;
+    if (!lastNotes || !lastNotes.markdown || !code) return false;
     const sel = $("rLang");
     if (sel) sel.disabled = true;
     status("Translating…", true);
@@ -857,11 +857,13 @@
       if (tag) tag.textContent = `🌐 ${res.language_name}`;
       status("");
       // The PDF is built from lastNotes.markdown, so it now follows too.
+      return true;
     } catch (e) {
       status("");
       note("err", e.status === 503
         ? "Translation service is unreachable right now."
         : escapeAttr(e.message || "Translation failed."));
+      return false;
     } finally {
       if (sel) { sel.disabled = false; sel.value = ""; }
     }
@@ -1110,29 +1112,35 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     const haveCurrent =
       lastNotes && lastNotes.markdown && url.includes(lastNotes.videoId);
 
-    // With nothing on screen there is nothing to print, so we generate the
-    // full notes either way - say so, rather than promising a quick PDF.
+    // Full Notes and the home-page PDF button need detailed notes first.
+    // A current summary can be printed immediately after an optional
+    // translation, but it still uses the exact same language picker.
     const willGenerate = full || !haveCurrent;
 
-    // Full Notes always uses the video's own language. Start immediately so
-    // the PDF-progress card appears before either API request responds.
-    if (willGenerate) {
-      await run("notes", null, { pdfProgress: true });
-      return;
-    }
-
-    const firstOption = { value: "", label: `Keep current — ${LANG_BY_CODE[lastNotes.lang] || lastNotes.lang || "as shown"}` };
+    const firstOption = willGenerate
+      ? { value: "", label: "Same as the video language" }
+      : { value: "", label: `Keep current — ${LANG_BY_CODE[lastNotes.lang] || lastNotes.lang || "as shown"}` };
 
     const choice = await pickLanguage({
-      title: "PDF language",
-      lead: "The PDF will be written in this language.",
+      title: full ? "Full Notes PDF language" : "PDF language",
+      lead: willGenerate
+        ? "Full Notes will be created in this language, then opened as a PDF."
+        : "The PDF will be written in this language.",
       firstOption,
     });
     if (choice === null) return;          // cancelled
 
+    // The selected target is passed to /notes. Gemma writes supported target
+    // languages directly; for other supported languages the backend uses its
+    // Gemma translation flow before the browser creates the PDF.
+    if (willGenerate) {
+      await run("notes", choice || null, { pdfProgress: true });
+      return;
+    }
+
     // A summary is already on screen: keep it, translating only if needed.
     if (choice && choice !== "auto" && choice !== lastNotes.lang) {
-      await translateTo(choice);
+      if (!await translateTo(choice)) return;
     }
     openPrintView();
   }
@@ -1197,6 +1205,89 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     $("authMsg").textContent = "";
   }
 
+  function accountDate(value) {
+    const date = value ? new Date(value) : null;
+    return date && !Number.isNaN(date.getTime())
+      ? date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })
+      : "Unknown time";
+  }
+
+  function deviceName(item, index) {
+    return item.label || item.platform || `Device ${index + 1}`;
+  }
+
+  function setDeviceListMessage(message) {
+    const list = $("accountDevices");
+    list.replaceChildren();
+    const note = document.createElement("span");
+    note.className = "device-empty";
+    note.textContent = message;
+    list.appendChild(note);
+  }
+
+  function renderAccountDevices(devices) {
+    const list = $("accountDevices");
+    const count = $("accountDeviceCount");
+    list.replaceChildren();
+    count.textContent = `${devices.length} active`;
+    if (!devices.length) {
+      setDeviceListMessage("No active devices were found.");
+      return;
+    }
+    devices.forEach((item, index) => {
+      const row = document.createElement("div");
+      row.className = "device-row";
+      const detail = document.createElement("div");
+      const name = document.createElement("b");
+      name.textContent = deviceName(item, index);
+      const meta = document.createElement("small");
+      const platform = item.platform || "Browser device";
+      meta.textContent = `${platform} · Last used ${accountDate(item.last_seen_at)}`;
+      detail.append(name, meta);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "remove-device";
+      remove.textContent = "Remove";
+      remove.setAttribute("aria-label", `Remove ${deviceName(item, index)}`);
+      remove.onclick = () => removeAccountDevice(item.id, remove, deviceName(item, index));
+      row.append(detail, remove);
+      list.appendChild(row);
+    });
+  }
+
+  async function loadAccountDevices() {
+    $("accountDeviceCount").textContent = "Loading...";
+    setDeviceListMessage("Loading registered devices...");
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 8000);
+    try {
+      const devices = await api("/auth/devices", { signal: controller.signal });
+      renderAccountDevices(Array.isArray(devices) ? devices : []);
+    } catch (e) {
+      $("accountDeviceCount").textContent = "Unavailable";
+      setDeviceListMessage(e.status === 401 ? "Sign in again to manage devices." : "Couldn't load devices. Close and reopen Account to try again.");
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  async function removeAccountDevice(deviceId, button, name) {
+    if (!window.confirm(`Remove ${name}? You can sign in again from that device later.`)) return;
+    button.disabled = true;
+    button.textContent = "Removing...";
+    try {
+      await api(`/auth/devices/${encodeURIComponent(deviceId)}`, { method: "DELETE" });
+      $("acctMsg").textContent = "Device removed. You can now use that account slot on another device.";
+      $("acctMsg").className = "msg ok";
+      await loadAccountDevices();
+    } catch (e) {
+      $("acctMsg").textContent = e.message || "Couldn't remove this device.";
+      $("acctMsg").className = "msg";
+      button.disabled = false;
+      button.textContent = "Remove";
+    }
+  }
+
   async function openAccount() {
     $("authModal").classList.remove("hidden");
     $("authPane").classList.add("hidden");
@@ -1223,6 +1314,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
         : "One video = one credit. Re-running a video you already did is free.";
       paintBillingPrice(pro);
       $("upgradeBtn").classList.toggle("hidden", pro);
+      loadAccountDevices();
       // The link itself is cosmetic. /admin and every data endpoint verify
       // the signed JWT on the server, so revealing it cannot grant access.
       api("/admin/session")

@@ -100,6 +100,13 @@ html[data-admin-theme="light"] .payment-summary .metric{min-height:96px}
 html[data-admin-theme="light"] .side-bottom{border-color:#d8e5f3}
 html[data-admin-theme="light"] .avatar{background:linear-gradient(135deg,#d8e8ff,#b8d6ff);color:#2365cf}
 html[data-admin-theme="light"] .admin-signout:hover{color:#1769e8}
+/* Failed-job metric: deliberately separate from successful PDF card in both themes. */
+.danger .metric-icon{background:#7f2939;color:#ffabb8}
+html[data-admin-theme="light"] .metric.danger::after{background:radial-gradient(ellipse at 22% 100%,#ffadb978 0 22%,transparent 23%),radial-gradient(ellipse at 75% 100%,#ffd5d975 0 29%,transparent 30%)}
+html[data-admin-theme="light"] .danger .metric-icon{background:linear-gradient(135deg,#ffe3e7,#ffd1d8);color:#e13d52}
 @media(min-width:1281px){html[data-admin-theme="light"] .sidebar{width:228px}html[data-admin-theme="light"] .main{margin-left:228px;width:calc(100% - 228px)}html[data-admin-theme="light"] .metrics{grid-template-columns:repeat(6,minmax(0,1fr))}}
 @media(min-width:600px) and (max-width:780px){html[data-admin-theme="light"] .sidebar{width:200px}html[data-admin-theme="light"] .main{margin-left:200px;width:calc(100% - 200px)}}
 @media(max-width:599px){html[data-admin-theme="light"] .main{margin-left:0;width:100%;padding-left:12px;padding-right:12px}html[data-admin-theme="light"] .main::before{left:-12px;right:-12px;height:145px}html[data-admin-theme="light"] .metric{min-height:112px}html[data-admin-theme="light"] .metric::after{bottom:-52px}html[data-admin-theme="light"] .panel-head h2{font-size:14px}html[data-admin-theme="light"] .chart-panel .panel-head h2::before,html[data-admin-theme="light"] .wide-grid .panel-head h2::before,html[data-admin-theme="light"] .bottom-grid .panel-head h2::before{width:22px;height:22px}}
+@media(min-width:1281px){.metrics,html[data-admin-theme="light"] .metrics{grid-template-columns:repeat(7,minmax(0,1fr))}}
+/* Failed processing is always red in the chart and its legend. */
+.notes{background:#ff5c62}

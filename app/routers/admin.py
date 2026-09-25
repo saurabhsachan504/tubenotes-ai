@@ -330,6 +330,7 @@ async def dashboard(days: int = 10, db: Session = Depends(get_db)):
     summary_outputs = sum(1 for job, _email in recent_window if job.kind in {"summary", "key_points"} and job.status == "success")
     pdf_requests = sum(1 for job, _email in recent_window if job.pdf_generated and job.status == "success")
     translations = sum(1 for job, _email in recent_window if job.kind == "translation" and job.status == "success")
+    failed_jobs = sum(1 for job, _email in recent_window if job.status == "failed")
 
     date_keys = [(now - timedelta(days=offset)).date() for offset in range(days - 1, -1, -1)]
     daily_users = {key.isoformat(): set() for key in date_keys}
@@ -400,6 +401,7 @@ async def dashboard(days: int = 10, db: Session = Depends(get_db)):
             "full_notes": notes_outputs,
             "pdf_requests": pdf_requests,
             "translations": translations,
+            "failed_jobs": failed_jobs,
             "active_subscriptions": active_pro_users,
             "paid_users": paid_users,
             "active_pro_users": active_pro_users,

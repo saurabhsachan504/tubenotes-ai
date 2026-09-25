@@ -120,7 +120,7 @@
     const width = 560, height = 164, left = 6, bottom = 23, top = 10, right = 5;
     const sets = Object.entries(groups), max = Math.max(2, ...sets.flatMap(([, v]) => v));
     const band = (width - left - right) / Math.max(1, labels.length), barW = Math.max(2, Math.min(12, band / (sets.length + 1)));
-    const colors = ["#47d99c", "#9272ff", "#ffc234"];
+    const colors = ["#47d99c", "#ff5c62", "#ffc234"];
     const grid = [0,.25,.5,.75,1].map(f => { const y = top + f*(height-top-bottom); return `<line class="axis" x1="${left}" x2="${width-right}" y1="${y}" y2="${y}"/>`; }).join("");
     let bars = "";
     sets.forEach(([, values], setIndex) => values.forEach((value, i) => { const h = (value / max) * (height-top-bottom); const x = left + band*i + (band - barW*sets.length)/2 + setIndex*barW; bars += `<rect class="bar" fill="${colors[setIndex]}" x="${x}" y="${height-bottom-h}" width="${Math.max(1,barW-1)}" height="${h}"/>`; }));
@@ -197,7 +197,7 @@
   }
   function render(d) {
     data = d; const m = d.metrics, labels = d.charts.labels;
-    $("totalUsers").textContent = number(m.total_users); $("activeToday").textContent = number(m.active_today); $("videoJobs").textContent = number(m.video_jobs); $("summaryOutputs").textContent = number(m.summary_outputs); $("pdfGenerated").textContent = number(m.pdf_requests); $("translations").textContent = number(m.translations); $("subscriptions").textContent = number(m.active_subscriptions) + " active subscriptions";
+    $("totalUsers").textContent = number(m.total_users); $("activeToday").textContent = number(m.active_today); $("videoJobs").textContent = number(m.video_jobs); $("summaryOutputs").textContent = number(m.summary_outputs); $("pdfGenerated").textContent = number(m.pdf_requests); $("translations").textContent = number(m.translations); $("failedJobs").textContent = number(m.failed_jobs); $("subscriptions").textContent = number(m.active_subscriptions) + " active subscriptions";
     $("paidUsers").textContent = number(m.paid_users); $("activeProUsers").textContent = number(m.active_pro_users); $("paymentIssueUsers").textContent = number(m.payment_issue_users); $("cancelledUsers").textContent = number(m.cancelled_users);
     const word = `Last ${d.range_days} Days`; $("activityRange").textContent = word; $("rangeJobs").textContent = "In selected period"; $("updated").textContent = "Live · updated " + new Date(d.generated_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
     lineChart($("activityChart"), labels, d.charts.user_activity); barChart($("jobsChart"), labels, d.charts.jobs); countryChart(d.charts.countries, d.charts.country_total == null ? m.total_users : d.charts.country_total); renderHealth(d.health); renderHealthDetails(); renderTables(d);
@@ -504,6 +504,7 @@
     const action = card.dataset.dashboardAction;
     if (action === "users") showUsers("all");
     else if (action === "active_today") showUsers("active_today");
+    else if (action === "failed") showErrorLogs();
     else showOperations(action);
   });
   document.querySelectorAll(".payment-filter-card").forEach(card => card.onclick = () => showUsers(card.dataset.userFilter));

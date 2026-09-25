@@ -7,7 +7,7 @@
   <title>TubeNotes — Admin Panel</title>
   <link rel="stylesheet" href="/static/admin.css?v=1">
   <script>try { if (localStorage.getItem("tn_admin_theme") === "light") document.documentElement.dataset.adminTheme = "light"; } catch (_) {}</script>
-  <link rel="stylesheet" href="/static/admin-extra.css?v=14">
+  <link rel="stylesheet" href="/static/admin-extra.css?v=16">
 </head>
 <body>
   <div class="app-shell">
@@ -51,6 +51,7 @@
           <button class="metric metric-link emerald" type="button" data-dashboard-action="successful_summaries"><span class="metric-icon">✓</span><span><small>Successful Summaries</small><strong id="summaryOutputs">—</strong><em>Completed summary jobs</em></span></button>
           <button class="metric metric-link coral" type="button" data-dashboard-action="pdf"><span class="metric-icon">▤</span><span><small>PDF Generated</small><strong id="pdfGenerated">—</strong><em>Completed PDF downloads</em></span></button>
           <button class="metric metric-link gold" type="button" data-dashboard-action="completed_translations"><span class="metric-icon">◎</span><span><small>Translations</small><strong id="translations">—</strong><em>Completed translations</em></span></button>
+          <button class="metric metric-link danger" type="button" data-dashboard-action="failed" aria-label="Open failed video jobs"><span class="metric-icon">!</span><span><small>Failed Videos</small><strong id="failedJobs">—</strong><em>Open failed-job details</em></span></button>
         </div>
 
         <section class="payment-summary" aria-label="Subscription payment summary">
@@ -151,6 +152,6 @@
     </section>
   </div>
   <div id="blocked" class="blocked hidden"><div><span class="blocked-logo">▶</span><h2>Admin access required</h2><p id="blockedText">Sign in with the admin account first.</p><a href="/" class="sign-in">Open TubeNotes sign in</a></div></div>
-  <script src="/static/admin.js?v=16" defer></script>
+  <script src="/static/admin.js?v=18" defer></script>
 </body>
 </html>
