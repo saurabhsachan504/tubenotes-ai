@@ -839,5 +839,5 @@ def test_extension_allowlist(monkeypatch):
     blocked = client.get("/healthz", headers={"Origin": f"chrome-extension://{theirs}"})
     assert blocked.status_code == 403
     # ...and the web app is not an extension, so it is never affected.
-    assert client.get("/healthz", headers={"Origin": "https://tubenotes.trueworks.in"}).status_code == 200
+    assert client.get("/healthz", headers={"Origin": "https://tubenotes.in"}).status_code == 200
     assert client.get("/healthz").status_code == 200

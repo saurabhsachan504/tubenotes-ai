@@ -362,7 +362,7 @@ class Settings(BaseSettings):
     EMAIL_FROM: str = "no-reply@example.com"
     # Public address shown on the Contact Us page. This can differ from the
     # sender address used for transactional email.
-    SUPPORT_EMAIL: str = "support@tubenotes.ai"
+    SUPPORT_EMAIL: str = "support@tubenotes.in"
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USER: str = ""

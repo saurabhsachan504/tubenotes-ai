@@ -18,7 +18,7 @@ import { getDeviceFingerprint } from './device.js';
 //
 // For local work, set tg_api_base in chrome.storage.local (or define
 // TG_API_BASE before this module loads) and it is used instead.
-const DEFAULT_API_BASE = 'https://tubenotes.trueworks.in/api/v1';
+const DEFAULT_API_BASE = 'https://tubenotes.in/api/v1';
 
 export let API_BASE =
   (typeof TG_API_BASE !== 'undefined' && TG_API_BASE) || DEFAULT_API_BASE;

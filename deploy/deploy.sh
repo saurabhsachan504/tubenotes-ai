@@ -47,7 +47,7 @@ for i in $(seq 1 60); do
     curl -s http://127.0.0.1:8001/healthz; echo
     echo
     echo "Local par chal gaya. Ab bahar se check karo:"
-    echo "   curl https://tubenotes.trueworks.in/healthz"
+    echo "   curl https://tubenotes.in/healthz"
     exit 0
   fi
   echo -n "."
