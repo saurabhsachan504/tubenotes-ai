@@ -1,4 +1,4 @@
-# TubeNotes backend ko DGX par live karna → `https://tubenotes.in`
+# TubeNotes backend ko DGX par live karna → `https://tubenotes.ai`
 
 Aapka sawal: *"kya mujhe 127.0.0.1:8000 public karna padega?"*
 
@@ -6,7 +6,7 @@ Aapka sawal: *"kya mujhe 127.0.0.1:8000 public karna padega?"*
 kisi bhi computer par "yahi machine" hota hai. Aapke friend ke Chrome ne
 `http://127.0.0.1:8000` khola to usne **apne hi laptop** ke andar dekha, jahan
 kuch chal hi nahi raha. Isliye wahi backend **DGX par** chalana hai, aur DGX ko
-ek asli naam dena hai — `tubenotes.in`.
+ek asli naam dena hai — `tubenotes.ai`.
 
 ---
 
@@ -15,7 +15,7 @@ ek asli naam dena hai — `tubenotes.in`.
 Maine aapka live server check kiya:
 
 ```
-GET https://tubenotes.in/healthz
+GET https://tubenotes.ai/healthz
 {"status":"ok","env":"dev","version":"1.0.0"}
                  ^^^^^
 ```
@@ -25,7 +25,7 @@ padha hi nahi (ya usme `ENV=dev` hai), aur tab **saari default values lag jati
 hain**. Do cheezein isse pakki hoti hain:
 
 **1. `/docs` sabke liye khula hai.** Maine kholkar dekha —
-`https://tubenotes.in/docs` par poora Swagger UI chal raha hai. Code
+`https://tubenotes.ai/docs` par poora Swagger UI chal raha hai. Code
 mein wo `ENV != "prod"` par hi khulta hai, isliye ye confirm karta hai ki server
 prod mode mein nahi hai.
 
@@ -62,7 +62,7 @@ Uske baad:
 
 ```
   Customer ka browser
-        │  https://tubenotes.in
+        │  https://tubenotes.ai
         ▼
   DGX ka Nginx (aaPanel)          ← SSL yahin khatam hota hai
         │  http://127.0.0.1:8000
@@ -91,7 +91,7 @@ Public IP DGX par se: `curl -s ifconfig.me`
 Check karo (apne laptop se):
 
 ```bash
-nslookup tubenotes.in
+nslookup tubenotes.ai
 ```
 
 Jab tak isme DGX ka IP na dikhe, aage mat badho — SSL isi par atkega.
@@ -165,7 +165,7 @@ Bahar se abhi nahi aayega — Nginx baaki hai.
 ## Step 5 — aaPanel mein site + SSL
 
 1. **Website → Add site**
-   - Domain: `tubenotes.in`
+   - Domain: `tubenotes.ai`
    - PHP version: **Static / Pure static** (PHP ki zaroorat nahi)
 2. Us site par **SSL → Let's Encrypt → Apply**
 3. **Force HTTPS** ON
@@ -177,7 +177,7 @@ Bahar se abhi nahi aayega — Nginx baaki hai.
 Ab bahar se:
 
 ```bash
-curl https://tubenotes.in/healthz
+curl https://tubenotes.ai/healthz
 ```
 
 ### Us config mein do line kyun hain — maine naapkar dekha
@@ -214,10 +214,10 @@ liye rehne diya.
 Extension v2.1.0 mein ye **pehle se** ho chuka hai:
 
 ```js
-const DEFAULT_API_BASE = "https://tubenotes.in/api/v1";
+const DEFAULT_API_BASE = "https://tubenotes.ai/api/v1";
 ```
 
-Dono manifest mein `https://tubenotes.in/*` bhi jud gaya hai.
+Dono manifest mein `https://tubenotes.ai/*` bhi jud gaya hai.
 Aapko sirf naya build load karna hai. Aapke apne dev testing ke liye Options
 page se `trialGuardApiUrl` local URL par set kar sakte ho — wo live default ko
 override kar deta hai.
@@ -238,7 +238,7 @@ Ek baar khud check kar lena:
 ```bash
 sudo reboot
 # 2-3 minute baad
-curl https://tubenotes.in/healthz
+curl https://tubenotes.ai/healthz
 ```
 
 Sirf ek shart: DGX par Docker service boot par enabled ho —
@@ -482,19 +482,19 @@ zyada hai.
 
 ```bash
 curl -fsS -X POST -H "X-Admin-Key: $ADMIN_API_KEY" \
-  https://tubenotes.in/api/v1/admin/cache/purge
+  https://tubenotes.ai/api/v1/admin/cache/purge
 ```
 
 Crontab me har Sunday raat 4 baje:
 
 ```
-0 4 * * 0 curl -fsS -X POST -H "X-Admin-Key: KEY" https://tubenotes.in/api/v1/admin/cache/purge
+0 4 * * 0 curl -fsS -X POST -H "X-Admin-Key: KEY" https://tubenotes.ai/api/v1/admin/cache/purge
 ```
 
 Kitna bhara hai ye dekhne ke liye:
 
 ```bash
-curl -H "X-Admin-Key: $ADMIN_API_KEY" https://tubenotes.in/api/v1/admin/cache/stats
+curl -H "X-Admin-Key: $ADMIN_API_KEY" https://tubenotes.ai/api/v1/admin/cache/stats
 # {"rows":1,"total_chars":16811,"approx_mb":0.0,"total_hits":1,"prompt_version":1}
 ```
 
@@ -544,11 +544,11 @@ hue.
 
 1. **Asli payment.** Abhi `PAYMENT_PROVIDER=mock` hai — koi paisa nahi chalta.
    India se bill karna ho to Razorpay: dashboard se 4 key `.env` mein, aur
-   webhook URL `https://tubenotes.in/api/v1/billing/webhook`.
+   webhook URL `https://tubenotes.ai/api/v1/billing/webhook`.
    Bologe to laga dunga.
 2. **Web app ka domain.** Backend `WEB_APP_ENABLED=true` ke saath UI bhi serve
-   karta hai, yaani `https://tubenotes.in/` par TubeNotes khul
-   jayega. Chaho to `tubenotes.in` bhi isi par point kar do.
+   karta hai, yaani `https://tubenotes.ai/` par TubeNotes khul
+   jayega. Chaho to `tubenotes.ai` bhi isi par point kar do.
 3. **Gemma (vLLM) abhi seedha browser se call hota hai.** Koi technical banda
    extension ka code padhkar TrialGuard hata sakta hai aur aapka Gemma (vLLM) free
    mein use kar sakta hai. Pakka rokna ho to Gemma (vLLM) ko backend ke peeche daalna

@@ -42,12 +42,12 @@ $COMPOSE up -d
 # ---- wait for healthy ----------------------------------------------------
 echo -n "==> health check "
 for i in $(seq 1 60); do
-  if curl -fsS http://127.0.0.1:8011/healthz >/dev/null 2>&1; then
+  if curl -fsS http://127.0.0.1:8001/healthz >/dev/null 2>&1; then
     echo " OK"
-    curl -s http://127.0.0.1:8011/healthz; echo
+    curl -s http://127.0.0.1:8001/healthz; echo
     echo
     echo "Local par chal gaya. Ab bahar se check karo:"
-    echo "   curl https://tubenotes.in/healthz"
+    echo "   curl https://tubenotes.ai/healthz"
     exit 0
   fi
   echo -n "."
