@@ -1372,6 +1372,25 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     try { localStorage.setItem("tn_theme", dark ? "light" : "dark"); } catch (_) {}
   };
 
+  const legalMenu = $("legalMenu");
+  const legalMenuBtn = $("legalMenuBtn");
+  function closeLegalMenu() {
+    legalMenu.classList.add("hidden");
+    legalMenuBtn.setAttribute("aria-expanded", "false");
+  }
+  legalMenuBtn.onclick = (event) => {
+    event.stopPropagation();
+    const willOpen = legalMenu.classList.contains("hidden");
+    legalMenu.classList.toggle("hidden", !willOpen);
+    legalMenuBtn.setAttribute("aria-expanded", String(willOpen));
+  };
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest(".legal-menu")) closeLegalMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeLegalMenu();
+  });
+
   $("accountBtn").onclick = () => (signedIn() ? openAccount() : openAuth("login"));
   $("tabIn").onclick = () => setAuthMode("login");
   $("tabUp").onclick = () => setAuthMode("signup");

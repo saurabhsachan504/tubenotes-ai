@@ -49,6 +49,13 @@
     padding:7px 12px;border-radius:9px;font-size:14px;
   }
   .nav-btn:hover{background:var(--chip);color:var(--ink)}
+  .legal-menu{position:relative}
+  .legal-trigger{display:inline-flex;align-items:center;gap:5px}
+  .legal-trigger::after{content:"⌄";font-size:13px;line-height:1;transition:transform .18s ease}
+  .legal-trigger[aria-expanded="true"]::after{transform:rotate(180deg)}
+  .legal-popover{position:absolute;z-index:55;right:0;top:calc(100% + 8px);width:218px;padding:7px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:var(--shadow)}
+  .legal-popover a{display:block;padding:9px 10px;border-radius:8px;color:var(--ink);text-decoration:none;font-size:13px;font-weight:600}
+  .legal-popover a:hover,.legal-popover a:focus-visible{background:var(--chip);color:var(--brand1);outline:0}
   .chip-trials{
     display:inline-flex;align-items:center;gap:6px;
     background:var(--chip);border:1px solid var(--line);
@@ -277,6 +284,7 @@
   details summary{cursor:pointer;font-weight:600;font-size:14.5px}
   details p{color:var(--muted);font-size:13.5px;margin:9px 0 2px}
   footer{border-top:1px solid var(--line);padding:22px 0;color:var(--muted);font-size:12.5px;text-align:center}
+  .site-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left}.footer-links{display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end}.footer-links a{color:var(--muted);text-decoration:none}.footer-links a:hover{color:var(--brand1);text-decoration:underline}
 
   /* ---------------- auth modal ---------------- */
   .overlay{
@@ -382,6 +390,7 @@
     .logo{font-size:18px;gap:7px}
     .nav-right{gap:2px}
     .nav-btn{padding:7px 8px;font-size:13px}
+    .legal-popover{width:205px}
     .chip-trials{padding:6px 9px;font-size:12px}
 
     .pills{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-bottom:24px}
@@ -424,6 +433,7 @@
   @media(max-width:430px){
     .nav-right .nav-btn[onclick]{display:none}
     .nav-btn{padding:7px 6px}
+    .legal-trigger{font-size:12px}
     .chip-trials{padding:6px 8px}
     .hero{padding-top:18px;padding-bottom:38px}
     .pills{gap:6px;margin-bottom:20px}
@@ -437,6 +447,7 @@
     .watermark span{font-size:36px}
     .watermark svg{width:44px;height:44px}
     .tool{flex-basis:100%;font-size:13px}
+    .site-footer{align-items:flex-start;flex-direction:column}.footer-links{justify-content:flex-start;gap:9px 14px}
     .pdf-flow-video{align-items:flex-start}
     .pdf-flow-video img{width:82px;height:47px}
     .pdf-step{font-size:8.8px}
@@ -468,6 +479,7 @@
   </div>
   <div class="nav-right">
     <span id="trialChip" class="chip-trials hidden"></span>
+    <div class="legal-menu"><button class="nav-btn legal-trigger" id="legalMenuBtn" type="button" aria-expanded="false" aria-controls="legalMenu">Legal</button><nav class="legal-popover hidden" id="legalMenu" aria-label="Legal pages"><a href="/about">About Us</a><a href="/terms">Terms &amp; Conditions</a><a href="/privacy">Privacy Policy</a><a href="/refund-policy">Refund Policy</a><a href="/contact">Contact Us</a></nav></div>
     <button class="nav-btn" onclick="document.getElementById('faq').scrollIntoView({behavior:'smooth'})">FAQ</button>
     <button class="nav-btn" id="themeBtn" title="Toggle theme">🌙</button>
     <button class="nav-btn" id="accountBtn">Sign in</button>
@@ -553,7 +565,7 @@
   </section>
 </main>
 
-<footer class="wrap">TubeNotes — YouTube summaries in your language.</footer>
+<footer class="wrap site-footer"><span>TubeNotes — YouTube summaries in your language.</span><nav class="footer-links" aria-label="Legal links"><a href="/about">About Us</a><a href="/terms">Terms &amp; Conditions</a><a href="/privacy">Privacy Policy</a><a href="/refund-policy">Refund Policy</a><a href="/contact">Contact Us</a></nav></footer>
 
 <!-- ---------------- language picker (for the PDF buttons) ---------------- -->
 <div class="overlay hidden" id="langPicker">

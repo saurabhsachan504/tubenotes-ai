@@ -360,6 +360,9 @@ class Settings(BaseSettings):
     # "console" just logs the message; swap for a real provider in prod.
     EMAIL_BACKEND: Literal["console", "smtp"] = "console"
     EMAIL_FROM: str = "no-reply@example.com"
+    # Public address shown on the Contact Us page. This can differ from the
+    # sender address used for transactional email.
+    SUPPORT_EMAIL: str = "support@tubenotes.ai"
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USER: str = ""

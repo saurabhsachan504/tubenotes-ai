@@ -17,6 +17,7 @@ import logging
 import re
 import time
 from contextlib import asynccontextmanager
+from html import escape
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -30,7 +31,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import engine, init_db
-from app.routers import admin, auth, billing, summarize, usage, webhooks
+from app.routers import admin, auth, billing, contact, summarize, usage, webhooks
 from app.services import translate as translate_service
 from app.services import youtube
 
@@ -160,6 +161,7 @@ app.include_router(summarize.router, prefix=settings.API_PREFIX)
 app.include_router(billing.router, prefix=settings.API_PREFIX)
 app.include_router(webhooks.router, prefix=settings.API_PREFIX)
 app.include_router(admin.router, prefix=settings.API_PREFIX)
+app.include_router(contact.router, prefix=settings.API_PREFIX)
 
 
 @app.get("/healthz", tags=["meta"])
@@ -216,6 +218,49 @@ if settings.WEB_APP_ENABLED and STATIC_DIR.is_dir():
         # The shell must always revalidate; the assets it points at are
         # content-addressed, so they can be cached hard.
         return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+
+    _LEGAL_PAGE_POLISH = """
+<style>
+html[data-theme="light"] body{position:relative;isolation:isolate;overflow-x:hidden;background:linear-gradient(180deg,#faf8ff 0,#fff 46%)!important}html[data-theme="light"] body:before,html[data-theme="light"] body:after{content:"";position:fixed;z-index:-1;width:390px;height:390px;border-radius:50%;filter:blur(18px);opacity:.42;pointer-events:none}html[data-theme="light"] body:before{top:95px;left:-210px;background:radial-gradient(circle,#c4b5fd 0,rgba(196,181,253,0) 70%)}html[data-theme="light"] body:after{right:-185px;bottom:55px;background:radial-gradient(circle,#f9a8d4 0,rgba(249,168,212,0) 70%)}html[data-theme="light"] .hero{position:relative;overflow:hidden;background:radial-gradient(circle at 84% 10%,#e9d5ff 0,rgba(233,213,255,.1) 29%,transparent 49%),radial-gradient(circle at 11% 94%,#bae6fd 0,rgba(186,230,253,0) 35%),linear-gradient(125deg,#f4efff 0,#fff 49%,#fff5fb 100%)!important}html[data-theme="light"] .hero:after{content:"";position:absolute;right:9%;bottom:-70px;width:235px;height:145px;border:24px solid rgba(124,58,237,.13);border-radius:50%;transform:rotate(-16deg);pointer-events:none}html[data-theme="light"] .eyebrow{display:inline-flex;align-items:center;gap:7px;padding:5px 9px;border-radius:999px;background:linear-gradient(90deg,#ede9fe,#fce7f3);box-shadow:0 5px 14px rgba(124,58,237,.1)}html[data-theme="light"] .eyebrow:before{content:"✦";font-size:11px}html[data-theme="light"] .hero h1{background:linear-gradient(110deg,#29144e,#6d28d9 45%,#be185d);-webkit-background-clip:text;background-clip:text;color:transparent}html[data-theme="light"] .policy-nav{padding:8px;border:1px solid #e9defb;border-radius:16px;background:linear-gradient(120deg,rgba(255,255,255,.84),rgba(248,244,255,.92));box-shadow:0 10px 26px rgba(81,45,145,.08)}html[data-theme="light"] .policy-nav a{transition:transform .18s ease,box-shadow .18s ease,background .18s ease}html[data-theme="light"] .policy-nav a:hover{transform:translateY(-1px);box-shadow:0 5px 12px rgba(124,58,237,.14)}html[data-theme="light"] .policy-nav a.active{color:#fff!important;border-color:transparent!important;background:linear-gradient(125deg,#7c3aed,#db2777)!important;box-shadow:0 6px 14px rgba(124,58,237,.24)}html[data-theme="light"] .card{position:relative;overflow:hidden;border-color:#e4dbf1!important;transition:transform .2s ease,box-shadow .2s ease}html[data-theme="light"] .card:before{content:"";position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,#8b5cf6,#ec4899,#38bdf8)}html[data-theme="light"] .card:nth-of-type(3n+2):before{background:linear-gradient(90deg,#06b6d4,#3b82f6,#8b5cf6)}html[data-theme="light"] .card:nth-of-type(3n):before{background:linear-gradient(90deg,#f59e0b,#f97316,#ec4899)}html[data-theme="light"] .card:hover{transform:translateY(-3px);box-shadow:0 16px 35px rgba(57,30,108,.12)!important}html[data-theme="light"] .card h2{color:#31204f!important}html[data-theme="light"] .card h2:after{content:"";display:block;width:42px;height:3px;margin-top:10px;border-radius:9px;background:linear-gradient(90deg,#8b5cf6,#ec4899)}html[data-theme="light"] .tile{border-color:#e7ddf5!important;background:linear-gradient(145deg,#fff,#f8f4ff 58%,#fff0f8)!important;transition:transform .18s ease,border-color .18s ease}html[data-theme="light"] .tile:hover{transform:translateY(-2px);border-color:#c4b5fd!important}html[data-theme="light"] .tile strong{color:#4c1d95}html[data-theme="light"] .notice{border-left:4px solid #38bdf8;background:linear-gradient(100deg,#eff6ff,#faf5ff)!important;box-shadow:0 8px 20px rgba(59,130,246,.07)}html[data-theme="light"] .callout{border-left-color:#ec4899!important;background:linear-gradient(100deg,#fff1f7,#f6f1ff)!important;box-shadow:0 10px 24px rgba(190,24,93,.08)}html[data-theme="light"] .footer{background:linear-gradient(90deg,rgba(248,245,255,.72),rgba(255,246,251,.72))}html[data-theme="light"] .back,html[data-theme="light"] .legal-theme{transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}html[data-theme="light"] .back:hover,html[data-theme="light"] .legal-theme:hover{transform:translateY(-1px);box-shadow:0 6px 14px rgba(124,58,237,.13)}html[data-theme="dark"] body{position:relative;isolation:isolate;overflow-x:hidden;background:linear-gradient(180deg,#120d20,#0d0a16)!important}html[data-theme="dark"] body:before,html[data-theme="dark"] body:after{content:"";position:fixed;z-index:-1;width:390px;height:390px;border-radius:50%;filter:blur(18px);pointer-events:none}html[data-theme="dark"] body:before{top:95px;left:-210px;background:radial-gradient(circle,#5b21b6 0,rgba(91,33,182,0) 70%);opacity:.26}html[data-theme="dark"] body:after{right:-185px;bottom:55px;background:radial-gradient(circle,#9d174d 0,rgba(157,23,77,0) 70%);opacity:.22}html[data-theme="dark"] .hero{position:relative;overflow:hidden;background:radial-gradient(circle at 84% 10%,#54267a 0,rgba(84,38,122,.12) 33%,transparent 52%),radial-gradient(circle at 11% 94%,#083d57 0,rgba(8,61,87,0) 37%),linear-gradient(125deg,#171025,#100d1b 74%,#1d1023)!important}html[data-theme="dark"] .hero h1{background:linear-gradient(110deg,#f5f3ff,#c4b5fd 48%,#f9a8d4);-webkit-background-clip:text;background-clip:text;color:transparent}html[data-theme="dark"] .policy-nav{padding:8px;border:1px solid #3a2b58;background:linear-gradient(120deg,rgba(29,22,47,.88),rgba(23,16,37,.94));box-shadow:none}html[data-theme="dark"] .card{position:relative;overflow:hidden;border-color:#36284e!important;background:linear-gradient(145deg,#1b152a,#151020)!important;transition:transform .2s ease,box-shadow .2s ease}html[data-theme="dark"] .card:before{content:"";position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,#8b5cf6,#ec4899,#38bdf8)}html[data-theme="dark"] .card:hover{transform:translateY(-3px);box-shadow:0 16px 34px rgba(0,0,0,.28)!important}html[data-theme="dark"] .card h2{color:#f3edff!important}html[data-theme="dark"] .tile{border-color:#392c54!important;background:linear-gradient(145deg,#211832,#171120)!important}html[data-theme="dark"] .notice{border-left:4px solid #38bdf8;background:linear-gradient(100deg,#122842,#1c1531)!important}html[data-theme="dark"] .callout{border-left-color:#ec4899!important;background:linear-gradient(100deg,#31162d,#211735)!important}@media(prefers-reduced-motion:reduce){.card,.tile,.back,.legal-theme,.policy-nav a{transition:none}.card:hover,.tile:hover,.back:hover,.legal-theme:hover,.policy-nav a:hover{transform:none}}
+</style>
+"""
+
+    def _legal_page(filename: str):
+        """Serve legal pages with the same saved light/dark preference as TubeNotes."""
+        page = (STATIC_DIR / filename).read_text(encoding="utf-8")
+        page = page.replace("{{SUPPORT_EMAIL}}", escape(settings.SUPPORT_EMAIL))
+        page = page.replace(
+            "</head>",
+            """<script>try{document.documentElement.dataset.theme=localStorage.getItem('tn_theme')||'light'}catch(_){document.documentElement.dataset.theme='light'}</script>""" + _LEGAL_PAGE_POLISH + "</head>",
+            1,
+        )
+        page = page.replace(
+            '<a class="back"',
+            '<button id="legalThemeBtn" class="legal-theme" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">Dark</button><a class="back"',
+            1,
+        )
+        page = page.replace("</body>", '<script src="/static/legal.js" defer></script></body>', 1)
+        return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
+
+    @app.get("/about", include_in_schema=False)
+    def about_page():
+        return _legal_page("about.html")
+
+    @app.get("/terms", include_in_schema=False)
+    def terms_page():
+        return _legal_page("terms.html")
+
+    @app.get("/privacy", include_in_schema=False)
+    def privacy_page():
+        return _legal_page("privacy.html")
+
+    @app.get("/refund-policy", include_in_schema=False)
+    def refund_policy_page():
+        return _legal_page("refund-policy.html")
+
+    @app.get("/contact", include_in_schema=False)
+    def contact_page():
+        return _legal_page("contact.html")
 
 else:  # pragma: no cover - API-only deployment
 

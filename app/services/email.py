@@ -10,15 +10,17 @@ from app.config import settings
 logger = logging.getLogger("trialguard.email")
 
 
-def send_email(to: str, subject: str, body: str) -> None:
+def send_email(to: str, subject: str, body: str, *, reply_to: str | None = None) -> bool:
     if settings.EMAIL_BACKEND == "console" or not settings.SMTP_HOST:
         logger.info("EMAIL to=%s subject=%s\n%s", to, subject, body)
-        return
+        return True
 
     msg = EmailMessage()
     msg["From"] = settings.EMAIL_FROM
     msg["To"] = to
     msg["Subject"] = subject
+    if reply_to:
+        msg["Reply-To"] = reply_to
     msg.set_content(body)
 
     try:
@@ -28,8 +30,10 @@ def send_email(to: str, subject: str, body: str) -> None:
             if settings.SMTP_USER:
                 smtp.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             smtp.send_message(msg)
+        return True
     except Exception:  # pragma: no cover - network
         logger.exception("Failed to send email to %s", to)
+        return False
 
 
 def send_verification_email(to: str, token: str) -> None:

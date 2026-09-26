@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Contact TubeNotes support for account, billing and privacy help.">
+  <title>Contact Us | TubeNotes</title>
+  <link rel="stylesheet" href="/static/legal.css">
+  <style>
+    .contact-form{display:grid;gap:15px}.contact-form label{display:grid;gap:6px;color:#41355d;font-size:13px;font-weight:700}.contact-form input,.contact-form select,.contact-form textarea{width:100%;border:1px solid #ddd3ed;border-radius:10px;padding:11px 12px;background:#fff;color:#251b3a;font:inherit;outline:0}.contact-form textarea{min-height:140px;resize:vertical}.contact-form input:focus,.contact-form select:focus,.contact-form textarea:focus{border-color:#8b5cf6;box-shadow:0 0 0 3px #ddd6fe}.contact-form .form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.contact-submit{justify-self:start;border:0;border-radius:10px;padding:11px 17px;background:linear-gradient(125deg,#7c3aed,#db2777);color:#fff;font:700 14px/1.2 inherit;cursor:pointer;box-shadow:0 8px 16px rgba(124,58,237,.24)}.contact-submit:hover{filter:brightness(1.05);transform:translateY(-1px)}.contact-submit:disabled{cursor:wait;opacity:.7;transform:none}.form-status{min-height:24px;margin:0;font-size:13px}.form-status[data-state="success"]{color:#087a58}.form-status[data-state="error"]{color:#b4233b}.form-status[data-state="loading"]{color:#66547e}.website-field{position:absolute!important;left:-10000px!important;width:1px!important;height:1px!important;overflow:hidden!important}@media(max-width:620px){.contact-form .form-row{grid-template-columns:1fr}}html[data-theme="dark"] .contact-form label{color:#ded3ef}html[data-theme="dark"] .contact-form input,html[data-theme="dark"] .contact-form select,html[data-theme="dark"] .contact-form textarea{border-color:#44335f;background:#110d1c;color:#f0eaff}html[data-theme="dark"] .form-status[data-state="success"]{color:#61e2b2}html[data-theme="dark"] .form-status[data-state="error"]{color:#ff9aac}
+  </style>
+</head>
+<body>
+  <header class="wrap topbar">
+    <a class="brand" href="/"><span class="mark">▶</span>TubeNotes</a>
+    <a class="back" href="/">← Back to TubeNotes</a>
+  </header>
+  <section class="hero">
+    <div class="wrap">
+      <p class="eyebrow">True Technologies support</p>
+      <h1>We are here to help.</h1>
+      <p>Contact TubeNotes for account, billing, technical or privacy-related questions.</p>
+    </div>
+  </section>
+  <main class="wrap content">
+    <nav class="policy-nav" aria-label="Company and legal pages">
+      <a href="/about">About Us</a><a href="/terms">Terms &amp; Conditions</a><a href="/privacy">Privacy Policy</a><a href="/refund-policy">Refund Policy</a><a class="active" href="/contact">Contact Us</a>
+    </nav>
+    <section class="card">
+      <h2>Email support</h2>
+      <p>For help with your account, subscription, payment, refund, PDF, summaries or technical issues, email our support team.</p>
+      <p><a class="back" href="mailto:{{SUPPORT_EMAIL}}?subject=TubeNotes%20Support%20Request">Email {{SUPPORT_EMAIL}}</a></p>
+      <p class="muted">Please include the email linked to your TubeNotes account and a short description of the issue. Never send passwords, UPI PINs, OTPs or full card details.</p>
+    </section>
+    <section class="card">
+      <h2>Send us a message</h2>
+      <p>Fill in the form below and your request will be sent directly to TubeNotes support.</p>
+      <form id="contactForm" class="contact-form" novalidate>
+        <div class="form-row"><label>Your name<input name="name" autocomplete="name" maxlength="100" required></label><label>Email linked to your account<input name="email" type="email" autocomplete="email" maxlength="254" required></label></div>
+        <label>What do you need help with?<select name="category"><option value="general">General question</option><option value="account">Account &amp; access</option><option value="billing">Payment, subscription or refund</option><option value="technical">Summary, PDF or technical issue</option><option value="privacy">Privacy request</option></select></label>
+        <label>Describe the issue<textarea name="message" minlength="10" maxlength="3000" placeholder="Tell us what happened and how we can help." required></textarea></label>
+        <label class="website-field" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+        <button id="contactSubmitButton" class="contact-submit" type="submit">Send message</button><p id="contactFormStatus" class="form-status" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+    <section class="card">
+      <h2>How we can help</h2>
+      <div class="grid">
+        <div class="tile"><strong>Account &amp; access</strong><span>Sign-in, device, subscription and account-access questions.</span></div>
+        <div class="tile"><strong>Payments &amp; refunds</strong><span>Payment references, duplicate charges, cancellations and refund requests.</span></div>
+        <div class="tile"><strong>Technical support</strong><span>Video processing, generated notes, translations, PDFs and error reports.</span></div>
+      </div>
+    </section>
+    <section class="card">
+      <h2>For a faster response</h2>
+      <ul>
+        <li>Use the email address associated with your TubeNotes account.</li>
+        <li>Share the video URL or job details only when relevant to the issue.</li>
+        <li>For payment questions, include the date, amount and payment-provider reference.</li>
+        <li>Do not include sensitive credentials or complete payment details.</li>
+      </ul>
+    </section>
+    <aside class="callout"><p><b>Privacy requests:</b> For access, correction or deletion requests, email us from your registered address and mention “Privacy Request” in the subject.</p></aside>
+  </main>
+  <footer class="footer"><div class="wrap footer-in"><span>© 2026 True Technologies. All rights reserved.</span><nav><a href="/about">About</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/refund-policy">Refunds</a></nav></div></footer>
+</body>
+</html>

@@ -145,6 +145,26 @@ class MessageOut(BaseModel):
     detail: str
 
 
+class ContactRequest(BaseModel):
+    """Public support-form payload. The hidden website field is a honeypot."""
+
+    name: str = Field(min_length=1, max_length=100)
+    email: EmailStr
+    category: Literal["general", "account", "billing", "technical", "privacy"] = "general"
+    message: str = Field(min_length=10, max_length=3000)
+    website: str = Field(default="", max_length=200)
+
+    @field_validator("name", "message", "website")
+    @classmethod
+    def _clean_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("email")
+    @classmethod
+    def _lower_contact_email(cls, value: EmailStr) -> EmailStr:
+        return value.lower()
+
+
 # ---------------------------------------------------------------------------
 # Entitlement / usage
 # ---------------------------------------------------------------------------
