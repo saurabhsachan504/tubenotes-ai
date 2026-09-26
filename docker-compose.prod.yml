@@ -5,10 +5,10 @@
 # Two deliberate differences from docker-compose.yml (the dev one):
 #
 # 1. Nothing is published to the public internet. The API is bound to
-#    127.0.0.1:8000 on the host, so ONLY something running on the DGX itself -
+#    127.0.0.1:8011 on the host, so ONLY something running on the DGX itself -
 #    i.e. aaPanel's Nginx - can reach it. Nginx terminates HTTPS and forwards.
-#    If we published 0.0.0.0:8000 the API would also answer on
-#    http://<dgx-ip>:8000 with no TLS, and every token would travel in clear.
+#    Host port 8011 keeps this new deployment separate from the existing
+#    TrialGuard API, which already occupies host port 8001.
 #
 # 2. Postgres publishes no port at all. The API reaches it over the private
 #    compose network by the hostname "db". A database open to the internet is
@@ -29,7 +29,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:5434:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U trialguard"]
       interval: 5s
@@ -64,7 +64,7 @@ services:
 
     ports:
       # host-only. Nginx proxies to this.
-      - "127.0.0.1:8001:8000"
+      - "127.0.0.1:8011:8000"
     # alembic upgrade head runs on every start: a new build applies its own
     # migrations before serving, so a deploy never leaves the schema behind.
     command: >
