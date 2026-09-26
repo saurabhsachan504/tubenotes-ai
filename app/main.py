@@ -180,6 +180,9 @@ def meta():
         # Frontend ko batata hai ki Google button dikhana hai ya nahi.
         "google_login": settings.GOOGLE_LOGIN_ENABLED and bool(settings.GOOGLE_CLIENT_ID),
         "google_client_id": settings.GOOGLE_CLIENT_ID if settings.GOOGLE_LOGIN_ENABLED else "",
+        # A secondary site can be kept online while all new payments happen
+        # on the primary site. This is a public URL, not a secret.
+        "billing_primary_site_url": settings.BILLING_PRIMARY_SITE_URL.rstrip("/"),
     }
 
 

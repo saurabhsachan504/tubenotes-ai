@@ -96,6 +96,10 @@ class Settings(BaseSettings):
 
     BILLING_SUCCESS_URL: str = "https://example.com/billing/success"
     BILLING_CANCEL_URL: str = "https://example.com/billing/cancel"
+    # Set this only on a legacy/secondary domain. Its web UI will send users
+    # to the primary domain before checkout, so there is one canonical place
+    # for new payments. Leave blank on the primary domain itself.
+    BILLING_PRIMARY_SITE_URL: str = ""
 
     # ---- web app / summarisation ---------------------------------------
     # Serve the browser UI from this same service at "/".

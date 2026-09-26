@@ -73,6 +73,19 @@ def create_checkout(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    # The old domain may stay online for existing users, but should never be
+    # able to create a fresh payment after billing moves to the primary site.
+    # The browser also redirects there; this server-side check protects the
+    # endpoint from direct API calls.
+    if settings.BILLING_PRIMARY_SITE_URL.strip():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "New payments are available at "
+                f"{settings.BILLING_PRIMARY_SITE_URL.rstrip('/')}"
+            ),
+        )
+
     provider = get_provider()
 
     from app.services.entitlements import active_subscription

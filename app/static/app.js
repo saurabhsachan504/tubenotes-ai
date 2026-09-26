@@ -13,6 +13,9 @@
   let lastNotes = null;   // { videoId, title, url, markdown, lang }
   let lastTranscript = null; // { videoId, text, lang }; reused by Full Notes
   let busy = false;
+  // Empty on the primary site. A legacy domain can set this through /meta so
+  // its Subscribe button takes users to the canonical checkout domain.
+  let billingPrimarySiteUrl = "";
 
   // Offered output languages. "auto" keeps the video's own language, which is
   // the default because that is what most people want.
@@ -1445,6 +1448,13 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     $("upgradeBtn").disabled = true;
     try {
       if (!accountUser) throw new Error("Open your account again before continuing.");
+      if (billingPrimarySiteUrl) {
+        const primary = new URL(billingPrimarySiteUrl, window.location.origin);
+        if (primary.origin !== window.location.origin) {
+          window.location.assign(primary.href);
+          return;
+        }
+      }
       const s = await api("/billing/checkout", { method: "POST", body: {} });
       window.open(s.checkout_url, "_blank", "noopener");
       $("acctMsg").textContent = "Finish the payment in the new tab, then reopen this panel.";
@@ -1464,6 +1474,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     let meta;
     try { meta = await fetch(API + "/meta").then((r) => r.json()); }
     catch (_) { return; }
+    billingPrimarySiteUrl = String(meta.billing_primary_site_url || "").trim();
     if (!meta.google_login || !meta.google_client_id) return;
 
     // Google ka script async load hota hai - taiyaar hone ka intezaar.
