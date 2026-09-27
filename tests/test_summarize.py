@@ -76,6 +76,19 @@ def test_language_detection_and_model_routing():
     assert summarizer.model_for("ta") == settings.VLLM_MODEL
 
 
+def test_hindi_title_prefers_hindi_track_over_wrong_asr_default():
+    class Track:
+        def __init__(self, code: str, generated: bool):
+            self.language_code = code
+            self.is_generated = generated
+
+    bengali_asr = Track("bn", True)
+    hindi_manual = Track("hi", False)
+
+    assert youtube.title_language_hint("हिंदी समाचार और आज की बड़ी खबरें") == "hi"
+    assert youtube._pick_track([bengali_asr, hindi_manual], "hi") is hindi_manual
+
+
 def test_language_directive_names_the_language():
     assert "Devanagari" in summarizer.language_directive("hi")
     assert "Tamil" in summarizer.language_directive("ta")

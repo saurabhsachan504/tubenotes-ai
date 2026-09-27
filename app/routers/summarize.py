@@ -101,7 +101,9 @@ def _resolve_target(requested: str | None, detected: str) -> str:
 _MIN_CLIENT_TRANSCRIPT = 40
 
 
-async def _obtain_transcript(payload: VideoRequest, video_id: str) -> youtube.Transcript:
+async def _obtain_transcript(
+    payload: VideoRequest, video_id: str, preferred_language: str | None = None,
+) -> youtube.Transcript:
     """Use the client's transcript when it sent one; otherwise fetch it here.
 
     Falling back matters: a visitor without the extension, or on a phone, still
@@ -127,24 +129,29 @@ async def _obtain_transcript(payload: VideoRequest, video_id: str) -> youtube.Tr
             source="client",
         )
 
+    if preferred_language:
+        return await run_in_threadpool(
+            youtube.fetch_transcript, video_id, preferred_language
+        )
     return await run_in_threadpool(youtube.fetch_transcript, video_id)
 
 
 async def _prepare_video(payload: VideoRequest, video_id: str):
-    """Fetch independent YouTube data concurrently and record each duration."""
+    """Fetch metadata first so its script can select the right caption track."""
     async def metadata():
         started = time.perf_counter()
         value = await youtube.fetch_metadata(video_id)
         return value, (time.perf_counter() - started) * 1000
 
+    meta, metadata_ms = await metadata()
+    preferred_language = youtube.title_language_hint(meta.title)
+
     async def transcript():
         started = time.perf_counter()
-        value = await _obtain_transcript(payload, video_id)
+        value = await _obtain_transcript(payload, video_id, preferred_language)
         return value, (time.perf_counter() - started) * 1000
 
-    (meta, metadata_ms), (captions, transcript_ms) = await asyncio.gather(
-        metadata(), transcript()
-    )
+    captions, transcript_ms = await transcript()
     logger.info(
         "prepared %s: metadata=%.1fms transcript=%.1fms source=%s",
         video_id,

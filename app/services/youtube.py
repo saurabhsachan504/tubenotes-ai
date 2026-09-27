@@ -198,7 +198,36 @@ def _proxy_config():
     )
 
 
-def _pick_track(transcript_list):
+_TITLE_SCRIPT_HINTS = (
+    (re.compile(r"[\u0980-\u09ff]"), "bn"),
+    (re.compile(r"[\u0a80-\u0aff]"), "gu"),
+    (re.compile(r"[\u0a00-\u0a7f]"), "pa"),
+    (re.compile(r"[\u0b80-\u0bff]"), "ta"),
+    (re.compile(r"[\u0c00-\u0c7f]"), "te"),
+    (re.compile(r"[\u0c80-\u0cff]"), "kn"),
+    (re.compile(r"[\u0d00-\u0d7f]"), "ml"),
+    (re.compile(r"[\u0b00-\u0b7f]"), "or"),
+    (re.compile(r"[\u0900-\u097f]"), "hi"),
+)
+
+
+def title_language_hint(title: str | None) -> str | None:
+    """Return a safe caption preference from a title's unambiguous script.
+
+    YouTube occasionally marks an auto-caption track as the wrong language.
+    A Hindi title plus an available Hindi caption is a much better selection
+    signal than that incorrect default.  This is only a *track preference*;
+    summarizer.detect_language still reads the transcript text itself before
+    choosing the summary language.
+    """
+    text = title or ""
+    for pattern, language in _TITLE_SCRIPT_HINTS:
+        if len(pattern.findall(text)) >= 2:
+            return language
+    return None
+
+
+def _pick_track(transcript_list, preferred_language: str | None = None):
     """Choose the track that is actually in the SPOKEN language.
 
     A creator can add manual subtitles in a different language (Hindi subs on a
@@ -209,6 +238,17 @@ def _pick_track(transcript_list):
     tracks = list(transcript_list)
     if not tracks:
         return None
+
+    preferred = (preferred_language or "").split("-")[0].lower()
+    if preferred:
+        matching = [
+            t for t in tracks
+            if (t.language_code or "").split("-")[0].lower() == preferred
+        ]
+        if matching:
+            # A creator-provided transcript is clearer than ASR when both
+            # describe the same preferred language.
+            return next((t for t in matching if not t.is_generated), matching[0])
 
     asr = next((t for t in tracks if t.is_generated), None)
     if asr is not None:
@@ -227,7 +267,7 @@ def _pick_track(transcript_list):
     return next((t for t in tracks if not t.is_generated), tracks[0])
 
 
-def _fetch_via_api(video_id: str) -> Transcript:
+def _fetch_via_api(video_id: str, preferred_language: str | None = None) -> Transcript:
     import requests
     from youtube_transcript_api import YouTubeTranscriptApi
 
@@ -241,7 +281,7 @@ def _fetch_via_api(video_id: str) -> Transcript:
             proxy_config=_proxy_config(), http_client=session
         )
         listing = api.list(video_id)
-        track = _pick_track(listing)
+        track = _pick_track(listing, preferred_language)
         if track is None:
             raise TranscriptUnavailable("no caption tracks")
 
@@ -284,7 +324,9 @@ def _parse_vtt(payload: str) -> str:
 _MAX_CAPTION_TRIES = 6
 
 
-def _caption_candidates(info: dict, manual: dict, auto: dict) -> list[str]:
+def _caption_candidates(
+    info: dict, manual: dict, auto: dict, preferred_language: str | None = None,
+) -> list[str]:
     """The few caption codes worth fetching, spoken language first.
 
     yt-dlp reports the video's own language, and marks the original ASR track
@@ -305,6 +347,12 @@ def _caption_candidates(info: dict, manual: dict, auto: dict) -> list[str]:
             if code and code not in order and (code in manual or code in auto):
                 order.append(code)
 
+    preferred = (preferred_language or "").split("-")[0].lower()
+    if preferred:
+        add(f"{preferred}-orig")
+        add(*[c for c in manual if c.split("-")[0].lower() == preferred])
+        add(preferred)
+
     if spoken:
         add(f"{spoken}-orig")
         add(*[c for c in manual if c.split("-")[0].lower() == spoken])
@@ -315,7 +363,7 @@ def _caption_candidates(info: dict, manual: dict, auto: dict) -> list[str]:
     return order[:_MAX_CAPTION_TRIES]
 
 
-def _fetch_via_ytdlp(video_id: str) -> Transcript:
+def _fetch_via_ytdlp(video_id: str, preferred_language: str | None = None) -> Transcript:
     import yt_dlp
 
     opts = {
@@ -336,7 +384,7 @@ def _fetch_via_ytdlp(video_id: str) -> Transcript:
     availability = info.get("availability")
     manual = info.get("subtitles") or {}
     auto = info.get("automatic_captions") or {}
-    order = _caption_candidates(info, manual, auto)
+    order = _caption_candidates(info, manual, auto, preferred_language)
     logger.info("yt-dlp caption order for %s: %s", video_id, order)
 
     throttled = False
@@ -443,7 +491,7 @@ def is_cacheable(transcript: Transcript, *, video_public: bool | None = None) ->
     return True
 
 
-_transcript_cache: OrderedDict[str, tuple[float, Transcript]] = OrderedDict()
+_transcript_cache: OrderedDict[tuple[str, str], tuple[float, Transcript]] = OrderedDict()
 _transcript_cache_guard = threading.Lock()
 # A fixed set avoids one permanent lock object per video while still ensuring
 # that the same video can only be fetched once at a time.
@@ -456,29 +504,37 @@ def clear_transcript_cache() -> None:
         _transcript_cache.clear()
 
 
-def _cached_transcript(video_id: str) -> Transcript | None:
+def _transcript_cache_key(video_id: str, preferred_language: str | None) -> tuple[str, str]:
+    return video_id, (preferred_language or "").split("-")[0].lower()
+
+
+def _cached_transcript(video_id: str, preferred_language: str | None = None) -> Transcript | None:
     ttl = settings.TRANSCRIPT_CACHE_TTL_SECONDS
     if ttl <= 0:
         return None
     now = time.monotonic()
     with _transcript_cache_guard:
-        cached = _transcript_cache.get(video_id)
+        key = _transcript_cache_key(video_id, preferred_language)
+        cached = _transcript_cache.get(key)
         if cached is None:
             return None
         stored_at, transcript = cached
         if now - stored_at >= ttl:
-            _transcript_cache.pop(video_id, None)
+            _transcript_cache.pop(key, None)
             return None
-        _transcript_cache.move_to_end(video_id)
+        _transcript_cache.move_to_end(key)
         return transcript
 
 
-def _cache_transcript(video_id: str, transcript: Transcript) -> None:
+def _cache_transcript(
+    video_id: str, transcript: Transcript, preferred_language: str | None = None,
+) -> None:
     if settings.TRANSCRIPT_CACHE_TTL_SECONDS <= 0:
         return
     with _transcript_cache_guard:
-        _transcript_cache[video_id] = (time.monotonic(), transcript)
-        _transcript_cache.move_to_end(video_id)
+        key = _transcript_cache_key(video_id, preferred_language)
+        _transcript_cache[key] = (time.monotonic(), transcript)
+        _transcript_cache.move_to_end(key)
         limit = max(1, settings.TRANSCRIPT_CACHE_MAX_ENTRIES)
         while len(_transcript_cache) > limit:
             _transcript_cache.popitem(last=False)
@@ -488,26 +544,28 @@ def _fetch_lock(video_id: str) -> threading.Lock:
     return _transcript_fetch_locks[hash(video_id) % len(_transcript_fetch_locks)]
 
 
-def fetch_transcript(video_id: str) -> Transcript:
+def fetch_transcript(video_id: str, preferred_language: str | None = None) -> Transcript:
     """Blocking - call it from a worker thread.
 
     Successful transcripts are cached briefly, and concurrent requests for the
     same video share one fetch instead of stampeding YouTube.
     """
-    cached = _cached_transcript(video_id)
+    cached = _cached_transcript(video_id, preferred_language)
     if cached is not None:
         logger.info("transcript cache hit for %s", video_id)
         return cached
 
     lock = _fetch_lock(video_id)
     with lock:
-        cached = _cached_transcript(video_id)
+        cached = _cached_transcript(video_id, preferred_language)
         if cached is not None:
             return cached
-        return _fetch_transcript_uncached(video_id)
+        return _fetch_transcript_uncached(video_id, preferred_language)
 
 
-def _fetch_transcript_uncached(video_id: str) -> Transcript:
+def _fetch_transcript_uncached(
+    video_id: str, preferred_language: str | None = None,
+) -> Transcript:
     """The two sources, hedged rather than queued behind one another.
 
     These used to run strictly in order: the captions API, and yt-dlp only once
@@ -528,7 +586,7 @@ def _fetch_transcript_uncached(video_id: str) -> Transcript:
                 "transcript for %s via %s (%s chars, lang=%s)",
                 video_id, name, len(transcript.text), transcript.language,
             )
-            _cache_transcript(video_id, transcript)
+            _cache_transcript(video_id, transcript, preferred_language)
             return transcript
         errors.append(f"{name}: too short")
         return None
@@ -541,7 +599,9 @@ def _fetch_transcript_uncached(video_id: str) -> Transcript:
     # and the loser's thread simply finishes into a discarded result.
     pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="transcript")
     try:
-        futures: dict = {pool.submit(_fetch_via_api, video_id): "captions"}
+        api_args = (video_id, preferred_language) if preferred_language else (video_id,)
+        ytdlp_args = (video_id, preferred_language) if preferred_language else (video_id,)
+        futures: dict = {pool.submit(_fetch_via_api, *api_args): "captions"}
         hedge = max(0.0, settings.TRANSCRIPT_HEDGE_SECONDS)
         deadline = time.monotonic() + hedge
         hedged = False
@@ -553,7 +613,7 @@ def _fetch_transcript_uncached(video_id: str) -> Transcript:
             )
             if not done and not hedged:
                 hedged = True
-                futures[pool.submit(_fetch_via_ytdlp, video_id)] = "yt-dlp"
+                futures[pool.submit(_fetch_via_ytdlp, *ytdlp_args)] = "yt-dlp"
                 continue
 
             for fut in done:
@@ -569,7 +629,7 @@ def _fetch_transcript_uncached(video_id: str) -> Transcript:
 
             if not futures and not hedged:
                 hedged = True
-                futures[pool.submit(_fetch_via_ytdlp, video_id)] = "yt-dlp"
+                futures[pool.submit(_fetch_via_ytdlp, *ytdlp_args)] = "yt-dlp"
     finally:
         # Do not wait: a losing fetch is abandoned, not awaited.
         pool.shutdown(wait=False, cancel_futures=True)
