@@ -90,24 +90,75 @@ _SCRIPT_RANGES = [
 _DEVANAGARI = re.compile(r"[ऀ-ॿ]")
 
 
-def detect_language(text: str, hint: str | None = None) -> str:
-    """Language code for the summary.
-
-    The caption track's own code is the most reliable signal (it distinguishes
-    Hindi from Marathi, which share a script), so it wins when present.
-    """
-    if hint:
-        code = hint.split("-")[0].lower()
-        if code:
-            return code
-
+def _script_language(text: str) -> str | None:
+    """Infer a language only where the transcript uses a clear script."""
     sample = (text or "")[:4000]
     for pattern, code in _SCRIPT_RANGES:
         if len(pattern.findall(sample)) >= 15:
             return code
     if len(_DEVANAGARI.findall(sample)) >= 15:
+        # A track hint can distinguish Hindi from Marathi/Nepali. Without one,
+        # Hindi is the sensible Devanagari default for the web application.
         return "hi"
-    return "en"
+    return None
+
+
+def _script_family(code: str) -> str | None:
+    """Family used only to reject an impossible caption-language hint."""
+    code = (code or "").split("-")[0].lower()
+    if code in {"hi", "mr", "ne", "sa", "kok", "mai"}:
+        return "deva"
+    if code in {"bn", "as"}:
+        return "beng"
+    if code == "gu":
+        return "gujr"
+    if code == "pa":
+        return "guru"
+    if code == "ta":
+        return "taml"
+    if code == "te":
+        return "telu"
+    if code == "kn":
+        return "knda"
+    if code == "ml":
+        return "mlym"
+    if code == "or":
+        return "orya"
+    if code in {"ar", "ur", "fa"}:
+        return "arab"
+    return None
+
+
+_SCRIPT_LANGUAGE_FAMILY = {
+    "hi": "deva", "gu": "gujr", "pa": "guru", "ta": "taml",
+    "te": "telu", "kn": "knda", "ml": "mlym", "bn": "beng",
+    "or": "orya", "ar": "arab",
+}
+
+
+def detect_language(text: str, hint: str | None = None) -> str:
+    """Language code for a transcript-driven summary.
+
+    A caption-track code normally wins because it can distinguish Hindi from
+    Marathi, which share Devanagari. If that code conflicts with the actual
+    transcript's script, though, the text is authoritative: YouTube track
+    labels can be wrong and must not make a Hindi transcript produce Bengali.
+    """
+    script_code = _script_language(text)
+    if hint:
+        code = hint.split("-")[0].lower()
+        if code:
+            if script_code:
+                expected = _script_family(code)
+                observed = _SCRIPT_LANGUAGE_FAMILY.get(script_code)
+                if expected and observed and expected != observed:
+                    logger.warning(
+                        "caption language hint %s conflicts with transcript script %s; using %s",
+                        code, observed, script_code,
+                    )
+                    return script_code
+            return code
+    return script_code or "en"
 
 
 def language_name(code: str) -> str:

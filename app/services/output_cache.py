@@ -40,7 +40,10 @@ logger = logging.getLogger("trialguard.cache")
 # changes. Old rows keep their old number and are simply never matched again;
 # the cleanup job removes them once they go cold.
 # ---------------------------------------------------------------------------
-PROMPT_VERSION = 2
+# Version 3 validates a caption-track language label against the actual
+# transcript script. Rows created before that could preserve an incorrectly
+# labelled transcript language, so they must not answer auto-language requests.
+PROMPT_VERSION = 3
 
 
 def _key(video_id: str, mode: str, lang: str, model: str) -> tuple:
@@ -58,7 +61,11 @@ def detected_lang_for(db: Session, video_id: str) -> str | None:
         return None
     row = db.execute(
         select(CachedOutput.detected_lang)
-        .where(CachedOutput.video_id == video_id, CachedOutput.detected_lang != "")
+        .where(
+            CachedOutput.video_id == video_id,
+            CachedOutput.detected_lang != "",
+            CachedOutput.prompt_version == PROMPT_VERSION,
+        )
         .order_by(CachedOutput.last_used_at.desc())
         .limit(1)
     ).scalar_one_or_none()

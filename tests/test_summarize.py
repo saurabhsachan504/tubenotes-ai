@@ -65,6 +65,9 @@ def test_language_detection_and_model_routing():
     # The caption track's own code wins - it separates Hindi from Marathi,
     # which share the Devanagari script.
     assert summarizer.detect_language(HINDI, hint="mr") == "mr"
+    # A YouTube caption can be mislabelled. Its Bengali code must not turn
+    # actual Devanagari/Hindi transcript text into a Bengali summary.
+    assert summarizer.detect_language(HINDI, hint="bn") == "hi"
     assert summarizer.detect_language("", hint="ta-IN") == "ta"
 
     assert summarizer.model_for("en") == settings.VLLM_MODEL
