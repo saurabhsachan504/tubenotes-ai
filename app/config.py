@@ -71,10 +71,11 @@ class Settings(BaseSettings):
     INDIA_PLAN_PRICE_SUBUNITS: int = 29_900  # Rs 299.00, expressed in paise
     INTERNATIONAL_PLAN_PRICE_CENTS: int = 500  # $5.00, expressed in cents
 
-    # Cloudflare adds CF-IPCountry only when it proxies the visitor request.
-    # Keep this false for a directly exposed origin: an arbitrary caller could
-    # otherwise forge the header. Enable it only when the origin accepts
-    # traffic exclusively from Cloudflare (for example, through a Tunnel).
+    # Cloudflare adds CF-IPCountry, and its visitor-location managed transform
+    # can add CF-IPCity, only when it proxies the visitor request. Keep this
+    # false for a directly exposed origin: an arbitrary caller could otherwise
+    # forge the header. Enable it only when the origin accepts traffic
+    # exclusively from Cloudflare (for example, through a Tunnel).
     TRUST_CLOUDFLARE_COUNTRY_HEADER: bool = False
 
     # Shared secret for the mock provider's test endpoints. Empty (the default)

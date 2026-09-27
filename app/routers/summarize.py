@@ -47,6 +47,11 @@ def _job_country(request: Request) -> str:
     return pricing.country_code_for_headers(request.headers) or "Unknown"
 
 
+def _job_city(request: Request) -> str:
+    """Trusted Cloudflare city snapshot; direct/local requests stay Unknown."""
+    return pricing.city_for_headers(request.headers) or "Unknown"
+
+
 # ---------------------------------------------------------------------------
 class VideoRequest(BaseModel):
     url: str = Field(min_length=5, max_length=500)
@@ -454,7 +459,7 @@ async def summarize(
         video_url=payload.url,
         kind=payload.mode,
         language=payload.target_lang,
-        request_city="Unknown",
+        request_city=_job_city(request),
         request_country=_job_country(request),
     )
     if cached_row is not None:
@@ -657,7 +662,7 @@ async def notes(
         video_url=payload.url,
         kind="notes",
         language=payload.target_lang,
-        request_city="Unknown",
+        request_city=_job_city(request),
         request_country=_job_country(request),
     )
     if cached_row is not None:
@@ -896,7 +901,7 @@ async def translate_text(
         video_url=None,
         kind="translation",
         language=target,
-        request_city="Unknown",
+        request_city=_job_city(request),
         request_country=_job_country(request),
     )
     try:
@@ -982,7 +987,7 @@ async def notes_pdf(
         video_url=payload.url,
         kind="pdf",
         language=target or payload.target_lang,
-        request_city="Unknown",
+        request_city=_job_city(request),
         request_country=_job_country(request),
     )
 

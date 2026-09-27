@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 from typing import Mapping
+from urllib.parse import unquote
 
 from app.config import settings
 
@@ -97,6 +98,24 @@ def country_code_for_headers(headers: Mapping[str, str]) -> str | None:
     if not re.fullmatch(r"[A-Z]{2}", code) or code in {"T1", "XX"}:
         return None
     return code
+
+
+def city_for_headers(headers: Mapping[str, str]) -> str | None:
+    """Return Cloudflare's visitor city for admin job analytics.
+
+    ``CF-IPCity`` is available only when the Cloudflare visitor-location
+    managed transform is enabled. Like the country header, it is accepted only
+    when the origin is reachable exclusively through Cloudflare. The value is
+    display data, so we normalise URL encoding/whitespace and reject control
+    characters rather than ever storing an arbitrary header verbatim.
+    """
+    if not settings.TRUST_CLOUDFLARE_COUNTRY_HEADER:
+        return None
+    raw = headers.get("cf-ipcity", "")
+    city = re.sub(r"\s+", " ", unquote(raw).strip())
+    if not city or len(city) > 120 or any(ord(char) < 32 for char in city):
+        return None
+    return city
 
 
 def plan_for_headers(headers: Mapping[str, str]) -> BillingPlan:

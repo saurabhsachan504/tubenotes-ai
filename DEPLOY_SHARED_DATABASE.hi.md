@@ -94,8 +94,10 @@ Host header se `tubenotes.ai` ko port `8011` tak bhej dega.
 
 ## 5. Payments and Google
 
-- Razorpay webhook URL, success URL aur cancel URL ko `tubenotes.ai` par set
-  karo. Existing webhook secret aur plan IDs `.env` mein same rakho.
+- Razorpay webhook URL ko `https://tubenotes.ai/api/v1/webhooks/razorpay` set
+  karo. Existing webhook secret aur plan IDs `.env` mein same rakho. Razorpay
+  Subscriptions ka hosted checkout short URL use karta hai; server-side
+  subscription activation webhook se hoti hai.
 - Google OAuth console mein **dono** authorized origins (`https://tubenotes.ai`
   aur `https://tubenotes.trueworks.in`) aur their required redirect URLs rakho.
 - Sirf new payments TubeNotes.ai se start honge when the legacy deployment is

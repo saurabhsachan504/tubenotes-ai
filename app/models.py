@@ -240,8 +240,8 @@ class ProcessingJob(Base):
     cached: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     output_tokens: Mapped[int | None] = mapped_column(Integer)
     output_chars: Mapped[int | None] = mapped_column(Integer)
-    # Location snapshot at the moment the operation began. City is currently
-    # intentionally recorded as Unknown; no IP geolocation provider is used.
+    # Location snapshot at the moment the operation began. Cloudflare provides
+    # these only for trusted proxied requests; local/direct calls stay Unknown.
     request_city: Mapped[str] = mapped_column(String(120), default="Unknown", nullable=False)
     request_country: Mapped[str] = mapped_column(String(8), default="Unknown", nullable=False)
     error_message: Mapped[str | None] = mapped_column(String(500))
