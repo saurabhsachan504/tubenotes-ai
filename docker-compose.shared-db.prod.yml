@@ -1,7 +1,8 @@
 # TubeNotes.ai production stack that reuses TrialGuard's existing PostgreSQL.
 #
 # It deliberately has NO db service and NO database volume. The existing
-# /opt/trialguard stack remains the only owner of PostgreSQL on 127.0.0.1:5433.
+# /opt/trialguard stack remains the only owner of PostgreSQL. This API joins
+# its private Docker network instead of attempting to reach host loopback.
 # Start it with:
 #   docker compose -p tubenotes-ai -f docker-compose.shared-db.prod.yml up -d --build
 
@@ -11,14 +12,16 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      # The existing database is published on the DGX loopback address. Docker
-      # reaches that host-only port through the explicit host-gateway mapping.
-      DATABASE_URL: postgresql+psycopg://trialguard:${POSTGRES_PASSWORD}@host.docker.internal:5433/trialguard
+      # The existing Postgres container is reachable over TrialGuard's private
+      # Docker network. A container cannot reach the DGX's 127.0.0.1:5433
+      # listener through host-gateway, so do not use that host port here.
+      DATABASE_URL: postgresql+psycopg://trialguard:${POSTGRES_PASSWORD}@${SHARED_DB_HOST:-trialguard-db-1}:5432/trialguard
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
       - default
       - baota_net
+      - trialguard_db
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=1
     dns:
@@ -27,11 +30,9 @@ services:
     ports:
       # A separate host-only API port. The TubeNotes.ai Nginx site proxies here.
       - "127.0.0.1:8011:8000"
-    command: >
-      sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000
-                    --workers 3 --proxy-headers --forwarded-allow-ips='*'
-                    --timeout-graceful-shutdown 30"
+    # Keep the complete shell command on one YAML line. The previous folded
+    # multiline form made --workers and --timeout separate shell commands.
+    command: ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 3 --proxy-headers --forwarded-allow-ips='*' --timeout-graceful-shutdown 30"]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/healthz || exit 1"]
       interval: 30s
@@ -43,3 +44,8 @@ networks:
   # Existing network where the Gemma/vLLM container runs.
   baota_net:
     external: true
+  # Created by the existing /opt/trialguard compose project. It carries the
+  # db service's private :5432 listener, which is safer than publishing it.
+  trialguard_db:
+    external: true
+    name: ${TRIALGUARD_DOCKER_NETWORK:-trialguard_default}

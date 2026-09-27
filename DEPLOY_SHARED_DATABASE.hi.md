@@ -9,6 +9,9 @@ Is setup mein dono domains live rahenge:
 
 `docker-compose.shared-db.prod.yml` mein database service jaan-boojhkar nahi hai.
 Isliye `tubenotes.ai` deploy se doosra Postgres, volume, ya port `5434` nahi banega.
+Naya API existing `trialguard_default` private Docker network se
+`trialguard-db-1:5432` tak directly connect karta hai; host ke `127.0.0.1:5433`
+port ko container ke andar use nahi karta.
 
 ## 1. Naya code aur environment
 
@@ -39,6 +42,8 @@ APP_BASE_URL=https://tubenotes.ai
 BILLING_SUCCESS_URL=https://tubenotes.ai/billing/success
 BILLING_CANCEL_URL=https://tubenotes.ai/billing/cancel
 BILLING_PRIMARY_SITE_URL=
+TRIALGUARD_DOCKER_NETWORK=trialguard_default
+SHARED_DB_HOST=trialguard-db-1
 ```
 
 Purani `/opt/trialguard/.env` ko abhi change mat karo. Agar purane domain par
