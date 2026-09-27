@@ -1,6 +1,7 @@
 """Application settings, loaded from environment variables / .env file."""
 from __future__ import annotations
 
+from datetime import datetime
 from functools import lru_cache
 from typing import Literal
 
@@ -384,6 +385,10 @@ class Settings(BaseSettings):
     # untracked .env.local/.env file, never in source control.  Users marked
     # is_admin in the database are admins too.
     ADMIN_EMAILS: str = ""
+    # Optional analytics reset point for the admin UI. Records remain in the
+    # database; only records created on/after this UTC timestamp are reported.
+    # Example: 2026-09-27T09:30:00Z
+    ADMIN_REPORTING_START_AT: datetime | None = None
 
     # ---- Google sign-in --------------------------------------------------
     # false rakhne par /auth/google 404 deta hai aur UI me button dikhta hi

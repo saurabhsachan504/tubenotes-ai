@@ -53,18 +53,31 @@ class BlockDeviceRequest(BaseModel):
 
 @router.get("/stats")
 def stats(db: Session = Depends(get_db)):
-    total_users = db.execute(select(func.count()).select_from(User)).scalar_one()
+    reporting_start = _reporting_start()
+    total_users = db.execute(
+        select(func.count()).select_from(User).where(User.created_at >= reporting_start)
+    ).scalar_one()
     active_subs = db.execute(
         select(func.count())
         .select_from(Subscription)
-        .where(Subscription.status == SubscriptionStatus.active)
+        .where(
+            Subscription.status == SubscriptionStatus.active,
+            Subscription.created_at >= reporting_start,
+        )
     ).scalar_one()
-    total_runs = db.execute(select(func.count()).select_from(UsageEvent)).scalar_one()
-    devices = db.execute(select(func.count()).select_from(Device)).scalar_one()
+    total_runs = db.execute(
+        select(func.count()).select_from(UsageEvent).where(UsageEvent.created_at >= reporting_start)
+    ).scalar_one()
+    devices = db.execute(
+        select(func.count()).select_from(Device).where(Device.created_at >= reporting_start)
+    ).scalar_one()
     exhausted = db.execute(
         select(func.count())
         .select_from(DeviceTrialLedger)
-        .where(DeviceTrialLedger.trials_used >= 5)
+        .where(
+            DeviceTrialLedger.trials_used >= 5,
+            DeviceTrialLedger.first_seen_at >= reporting_start,
+        )
     ).scalar_one()
     return {
         "users": total_users,
@@ -80,6 +93,16 @@ def _as_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _reporting_start() -> datetime:
+    """Inclusive lower bound for admin reporting, without deleting records."""
+    return _as_utc(settings.ADMIN_REPORTING_START_AT) or datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _window_start(days: int, now: datetime) -> datetime:
+    """Selected dashboard range, clamped to the reporting reset point."""
+    return max(now - timedelta(days=days - 1), _reporting_start())
 
 
 def _usage_meta(raw: str | None) -> dict:
@@ -283,22 +306,29 @@ async def dashboard(days: int = 10, db: Session = Depends(get_db)):
     """
     days = max(1, min(days, 90))
     now = datetime.now(timezone.utc)
-    start = now - timedelta(days=days - 1)
-    users = db.execute(select(User)).scalars().all()
+    start = _window_start(days, now)
+    reporting_start = _reporting_start()
+    users = db.execute(
+        select(User).where(User.created_at >= reporting_start)
+    ).scalars().all()
     usage_rows = db.execute(
         select(UsageEvent, User.email)
         .join(User, UsageEvent.user_id == User.id)
+        .where(UsageEvent.created_at >= reporting_start)
         .order_by(UsageEvent.created_at.desc())
         .limit(3000)
     ).all()
     job_rows = db.execute(
         select(ProcessingJob, User.email)
         .join(User, ProcessingJob.user_id == User.id)
+        .where(ProcessingJob.started_at >= reporting_start)
         .order_by(ProcessingJob.started_at.desc())
         .limit(3000)
     ).all()
     outputs = db.execute(select(CachedOutput)).scalars().all()
-    subscriptions = db.execute(select(Subscription)).scalars().all()
+    subscriptions = db.execute(
+        select(Subscription).where(Subscription.created_at >= reporting_start)
+    ).scalars().all()
 
     recent_window = [
         (job, email) for job, email in job_rows
@@ -463,7 +493,10 @@ async def dashboard(days: int = 10, db: Session = Depends(get_db)):
 @router.get("/users", response_model=list[UserOut])
 def list_users(limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
     rows = db.execute(
-        select(User).order_by(User.created_at.desc()).limit(min(limit, 200)).offset(offset)
+        select(User)
+        .where(User.created_at >= _reporting_start())
+        .order_by(User.created_at.desc())
+        .limit(min(limit, 200)).offset(offset)
     ).scalars().all()
     return [UserOut.model_validate(u) for u in rows]
 
@@ -486,11 +519,22 @@ def users_overview(
     if requested_status not in {"all", "active_today", "paid", "subscribed", "free", "payment_issue", "cancelled", "disabled"}:
         raise HTTPException(status_code=422, detail="Unsupported user status filter")
 
-    users = db.execute(select(User).order_by(User.created_at.desc())).scalars().all()
-    jobs = db.execute(select(ProcessingJob)).scalars().all()
-    usage_events = db.execute(select(UsageEvent)).scalars().all()
-    devices = db.execute(select(Device)).scalars().all()
-    subscriptions = db.execute(select(Subscription)).scalars().all()
+    reporting_start = _reporting_start()
+    users = db.execute(
+        select(User).where(User.created_at >= reporting_start).order_by(User.created_at.desc())
+    ).scalars().all()
+    jobs = db.execute(
+        select(ProcessingJob).where(ProcessingJob.started_at >= reporting_start)
+    ).scalars().all()
+    usage_events = db.execute(
+        select(UsageEvent).where(UsageEvent.created_at >= reporting_start)
+    ).scalars().all()
+    devices = db.execute(
+        select(Device).where(Device.created_at >= reporting_start)
+    ).scalars().all()
+    subscriptions = db.execute(
+        select(Subscription).where(Subscription.created_at >= reporting_start)
+    ).scalars().all()
     subscriptions_by_user: dict[str, list[Subscription]] = {}
     for subscription in subscriptions:
         subscriptions_by_user.setdefault(subscription.user_id, []).append(subscription)
@@ -552,24 +596,31 @@ def users_overview(
 def user_detail(user_id: str, db: Session = Depends(get_db)):
     """Full support profile for one user, without returning sensitive data."""
     user = db.get(User, user_id)
-    if user is None:
+    reporting_start = _reporting_start()
+    if user is None or (_as_utc(user.created_at) or datetime.min.replace(tzinfo=timezone.utc)) < reporting_start:
         raise HTTPException(status_code=404, detail="User not found")
 
     all_jobs = db.execute(
         select(ProcessingJob)
-        .where(ProcessingJob.user_id == user.id)
+        .where(ProcessingJob.user_id == user.id, ProcessingJob.started_at >= reporting_start)
         .order_by(ProcessingJob.started_at.desc())
     ).scalars().all()
     # The drawer stays fast/readable while its counters remain exact even for
     # a heavy user with more than one hundred historical operations.
     jobs = all_jobs[:100]
-    usage_events = db.execute(select(UsageEvent).where(UsageEvent.user_id == user.id)).scalars().all()
+    usage_events = db.execute(
+        select(UsageEvent).where(
+            UsageEvent.user_id == user.id, UsageEvent.created_at >= reporting_start
+        )
+    ).scalars().all()
     devices = db.execute(
-        select(Device).where(Device.user_id == user.id).order_by(Device.last_seen_at.desc())
+        select(Device)
+        .where(Device.user_id == user.id, Device.created_at >= reporting_start)
+        .order_by(Device.last_seen_at.desc())
     ).scalars().all()
     subscriptions = db.execute(
         select(Subscription)
-        .where(Subscription.user_id == user.id)
+        .where(Subscription.user_id == user.id, Subscription.created_at >= reporting_start)
         .order_by(Subscription.updated_at.desc())
     ).scalars().all()
     active = subscriptions[0] if subscriptions and _subscription_status(subscriptions[0].status) in {"active", "trialing"} else None
@@ -617,7 +668,7 @@ def operations_overview(
         raise HTTPException(status_code=422, detail="Unsupported operation category")
     days = max(1, min(days, 90))
     limit = max(1, min(limit, 1_000))
-    start = datetime.now(timezone.utc) - timedelta(days=days - 1)
+    start = _window_start(days, datetime.now(timezone.utc))
     if category == "recent":
         conditions = (ProcessingJob.started_at >= start,)
     elif category == "jobs":
@@ -678,7 +729,7 @@ def error_logs(
     """Full failed-job history for the Error Logs view."""
     days = max(1, min(days, 90))
     limit = max(1, min(limit, 1_000))
-    start = datetime.now(timezone.utc) - timedelta(days=days - 1)
+    start = _window_start(days, datetime.now(timezone.utc))
     conditions = (ProcessingJob.status == "failed", ProcessingJob.started_at >= start)
     rows = db.execute(
         select(ProcessingJob, User.email)
