@@ -19,6 +19,9 @@ stripe==11.4.1
 razorpay==1.4.2
 youtube-transcript-api==1.2.2
 yt-dlp>=2025.1.1
+# Detect the actual language of Latin-script captions when YouTube mislabels a
+# caption track. Non-Latin scripts are detected directly in summarizer.py.
+langdetect==1.0.9
 
 # Server-side PDF rendering of the full notes. WeasyPrint gets its text shaping
 # from Pango, which is what makes Devanagari, Tamil and Arabic come out as

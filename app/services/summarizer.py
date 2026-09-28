@@ -16,6 +16,16 @@ from contextlib import asynccontextmanager
 
 import httpx
 
+try:  # Optional during a partial/local install; required by requirements.txt.
+    from langdetect import DetectorFactory, LangDetectException, detect_langs
+
+    # langdetect otherwise uses a random seed and can vary across requests.
+    DetectorFactory.seed = 0
+except ImportError:  # pragma: no cover - production installs requirements.txt
+    DetectorFactory = None
+    LangDetectException = Exception
+    detect_langs = None
+
 from app.config import settings
 from app.services.youtube import sample_for_model
 
@@ -136,29 +146,66 @@ _SCRIPT_LANGUAGE_FAMILY = {
 }
 
 
+_LANGDETECT_CODES = {"zh-cn": "zh", "zh-tw": "zh"}
+
+
+def _statistical_language(text: str) -> str | None:
+    """Detect a Latin-script transcript when YouTube's track label is wrong.
+
+    Script ranges catch Hindi, Bengali and other non-Latin languages instantly.
+    English, Spanish and similar transcripts need a text detector: otherwise a
+    falsely-labelled ``bn`` track could force an English transcript into
+    Bengali output. A high confidence threshold lets YouTube's caption label
+    remain the fallback for short, mixed or ambiguous text.
+    """
+    if detect_langs is None:
+        return None
+    sample = (text or "")[:4_000].strip()
+    if len(sample) < 120:
+        return None
+    try:
+        candidates = detect_langs(sample)
+    except LangDetectException:
+        return None
+    if not candidates or candidates[0].prob < 0.90:
+        return None
+    code = _LANGDETECT_CODES.get(candidates[0].lang, candidates[0].lang)
+    return code if code in LANG_NAMES else None
+
+
 def detect_language(text: str, hint: str | None = None) -> str:
     """Language code for a transcript-driven summary.
 
-    A caption-track code normally wins because it can distinguish Hindi from
-    Marathi, which share Devanagari. If that code conflicts with the actual
-    transcript's script, though, the text is authoritative: YouTube track
-    labels can be wrong and must not make a Hindi transcript produce Bengali.
+    The actual transcript wins over YouTube's caption-track label. This matters
+    when YouTube incorrectly serves or labels a Bengali track for English text.
+    A shared script (Hindi/Marathi in Devanagari) remains the one case where the
+    caption label provides useful precision.
     """
     script_code = _script_language(text)
+    text_code = script_code or _statistical_language(text)
     if hint:
         code = hint.split("-")[0].lower()
         if code:
-            if script_code:
-                expected = _script_family(code)
-                observed = _SCRIPT_LANGUAGE_FAMILY.get(script_code)
-                if expected and observed and expected != observed:
+            if text_code and code != text_code:
+                if script_code:
+                    expected = _script_family(code)
+                    observed = _SCRIPT_LANGUAGE_FAMILY.get(script_code)
+                    # Keep a Hindi/Marathi/Nepali hint when it agrees with the
+                    # Devanagari script; text alone cannot separate those.
+                    if expected == observed and expected is not None:
+                        return code
                     logger.warning(
                         "caption language hint %s conflicts with transcript script %s; using %s",
-                        code, observed, script_code,
+                        code, observed, text_code,
                     )
-                    return script_code
+                else:
+                    logger.warning(
+                        "caption language hint %s conflicts with detected transcript language %s; using %s",
+                        code, text_code, text_code,
+                    )
+                return text_code
             return code
-    return script_code or "en"
+    return text_code or "en"
 
 
 def language_name(code: str) -> str:

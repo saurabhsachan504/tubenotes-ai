@@ -76,6 +76,13 @@ def test_language_detection_and_model_routing():
     assert summarizer.model_for("ta") == settings.VLLM_MODEL
 
 
+def test_latin_transcript_overrides_wrong_caption_label(monkeypatch):
+    # Keep the test deterministic even before a developer installs langdetect
+    # in a local virtual environment.
+    monkeypatch.setattr(summarizer, "_statistical_language", lambda text: "en")
+    assert summarizer.detect_language(ENGLISH, hint="bn") == "en"
+
+
 def test_hindi_title_prefers_hindi_track_over_wrong_asr_default():
     class Track:
         def __init__(self, code: str, generated: bool):
