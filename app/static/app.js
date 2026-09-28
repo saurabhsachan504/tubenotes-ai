@@ -971,18 +971,16 @@
   }
 
   async function translateSummaryFromChat(target) {
-    if (!lastNotes || !lastNotes.markdown) throw err(422, "Generate a summary before translating it.");
+    if (!videoChat.context || !videoChat.context.summary) {
+      throw err(422, "Generate a summary before translating it.");
+    }
     const res = await api("/video-chat/translate-summary", {
       method: "POST",
-      body: { summary: lastNotes.markdown, target_lang: target },
+      // Keep the original on-screen summary unchanged. Every command starts
+      // from that original context, so English, Tamil and Gujarati versions
+      // can appear together in the chat without translating a translation.
+      body: { summary: videoChat.context.summary, target_lang: target },
     });
-    lastNotes.markdown = res.text;
-    lastNotes.lang = res.target_lang;
-    $("rBody").innerHTML = md2html(res.text);
-    const tag = $("rLangTag");
-    if (tag) tag.textContent = `🌐 ${res.language_name}`;
-    videoChat.context = { summary: res.text, language: res.target_lang };
-    videoChat.history = [];
     return res;
   }
 
@@ -1020,7 +1018,7 @@
       if (translateTarget) {
         const res = await translateSummaryFromChat(translateTarget);
         if (pending) pending.remove();
-        addChatMessage("assistant", `The full summary is now translated to **${res.language_name}**. Your PDF and .md download will use this version too.`);
+        addChatMessage("assistant", `## ${res.language_name} translation\n\n${res.text}`);
         return;
       }
       const res = await api("/video-chat", {
