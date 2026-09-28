@@ -110,6 +110,13 @@ class VideoChatOut(BaseModel):
     language_name: str
 
 
+class VideoChatSummaryTranslateRequest(BaseModel):
+    """A chat-command translation of the summary currently visible to a user."""
+
+    summary: str = Field(min_length=20, max_length=80_000)
+    target_lang: str = Field(min_length=2, max_length=8)
+
+
 def _resolve_target(requested: str | None, detected: str) -> str:
     """The language the user actually gets."""
     if not requested or requested in ("auto", "same"):
@@ -990,6 +997,36 @@ async def video_chat(
         answer=answer,
         language=target,
         language_name=summarizer.language_name(target),
+    )
+
+
+@router.post("/video-chat/translate-summary", response_model=TranslateOut)
+async def translate_summary_from_chat(
+    payload: VideoChatSummaryTranslateRequest,
+    user: User = Depends(get_current_user),
+):
+    """Translate the whole visible summary when a user asks through chat.
+
+    This is a follow-up action for an already generated video, so it does not
+    consume a trial or apply a per-user request rate limit.
+    """
+    del user
+    target = payload.target_lang.split("-")[0].lower()
+    if target not in summarizer.LANG_NAMES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="That language is not supported yet.",
+        )
+    try:
+        text = await translate.translate(payload.summary, target)
+    except Exception as exc:  # pragma: no cover - provider/network failure
+        logger.exception("chat summary translation failed")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Summary translation is temporarily unavailable. Please try again.",
+        ) from exc
+    return TranslateOut(
+        text=text, target_lang=target, language_name=summarizer.language_name(target)
     )
 
 

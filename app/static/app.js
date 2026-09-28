@@ -35,6 +35,25 @@
     ["fi","Suomi"],["da","Dansk"],["no","Norsk"],["sw","Kiswahili"],["si","සිංහල"],
   ];
 
+  // A user does not need to find the dropdown to translate a summary. These
+  // aliases deliberately accept common Hindi/Hinglish spellings too.
+  const CHAT_LANGUAGE_ALIASES = [
+    ["en", ["english", "अंग्रेजी", "अंग्रेज़ी"]], ["hi", ["hindi", "हिंदी", "हिन्दी"]],
+    ["bn", ["bengali", "bangla", "बंगाली", "বাংলা"]], ["ta", ["tamil", "तमिल", "தமிழ்"]],
+    ["gu", ["gujarati", "gujrati", "गुजराती", "ગુજરાતી"]], ["mr", ["marathi", "मराठी"]],
+    ["pa", ["punjabi", "पंजाबी", "ਪੰਜਾਬੀ"]], ["te", ["telugu", "तेलुगु", "తెలుగు"]],
+    ["kn", ["kannada", "कन्नड़", "ಕನ್ನಡ"]], ["ml", ["malayalam", "मलयालम", "മലയാളം"]],
+    ["ur", ["urdu", "उर्दू", "اردو"]], ["ne", ["nepali", "नेपाली"]],
+    ["as", ["assamese", "असमिया"]], ["or", ["odia", "oriya", "ओड़िया"]],
+    ["sa", ["sanskrit", "संस्कृत"]], ["fr", ["french", "फ्रेंच", "français"]],
+    ["es", ["spanish", "स्पेनिश", "español"]], ["de", ["german", "जर्मन", "deutsch"]],
+    ["pt", ["portuguese", "पुर्तगाली"]], ["it", ["italian", "इटालियन"]],
+    ["nl", ["dutch", "डच"]], ["ru", ["russian", "रूसी", "русский"]],
+    ["ar", ["arabic", "अरबी", "العربية"]], ["fa", ["persian", "farsi", "फारसी"]],
+    ["tr", ["turkish", "तुर्की"]], ["zh", ["chinese", "चीनी", "中文"]],
+    ["ja", ["japanese", "जापानी", "日本語"]], ["ko", ["korean", "कोरियाई", "한국어"]],
+  ];
+
   function fillLangSelect(el, { includeAuto }) {
     el.innerHTML = "";
     if (includeAuto) {
@@ -941,6 +960,32 @@
     if (messages) messages.innerHTML = '<p class="chat-empty">The summary language changed, so this chat is ready for new questions.</p>';
   }
 
+  function chatTranslationTarget(question) {
+    const q = String(question || "").toLocaleLowerCase();
+    const asksToTranslate = /translate|translation|convert|conversion|अनुवाद|ट्रांसलेट|कन्वर्ट|भाषा.*(?:बदल|कर)|language.*(?:change|switch)|\b(?:me|mein)\s+(?:kar|karo|bana|convert)/i.test(q);
+    if (!asksToTranslate) return null;
+    for (const [code, aliases] of CHAT_LANGUAGE_ALIASES) {
+      if (aliases.some((alias) => q.includes(alias.toLocaleLowerCase()))) return code;
+    }
+    return null;
+  }
+
+  async function translateSummaryFromChat(target) {
+    if (!lastNotes || !lastNotes.markdown) throw err(422, "Generate a summary before translating it.");
+    const res = await api("/video-chat/translate-summary", {
+      method: "POST",
+      body: { summary: lastNotes.markdown, target_lang: target },
+    });
+    lastNotes.markdown = res.text;
+    lastNotes.lang = res.target_lang;
+    $("rBody").innerHTML = md2html(res.text);
+    const tag = $("rLangTag");
+    if (tag) tag.textContent = `🌐 ${res.language_name}`;
+    videoChat.context = { summary: res.text, language: res.target_lang };
+    videoChat.history = [];
+    return res;
+  }
+
   function addChatMessage(role, text, typing) {
     const messages = $("chatMessages");
     if (!messages) return null;
@@ -964,6 +1009,7 @@
     const question = input.value.trim();
     if (!question) return;
     const prior = videoChat.history.slice(-10);
+    const translateTarget = chatTranslationTarget(question);
     videoChat.busy = true;
     input.value = "";
     input.disabled = true;
@@ -971,6 +1017,12 @@
     addChatMessage("user", question);
     const pending = addChatMessage("assistant", "", true);
     try {
+      if (translateTarget) {
+        const res = await translateSummaryFromChat(translateTarget);
+        if (pending) pending.remove();
+        addChatMessage("assistant", `The full summary is now translated to **${res.language_name}**. Your PDF and .md download will use this version too.`);
+        return;
+      }
       const res = await api("/video-chat", {
         method: "POST",
         body: { summary: videoChat.context.summary, language: videoChat.context.language, question, history: prior },

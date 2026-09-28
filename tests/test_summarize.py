@@ -207,6 +207,35 @@ def test_video_chat_is_authenticated_and_does_not_consume_a_trial(client, device
     assert entitlement["trials_used"] == 0
 
 
+def test_chat_command_translates_the_full_summary_without_a_trial(client, device, monkeypatch):
+    _, headers, _ = register(client, device=device)
+
+    async def fake_translate(text, target):
+        assert text.startswith("This video explains")
+        assert target == "fr"
+        return "Cette vidéo explique la photosynthèse."
+
+    monkeypatch.setattr("app.routers.summarize.translate.translate", fake_translate)
+    res = client.post(
+        f"{API}/video-chat/translate-summary",
+        json={
+            "summary": "This video explains photosynthesis in plants and how they make food.",
+            "target_lang": "fr",
+        },
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+    assert res.json() == {
+        "text": "Cette vidéo explique la photosynthèse.",
+        "target_lang": "fr",
+        "language_name": "French",
+    }
+    entitlement = client.post(
+        f"{API}/entitlement/check", json={"device": device}, headers=headers
+    ).json()
+    assert entitlement["trials_used"] == 0
+
+
 def test_video_chat_uses_a_low_temperature_model_call(monkeypatch):
     seen = {}
 
