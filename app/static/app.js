@@ -1334,25 +1334,8 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   // =====================================================================
   // Wiring
   // =====================================================================
-  $("pills").addEventListener("click", (e) => {
-    const b = e.target.closest(".pill");
-    if (!b) return;
-    [...$("pills").children].forEach((p) => p.classList.remove("on"));
-    b.classList.add("on");
-    mode = b.dataset.mode;
-    $("heroHint").textContent = {
-      summary: currentBillingPlan
-        ? `5 free videos on signup · then ${priceForPlan(currentBillingPlan).label} · works with Hindi, English & 40+ languages`
-        : "A structured ~400-word summary with sections and takeaways.",
-      key_points: "Just the main points, numbered, in the order they're discussed.",
-      notes: "Reads the ENTIRE transcript, part by part. Nothing is dropped — a long lecture can run to dozens of pages.",
-      transcript: "The raw transcript is shown with the summary — pick another mode to generate.",
-    }[mode];
-    if (mode === "transcript") { mode = "summary"; }
-  });
-
   $("goBtn").onclick = () => run(mode);
-  $("summaryBtn").onclick = () => run(mode === "notes" ? "summary" : mode);
+  $("summaryBtn").onclick = () => run("summary");
   // The hero button promises a full-notes PDF, regardless of the currently
   // selected output tab or an existing on-screen summary.
   $("pdfBtn").onclick = () => pdfFlow({ full: true });
