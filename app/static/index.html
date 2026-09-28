@@ -337,7 +337,9 @@
   .site-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left}.footer-links{display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end}.footer-links a{color:var(--muted);text-decoration:none}.footer-links a:hover{color:var(--brand1);text-decoration:underline}
 
   /* ---------------- limited launch offer ---------------- */
-  .offer-modal{max-width:510px;padding:0;overflow:hidden;color:#fff;background:#11100f;border:1px solid rgba(255,211,112,.75);box-shadow:0 30px 90px rgba(0,0,0,.72),0 0 55px rgba(238,180,57,.16)}
+  /* Higher specificity than .modal: remove its 24px light-theme padding so
+     this stays a refined one-pixel frame instead of a wide white border. */
+  .modal.offer-modal{max-width:510px;padding:1px;overflow:hidden;color:#fff;background:#151009;border:1px solid rgba(255,211,112,.78);box-shadow:0 30px 90px rgba(0,0,0,.72),0 0 55px rgba(238,180,57,.16)}
   .offer-card{position:relative;isolation:isolate;padding:31px 30px 27px;overflow:hidden;background:radial-gradient(circle at 88% 7%,rgba(255,201,77,.26),transparent 24%),radial-gradient(circle at 9% 100%,rgba(173,104,11,.26),transparent 33%),linear-gradient(135deg,#080807,#16130d 58%,#090908)}
   .offer-card::before,.offer-card::after{content:"";position:absolute;z-index:-1;pointer-events:none}.offer-card::before{width:330px;height:72px;right:-78px;top:33px;transform:rotate(38deg);background:linear-gradient(90deg,#8d5610,#ffd66d 50%,#9e6013);box-shadow:0 0 16px rgba(255,211,102,.65)}.offer-card::after{width:180px;height:180px;right:-75px;top:-71px;border:27px solid rgba(255,204,91,.86);border-left-color:#8c520c;border-bottom-color:#b87517;border-radius:50%;filter:drop-shadow(0 9px 12px rgba(0,0,0,.4))}
   .offer-close{position:absolute;right:13px;top:10px;width:33px;height:33px;border:0;border-radius:50%;color:#ffe8ab;background:rgba(255,255,255,.09);font-size:23px;line-height:1;z-index:2}.offer-close:hover{background:rgba(255,211,112,.22)}
