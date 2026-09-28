@@ -176,6 +176,36 @@ def test_summarize_streams_and_charges_one_trial(client, device, stub_youtube, s
     assert "".join(e["text"] for e in events if e["type"] == "delta") == done["text"]
 
 
+def test_video_chat_is_authenticated_and_does_not_consume_a_trial(client, device, monkeypatch):
+    _, headers, _ = register(client, device=device)
+
+    async def fake_answer(summary, question, history, *, lang):
+        assert "photosynthesis" in summary
+        assert question == "What is the main idea?"
+        assert history == []
+        assert lang == "en"
+        return "It explains how plants make food.", "en", None
+
+    monkeypatch.setattr(summarizer, "answer_about_summary", fake_answer)
+    res = client.post(
+        f"{API}/video-chat",
+        json={
+            "summary": "This video explains photosynthesis in plants and how they make food.",
+            "question": "What is the main idea?",
+            "language": "en",
+            "history": [],
+        },
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["answer"] == "It explains how plants make food."
+
+    entitlement = client.post(
+        f"{API}/entitlement/check", json={"device": device}, headers=headers
+    ).json()
+    assert entitlement["trials_used"] == 0
+
+
 def test_same_video_twice_is_charged_once(client, device, stub_youtube, stub_model):
     _, headers, _ = register(client, device=device)
     body = {"url": "https://youtu.be/dQw4w9WgXcQ", "device": device, "mode": "summary"}

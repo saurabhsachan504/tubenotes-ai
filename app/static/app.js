@@ -12,6 +12,7 @@
   let mode = "summary";
   let lastNotes = null;   // { videoId, title, url, markdown, lang }
   let lastTranscript = null; // { videoId, text, lang }; reused by Full Notes
+  let videoChat = { context: null, history: [], busy: false };
   let busy = false;
   // Empty on the primary site. A legacy domain can set this through /meta so
   // its Subscribe button takes users to the canonical checkout domain.
@@ -456,6 +457,7 @@
 
     const wantNotes = requestedMode === "notes";
     const target = targetOverride === undefined ? outLang() : targetOverride;
+    videoChat = { context: null, history: [], busy: false };
     setBusy(true);
     if (pdfProgress) {
       resetPdfProgress();
@@ -856,6 +858,7 @@
       lastNotes.markdown = res.text;
       lastNotes.lang = res.target_lang;
       $("rBody").innerHTML = md2html(res.text);
+      resetVideoChatContext(res.text);
       const tag = $("rLangTag");
       if (tag) tag.textContent = `🌐 ${res.language_name}`;
       status("");
@@ -899,6 +902,94 @@
     fillLangSelect(sel, { includeAuto: false });
     sel.addEventListener("change", () => translateTo(sel.value));
     $("rTools").appendChild(sel);
+    if (!isNotes) mountVideoChat(text);
+  }
+
+  function chatCard() {
+    return `
+      <section class="video-chat" id="videoChat" aria-label="Ask questions about this video">
+        <div class="video-chat-head">
+          <div class="video-chat-icon" aria-hidden="true">
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 10h.01M12 10h.01M16 10h.01"/></svg>
+          </div>
+          <div><h2>Ask about this video</h2><p>Ask follow-up questions from this video’s summary. Answers stay within the video context.</p></div>
+        </div>
+        <div class="chat-messages" id="chatMessages"><p class="chat-empty">Ask anything you want to understand better from this video.</p></div>
+        <form class="chat-form" id="videoChatForm">
+          <textarea id="videoChatInput" rows="2" maxlength="2000" placeholder="Ask a question about this video…" aria-label="Your question about this video" required></textarea>
+          <button class="chat-send" id="videoChatSend" type="submit">Send</button>
+        </form>
+      </section>`;
+  }
+
+  function mountVideoChat(summary) {
+    if (!summary || !lastNotes) return;
+    const old = $("videoChat");
+    if (old) old.remove();
+    videoChat = {
+      context: { summary, language: lastNotes.lang || "en" }, history: [], busy: false,
+    };
+    R().insertAdjacentHTML("beforeend", chatCard());
+    $("videoChatForm").addEventListener("submit", sendVideoChat);
+  }
+
+  function resetVideoChatContext(summary) {
+    if (!videoChat.context || !lastNotes || !summary) return;
+    videoChat.context = { summary, language: lastNotes.lang || "en" };
+    videoChat.history = [];
+    const messages = $("chatMessages");
+    if (messages) messages.innerHTML = '<p class="chat-empty">The summary language changed, so this chat is ready for new questions.</p>';
+  }
+
+  function addChatMessage(role, text, typing) {
+    const messages = $("chatMessages");
+    if (!messages) return null;
+    const empty = messages.querySelector(".chat-empty");
+    if (empty) empty.remove();
+    const item = document.createElement("article");
+    item.className = `chat-message ${role}`;
+    item.innerHTML = typing
+      ? '<span class="chat-typing"><i></i>Thinking about the video…</span>'
+      : `<span class="chat-label">${role === "user" ? "You" : "TubeNotes"}</span><div class="chat-copy">${md2html(text)}</div>`;
+    messages.appendChild(item);
+    messages.scrollTop = messages.scrollHeight;
+    return item;
+  }
+
+  async function sendVideoChat(event) {
+    event.preventDefault();
+    if (videoChat.busy || !videoChat.context) return;
+    const input = $("videoChatInput");
+    const send = $("videoChatSend");
+    const question = input.value.trim();
+    if (!question) return;
+    const prior = videoChat.history.slice(-10);
+    videoChat.busy = true;
+    input.value = "";
+    input.disabled = true;
+    send.disabled = true;
+    addChatMessage("user", question);
+    const pending = addChatMessage("assistant", "", true);
+    try {
+      const res = await api("/video-chat", {
+        method: "POST",
+        body: { summary: videoChat.context.summary, language: videoChat.context.language, question, history: prior },
+      });
+      if (pending) pending.remove();
+      addChatMessage("assistant", res.answer || "I could not find an answer in this video’s summary.");
+      videoChat.history.push({ role: "user", content: question }, { role: "assistant", content: res.answer || "" });
+      videoChat.history = videoChat.history.slice(-12);
+    } catch (e) {
+      if (pending) pending.remove();
+      addChatMessage("assistant", e.status === 401
+        ? "Please sign in again to continue this chat."
+        : (e.message || "Video chat is temporarily unavailable. Please try again."));
+    } finally {
+      videoChat.busy = false;
+      if ($("videoChatInput")) $("videoChatInput").disabled = false;
+      if ($("videoChatSend")) $("videoChatSend").disabled = false;
+      if ($("videoChatInput")) $("videoChatInput").focus();
+    }
   }
 
   function downloadMd(text) {

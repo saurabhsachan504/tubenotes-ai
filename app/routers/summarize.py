@@ -14,6 +14,7 @@ import logging
 import re
 import time
 from collections.abc import AsyncIterator
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response, StreamingResponse
@@ -86,6 +87,26 @@ class TranslateRequest(BaseModel):
 class TranslateOut(BaseModel):
     text: str
     target_lang: str
+    language_name: str
+
+
+class VideoChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4_000)
+
+
+class VideoChatRequest(BaseModel):
+    # The browser sends only the summary already shown to this signed-in user.
+    # It is intentionally not persisted or charged as another video operation.
+    summary: str = Field(min_length=20, max_length=80_000)
+    question: str = Field(min_length=1, max_length=2_000)
+    language: str = Field(default="en", min_length=2, max_length=8)
+    history: list[VideoChatTurn] = Field(default_factory=list, max_length=12)
+
+
+class VideoChatOut(BaseModel):
+    answer: str
+    language: str
     language_name: str
 
 
@@ -929,6 +950,46 @@ async def translate_text(
     )
     return TranslateOut(
         text=text, target_lang=target, language_name=summarizer.language_name(target)
+    )
+
+
+@router.post("/video-chat", response_model=VideoChatOut)
+async def video_chat(
+    payload: VideoChatRequest,
+    user: User = Depends(get_current_user),
+):
+    """Answer an authenticated user's question about the summary on their screen.
+
+    There is deliberately no request rate limit or entitlement consumption here.
+    The existing shared model-concurrency gate still protects the server when it
+    is busy, without limiting how many questions a user may ask.
+    """
+    del user  # Authentication is required; no user record is changed for chat.
+    target = payload.language.split("-")[0].lower()
+    if target not in summarizer.LANG_NAMES:
+        target = "en"
+    history = [(turn.role, turn.content) for turn in payload.history]
+    try:
+        answer, _write_lang, translate_to = await summarizer.answer_about_summary(
+            payload.summary, payload.question, history, lang=target
+        )
+        if translate_to:
+            answer = await translate.translate(answer, translate_to)
+        else:
+            answer, _ = await translate.ensure_language(answer, target)
+    except Exception as exc:  # noqa: BLE001 - keep provider details off the UI
+        logger.exception("video chat failed")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Video chat is temporarily unavailable. Please try again.",
+        ) from exc
+
+    if not answer:
+        answer = "I could not form an answer from this video's summary. Please try again."
+    return VideoChatOut(
+        answer=answer,
+        language=target,
+        language_name=summarizer.language_name(target),
     )
 
 
