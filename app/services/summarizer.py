@@ -668,7 +668,8 @@ async def stream_chat(
 
 async def collect_chat(
     *, model: str, system: str, content: str, num_predict: int = 3000,
-    queue_wait: float | None = None, batch: bool = False, on_token=None,
+    temperature: float = 0.4, queue_wait: float | None = None,
+    batch: bool = False, on_token=None,
 ) -> str:
     """Collect a full answer. `on_token(n)` reports tokens so far as they land.
 
@@ -680,7 +681,7 @@ async def collect_chat(
     pending: list[str] = []
     async for token in stream_chat(
         model=model, system=system, content=content, num_predict=num_predict,
-        queue_wait=queue_wait, batch=batch,
+        temperature=temperature, queue_wait=queue_wait, batch=batch,
     ):
         parts.append(token)
         if on_token is not None:

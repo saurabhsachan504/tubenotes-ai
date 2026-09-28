@@ -1,6 +1,7 @@
 """Web-app summarisation: URL parsing, language routing, trial accounting."""
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
@@ -204,6 +205,24 @@ def test_video_chat_is_authenticated_and_does_not_consume_a_trial(client, device
         f"{API}/entitlement/check", json={"device": device}, headers=headers
     ).json()
     assert entitlement["trials_used"] == 0
+
+
+def test_video_chat_uses_a_low_temperature_model_call(monkeypatch):
+    seen = {}
+
+    async def fake_stream(**kwargs):
+        seen.update(kwargs)
+        yield "The answer is in the summary."
+
+    monkeypatch.setattr(summarizer, "stream_chat", fake_stream)
+    answer, write_lang, translate_to = asyncio.run(
+        summarizer.answer_about_summary(
+            "A video summary about solar energy.", "What is it about?", [], lang="en"
+        )
+    )
+    assert answer == "The answer is in the summary."
+    assert (write_lang, translate_to) == ("en", None)
+    assert seen["temperature"] == 0.35
 
 
 def test_same_video_twice_is_charged_once(client, device, stub_youtube, stub_model):
