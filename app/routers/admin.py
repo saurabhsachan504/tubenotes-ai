@@ -60,13 +60,17 @@ def stats(db: Session = Depends(get_db)):
     active_subs = db.execute(
         select(func.count())
         .select_from(Subscription)
+        .join(User, Subscription.user_id == User.id)
         .where(
             Subscription.status == SubscriptionStatus.active,
-            Subscription.created_at >= reporting_start,
+            User.created_at >= reporting_start,
         )
     ).scalar_one()
     total_runs = db.execute(
-        select(func.count()).select_from(UsageEvent).where(UsageEvent.created_at >= reporting_start)
+        select(func.count())
+        .select_from(UsageEvent)
+        .join(User, UsageEvent.user_id == User.id)
+        .where(User.created_at >= reporting_start)
     ).scalar_one()
     devices = db.execute(
         select(func.count()).select_from(Device).where(Device.created_at >= reporting_start)
@@ -314,20 +318,28 @@ async def dashboard(days: int = 10, db: Session = Depends(get_db)):
     usage_rows = db.execute(
         select(UsageEvent, User.email)
         .join(User, UsageEvent.user_id == User.id)
-        .where(UsageEvent.created_at >= reporting_start)
+        .where(
+            UsageEvent.created_at >= reporting_start,
+            User.created_at >= reporting_start,
+        )
         .order_by(UsageEvent.created_at.desc())
         .limit(3000)
     ).all()
     job_rows = db.execute(
         select(ProcessingJob, User.email)
         .join(User, ProcessingJob.user_id == User.id)
-        .where(ProcessingJob.started_at >= reporting_start)
+        .where(
+            ProcessingJob.started_at >= reporting_start,
+            User.created_at >= reporting_start,
+        )
         .order_by(ProcessingJob.started_at.desc())
         .limit(3000)
     ).all()
     outputs = db.execute(select(CachedOutput)).scalars().all()
     subscriptions = db.execute(
-        select(Subscription).where(Subscription.created_at >= reporting_start)
+        select(Subscription)
+        .join(User, Subscription.user_id == User.id)
+        .where(User.created_at >= reporting_start)
     ).scalars().all()
 
     recent_window = [
