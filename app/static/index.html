@@ -315,6 +315,8 @@
   .chat-form textarea:focus{border-color:var(--brand2);box-shadow:0 0 0 3px rgba(168,85,247,.12)}
   .chat-send{min-height:46px;border:0;border-radius:11px;padding:0 16px;color:#fff;font-weight:700;font-size:13px;background:linear-gradient(135deg,var(--brand1),var(--brand3));box-shadow:0 5px 13px rgba(124,58,237,.2)}
   .chat-send:hover{filter:brightness(1.08)}.chat-send:disabled,.chat-form textarea:disabled{opacity:.62;cursor:wait}
+  .tool.chat-pdf-focus{outline:3px solid rgba(250,204,21,.92);outline-offset:3px;animation:chat-pdf-pulse .9s ease-in-out 3}
+  @keyframes chat-pdf-pulse{50%{transform:translateY(-3px) scale(1.035);filter:brightness(1.16)}}
   [data-theme="dark"] .video-chat{background:linear-gradient(145deg,rgba(41,30,83,.46),var(--panel) 42%)}
 
   /* ---------------- how it works / faq ---------------- */

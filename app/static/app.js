@@ -949,7 +949,16 @@
       context: { summary, language: lastNotes.lang || "en" }, history: [], busy: false,
     };
     R().insertAdjacentHTML("beforeend", chatCard());
-    $("videoChatForm").addEventListener("submit", sendVideoChat);
+    const form = $("videoChatForm");
+    const input = $("videoChatInput");
+    form.addEventListener("submit", sendVideoChat);
+    // Chat convention: Enter sends. Shift + Enter is reserved for a new line.
+    // isComposing protects Hindi/Indic IME users while they are choosing text.
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+      event.preventDefault();
+      form.requestSubmit();
+    });
   }
 
   function resetVideoChatContext(summary) {
@@ -968,6 +977,33 @@
       if (aliases.some((alias) => q.includes(alias.toLocaleLowerCase()))) return code;
     }
     return null;
+  }
+
+  function chatPdfAction(question) {
+    const q = String(question || "").toLocaleLowerCase();
+    if (!/(\bpdf\b|पीडीएफ)/i.test(q)) return null;
+    if (/(full\s*(notes?|pdf)|notes?.*pdf|detailed.*pdf|पूरा.*पीडीएफ|फुल.*नोट्स)/i.test(q)) return "full";
+    if (/(download|डाउनलोड|save|चाहिए|chahiye|get|लेना)/i.test(q)) return "download";
+    return "options";
+  }
+
+  function showPdfButtons(action) {
+    const toolbar = $("rTools");
+    if (!toolbar) return;
+    const all = Array.from(toolbar.querySelectorAll(".t-pdf, .t-notes"));
+    const targets = action === "full"
+      ? all.filter((button) => button.classList.contains("t-notes"))
+      : action === "download"
+        ? all.filter((button) => button.classList.contains("t-pdf"))
+        : all;
+    toolbar.scrollIntoView({ behavior: "smooth", block: "center" });
+    targets.forEach((button) => {
+      button.classList.remove("chat-pdf-focus");
+      // Restart the animation even when a visitor asks twice in a row.
+      void button.offsetWidth;
+      button.classList.add("chat-pdf-focus");
+      setTimeout(() => button.classList.remove("chat-pdf-focus"), 3000);
+    });
   }
 
   async function translateSummaryFromChat(target) {
@@ -1008,6 +1044,7 @@
     if (!question) return;
     const prior = videoChat.history.slice(-10);
     const translateTarget = chatTranslationTarget(question);
+    const pdfAction = chatPdfAction(question);
     videoChat.busy = true;
     input.value = "";
     input.disabled = true;
@@ -1015,6 +1052,17 @@
     addChatMessage("user", question);
     const pending = addChatMessage("assistant", "", true);
     try {
+      if (pdfAction) {
+        if (pending) pending.remove();
+        showPdfButtons(pdfAction);
+        const message = pdfAction === "full"
+          ? "Main aapko upar **Full notes → PDF** button tak le gaya hoon. Use click karke detailed PDF banaiye."
+          : pdfAction === "download"
+            ? "Main aapko upar **Download PDF** button tak le gaya hoon. Use click karke current summary ka PDF download kijiye."
+            : "Main aapko upar PDF buttons tak le gaya hoon. **Download PDF** current summary ke liye hai, aur **Full notes → PDF** detailed notes ke liye hai.";
+        addChatMessage("assistant", message);
+        return;
+      }
       if (translateTarget) {
         const res = await translateSummaryFromChat(translateTarget);
         if (pending) pending.remove();
