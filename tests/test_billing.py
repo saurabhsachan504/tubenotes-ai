@@ -54,6 +54,27 @@ def test_automatic_country_price_uses_trusted_cloudflare_header(client, device):
     assert sub["price_cents"] == 29_900
 
 
+def test_india_launch_offer_checkout_uses_the_server_selected_rs99_plan(client, device):
+    _, headers, _ = register(client, email="offer@example.com", device=device)
+    checkout = client.post(
+        f"{API}/billing/checkout",
+        json={"offer_code": "india_launch_99"},
+        headers={**headers, "CF-IPCountry": "IN"},
+    )
+    assert checkout.status_code == 200, checkout.text
+    sub = activate_subscription(client, headers)
+    assert sub["currency"] == "INR"
+    assert sub["price_cents"] == 9_900
+
+
+def test_india_launch_offer_rejects_non_india_billing_accounts(client, device):
+    _, headers, _ = register(client, email="not-india@example.com", device=device)
+    res = client.post(
+        f"{API}/billing/checkout", json={"offer_code": "india_launch_99"}, headers=headers
+    )
+    assert res.status_code == 422
+
+
 def test_country_header_is_ignored_when_not_trusted(client, monkeypatch):
     monkeypatch.setattr(settings, "TRUST_CLOUDFLARE_COUNTRY_HEADER", False)
     price = client.get(f"{API}/billing/price", headers={"CF-IPCountry": "IN"}).json()

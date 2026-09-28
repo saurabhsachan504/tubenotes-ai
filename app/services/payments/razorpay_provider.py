@@ -44,7 +44,11 @@ class RazorpayProvider(PaymentProvider):
         self, user: User, *, plan, success_url: str, cancel_url: str
     ) -> CheckoutSession:
         if not plan.razorpay_plan_id:
-            label = "INR Rs 299" if plan.currency == "INR" else "USD $5"
+            label = (
+                f"INR Rs {plan.price_cents / 100:g}"
+                if plan.currency == "INR"
+                else f"USD ${plan.price_cents / 100:g}"
+            )
             raise RuntimeError(
                 f"The Razorpay {label} Plan ID is not configured. "
                 "Create the plan in Razorpay and set its environment variable."

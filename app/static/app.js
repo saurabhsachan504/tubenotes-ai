@@ -1520,6 +1520,58 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
 
   function closeModal() { $("authModal").classList.add("hidden"); }
 
+  function openOffer() {
+    $("offerMsg").textContent = "";
+    $("offerModal").classList.remove("hidden");
+    $("offerClaim").focus();
+  }
+
+  function closeOffer() { $("offerModal").classList.add("hidden"); }
+
+  async function startCheckout(offerCode) {
+    const buttons = [$("upgradeBtn"), $("offerClaim"), $("offerRegular")];
+    buttons.forEach((button) => { if (button) button.disabled = true; });
+    $("offerMsg").textContent = "";
+    try {
+      const s = await api("/billing/checkout", {
+        method: "POST", body: offerCode ? { offer_code: offerCode } : {},
+      });
+      closeOffer();
+      window.open(s.checkout_url, "_blank", "noopener");
+      $("acctMsg").textContent = "Finish the payment in the new tab, then reopen this panel.";
+      $("acctMsg").className = "msg ok";
+    } catch (e) {
+      const message = e.status === 409
+        ? "You already have an active subscription."
+        : (e.message || "Couldn't start checkout.");
+      $("acctMsg").textContent = message;
+      $("acctMsg").className = "msg";
+      if (!$("offerModal").classList.contains("hidden")) $("offerMsg").textContent = message;
+    } finally {
+      buttons.forEach((button) => { if (button) button.disabled = false; });
+    }
+  }
+
+  async function beginSubscription() {
+    try {
+      if (!accountUser) throw new Error("Open your account again before continuing.");
+      if (billingPrimarySiteUrl) {
+        const primary = new URL(billingPrimarySiteUrl, window.location.origin);
+        if (primary.origin !== window.location.origin) {
+          window.location.assign(primary.href);
+          return;
+        }
+      }
+      // The offer is only presented for the server-selected INR tier. The
+      // checkout endpoint repeats this country check before selecting Rs 99.
+      if (currentBillingPlan && currentBillingPlan.currency === "INR") openOffer();
+      else await startCheckout(null);
+    } catch (e) {
+      $("acctMsg").textContent = e.message || "Couldn't start checkout.";
+      $("acctMsg").className = "msg";
+    }
+  }
+
   // =====================================================================
   // Wiring
   // =====================================================================
@@ -1616,28 +1668,11 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     tokens.clear(); paintChip(null); closeModal();
   };
 
-  $("upgradeBtn").onclick = async () => {
-    $("upgradeBtn").disabled = true;
-    try {
-      if (!accountUser) throw new Error("Open your account again before continuing.");
-      if (billingPrimarySiteUrl) {
-        const primary = new URL(billingPrimarySiteUrl, window.location.origin);
-        if (primary.origin !== window.location.origin) {
-          window.location.assign(primary.href);
-          return;
-        }
-      }
-      const s = await api("/billing/checkout", { method: "POST", body: {} });
-      window.open(s.checkout_url, "_blank", "noopener");
-      $("acctMsg").textContent = "Finish the payment in the new tab, then reopen this panel.";
-      $("acctMsg").className = "msg ok";
-    } catch (e) {
-      $("acctMsg").textContent = e.status === 409
-        ? "You already have an active subscription."
-        : (e.message || "Couldn't start checkout.");
-      $("acctMsg").className = "msg";
-    } finally { $("upgradeBtn").disabled = false; }
-  };
+  $("upgradeBtn").onclick = beginSubscription;
+  $("offerClose").onclick = closeOffer;
+  $("offerClaim").onclick = () => startCheckout("india_launch_99");
+  $("offerRegular").onclick = () => startCheckout(null);
+  $("offerModal").addEventListener("click", (e) => { if (e.target === $("offerModal")) closeOffer(); });
 
   // ---- Google sign-in -------------------------------------------------
   // Server /meta se batata hai ki feature chaalu hai ya nahi. Band ho to

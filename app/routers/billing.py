@@ -96,7 +96,12 @@ def create_checkout(
             detail="You already have an active subscription.",
         )
 
-    plan = plan_for_headers(request.headers)
+    try:
+        plan = plan_for_headers(request.headers, offer_code=payload.offer_code)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
 
     session = provider.create_checkout_session(
         user,

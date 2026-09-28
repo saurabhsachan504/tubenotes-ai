@@ -336,6 +336,13 @@
   footer{border-top:1px solid var(--line);padding:22px 0;color:var(--muted);font-size:12.5px;text-align:center}
   .site-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left}.footer-links{display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end}.footer-links a{color:var(--muted);text-decoration:none}.footer-links a:hover{color:var(--brand1);text-decoration:underline}
 
+  /* ---------------- limited launch offer ---------------- */
+  .offer-modal{max-width:510px;padding:0;overflow:hidden;color:#fff;background:#11100f;border:1px solid rgba(255,211,112,.75);box-shadow:0 30px 90px rgba(0,0,0,.72),0 0 55px rgba(238,180,57,.16)}
+  .offer-card{position:relative;isolation:isolate;padding:31px 30px 27px;overflow:hidden;background:radial-gradient(circle at 88% 7%,rgba(255,201,77,.26),transparent 24%),radial-gradient(circle at 9% 100%,rgba(173,104,11,.26),transparent 33%),linear-gradient(135deg,#080807,#16130d 58%,#090908)}
+  .offer-card::before,.offer-card::after{content:"";position:absolute;z-index:-1;pointer-events:none}.offer-card::before{width:330px;height:72px;right:-78px;top:33px;transform:rotate(38deg);background:linear-gradient(90deg,#8d5610,#ffd66d 50%,#9e6013);box-shadow:0 0 16px rgba(255,211,102,.65)}.offer-card::after{width:180px;height:180px;right:-75px;top:-71px;border:27px solid rgba(255,204,91,.86);border-left-color:#8c520c;border-bottom-color:#b87517;border-radius:50%;filter:drop-shadow(0 9px 12px rgba(0,0,0,.4))}
+  .offer-close{position:absolute;right:13px;top:10px;width:33px;height:33px;border:0;border-radius:50%;color:#ffe8ab;background:rgba(255,255,255,.09);font-size:23px;line-height:1;z-index:2}.offer-close:hover{background:rgba(255,211,112,.22)}
+  .offer-kicker{display:inline-flex;align-items:center;gap:7px;color:#ffd978;font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}.offer-kicker::before{content:"✦";font-size:15px}.offer-title{margin:11px 0 3px;font-size:clamp(28px,6vw,42px);line-height:1;font-weight:850;letter-spacing:-.04em;background:linear-gradient(110deg,#fff3b9,#f5bd3e 48%,#fff4b6);-webkit-background-clip:text;background-clip:text;color:transparent}.offer-copy{max-width:315px;margin:10px 0 19px;color:#e9ddbd;font-size:14px;line-height:1.55}.offer-price{display:flex;align-items:end;gap:11px;margin:0 0 19px}.offer-was{padding-bottom:6px;color:#c4bba4;font-size:16px;text-decoration:line-through;text-decoration-color:#ec6e6e;text-decoration-thickness:2px}.offer-now{color:#ffe28b;font-size:48px;font-weight:850;line-height:.9;letter-spacing:-.06em;text-shadow:0 3px 18px rgba(255,194,55,.35)}.offer-month{padding-bottom:5px;color:#e9ddbd;font-size:13px}.offer-points{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 21px}.offer-points span{padding:8px 9px;border:1px solid rgba(255,220,128,.22);border-radius:9px;background:rgba(255,255,255,.045);color:#f4eacb;font-size:11.5px}.offer-points span::before{content:"✓";margin-right:6px;color:#ffd561;font-weight:800}.offer-claim{width:100%;padding:13px;border:0;border-radius:11px;color:#211300;background:linear-gradient(135deg,#ffeaa3,#f4ba35 55%,#d58c14);box-shadow:0 8px 25px rgba(220,151,23,.28);font-weight:850;font-size:15px}.offer-claim:hover{filter:brightness(1.08);transform:translateY(-1px)}.offer-regular{display:block;width:100%;margin-top:8px;padding:7px;border:0;background:transparent;color:#d5c8a9;font-size:12.5px}.offer-regular:hover{text-decoration:underline;color:#fff}.offer-msg{min-height:17px;margin-top:8px;color:#ffb6aa;font-size:12px;text-align:center}.offer-claim:disabled,.offer-regular:disabled{opacity:.6;cursor:wait;transform:none}
+
   /* ---------------- auth modal ---------------- */
   .overlay{
     position:fixed;inset:0;background:rgba(12,8,30,.62);backdrop-filter:blur(3px);
@@ -680,7 +687,25 @@
   </div>
 </div>
 
+<!-- Shown after an India-billed user selects Subscribe. The backend, not this
+     card, determines whether the Rs 99 Razorpay offer may be used. -->
+<div class="overlay hidden" id="offerModal" role="dialog" aria-modal="true" aria-labelledby="offerTitle">
+  <div class="modal offer-modal">
+    <div class="offer-card">
+      <button class="offer-close" id="offerClose" type="button" aria-label="Close offer">×</button>
+      <div class="offer-kicker">TubeNotes Pro · Limited launch offer</div>
+      <h2 class="offer-title" id="offerTitle">Unlock Pro for ₹99</h2>
+      <p class="offer-copy">A special launch price for your monthly TubeNotes Pro access. Summarize, translate and create PDF notes without limits.</p>
+      <div class="offer-price"><span class="offer-was">₹299</span><span class="offer-now">₹99</span><span class="offer-month">/ month</span></div>
+      <div class="offer-points"><span>Unlimited summaries</span><span>Full PDF notes</span><span>40+ languages</span><span>Cancel anytime</span></div>
+      <button class="offer-claim" id="offerClaim" type="button">Claim ₹99/month offer</button>
+      <button class="offer-regular" id="offerRegular" type="button">No thanks — continue at ₹299/month</button>
+      <div class="offer-msg" id="offerMsg" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
+
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="/static/app.js?v=10"></script>
+<script src="/static/app.js?v=11"></script>
 </body>
 </html>

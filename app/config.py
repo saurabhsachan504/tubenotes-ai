@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     PLAN_INTERVAL: str = "month"
     INDIA_PLAN_PRICE_SUBUNITS: int = 29_900  # Rs 299.00, expressed in paise
     INTERNATIONAL_PLAN_PRICE_CENTS: int = 500  # $5.00, expressed in cents
+    # Limited India launch offer. Razorpay subscriptions need their own Plan
+    # for a different recurring amount, so its ID is configured separately.
+    INDIA_LAUNCH_OFFER_ENABLED: bool = True
+    INDIA_LAUNCH_OFFER_PRICE_SUBUNITS: int = 9_900  # Rs 99.00, in paise
 
     # Cloudflare adds CF-IPCountry, and its visitor-location managed transform
     # can add CF-IPCity, only when it proxies the visitor request. Keep this
@@ -93,6 +97,7 @@ class Settings(BaseSettings):
     # the USD plan. Production should set both explicit IDs below.
     RAZORPAY_PLAN_ID: str = ""
     RAZORPAY_PLAN_ID_INR: str = ""
+    RAZORPAY_PLAN_ID_INR_LAUNCH_OFFER: str = ""
     RAZORPAY_PLAN_ID_USD: str = ""
     RAZORPAY_WEBHOOK_SECRET: str = ""
 
