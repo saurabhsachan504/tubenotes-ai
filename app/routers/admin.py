@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -57,7 +57,7 @@ class BlockDeviceRequest(BaseModel):
 def stats(db: Session = Depends(get_db)):
     reporting_start = _reporting_start()
     total_users = db.execute(
-        select(func.count()).select_from(User).where(User.created_at >= reporting_start)
+        select(func.count()).select_from(User).where(_reportable_user_condition(reporting_start))
     ).scalar_one()
     active_subs = db.execute(
         select(func.count())
@@ -65,17 +65,16 @@ def stats(db: Session = Depends(get_db)):
         .join(User, Subscription.user_id == User.id)
         .where(
             Subscription.status == SubscriptionStatus.active,
-            User.created_at >= reporting_start,
+            _reportable_user_condition(reporting_start),
         )
     ).scalar_one()
     total_runs = db.execute(
         select(func.count())
         .select_from(UsageEvent)
-        .join(User, UsageEvent.user_id == User.id)
-        .where(User.created_at >= reporting_start)
+        .where(UsageEvent.created_at >= reporting_start)
     ).scalar_one()
     devices = db.execute(
-        select(func.count()).select_from(Device).where(Device.created_at >= reporting_start)
+        select(func.count()).select_from(Device).where(Device.last_seen_at >= reporting_start)
     ).scalar_one()
     exhausted = db.execute(
         select(func.count())
@@ -104,6 +103,30 @@ def _as_utc(value: datetime | None) -> datetime | None:
 def _reporting_start() -> datetime:
     """Inclusive lower bound for admin reporting, without deleting records."""
     return _as_utc(settings.ADMIN_REPORTING_START_AT) or datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _reportable_user_condition(reporting_start: datetime):
+    """Users created or active since the admin reporting reset.
+
+    The reset hides historical activity, not people.  An account created before
+    the reset must return to the admin view as soon as it logs in, processes a
+    video, uses a trial, adds a device, or changes its subscription afterwards.
+    """
+    return or_(
+        User.created_at >= reporting_start,
+        User.last_login_at >= reporting_start,
+        User.id.in_(select(ProcessingJob.user_id).where(ProcessingJob.started_at >= reporting_start)),
+        User.id.in_(select(UsageEvent.user_id).where(UsageEvent.created_at >= reporting_start)),
+        User.id.in_(select(Device.user_id).where(Device.last_seen_at >= reporting_start)),
+        User.id.in_(
+            select(Subscription.user_id).where(
+                or_(
+                    Subscription.created_at >= reporting_start,
+                    Subscription.updated_at >= reporting_start,
+                )
+            )
+        ),
+    )
 
 
 def _window_start(days: int, now: datetime) -> datetime:
@@ -325,25 +348,19 @@ async def dashboard(days: int = 10, db: Session = Depends(get_db)):
     start = _window_start(days, now)
     reporting_start = _reporting_start()
     users = db.execute(
-        select(User).where(User.created_at >= reporting_start)
+        select(User).where(_reportable_user_condition(reporting_start))
     ).scalars().all()
     usage_rows = db.execute(
         select(UsageEvent, User.email)
         .join(User, UsageEvent.user_id == User.id)
-        .where(
-            UsageEvent.created_at >= reporting_start,
-            User.created_at >= reporting_start,
-        )
+        .where(UsageEvent.created_at >= reporting_start)
         .order_by(UsageEvent.created_at.desc())
         .limit(3000)
     ).all()
     job_rows = db.execute(
         select(ProcessingJob, User.email)
         .join(User, ProcessingJob.user_id == User.id)
-        .where(
-            ProcessingJob.started_at >= reporting_start,
-            User.created_at >= reporting_start,
-        )
+        .where(ProcessingJob.started_at >= reporting_start)
         .order_by(ProcessingJob.started_at.desc())
         .limit(3000)
     ).all()
@@ -351,7 +368,7 @@ async def dashboard(days: int = 10, db: Session = Depends(get_db)):
     subscriptions = db.execute(
         select(Subscription)
         .join(User, Subscription.user_id == User.id)
-        .where(User.created_at >= reporting_start)
+        .where(_reportable_user_condition(reporting_start))
     ).scalars().all()
 
     recent_window = [
@@ -399,11 +416,15 @@ async def dashboard(days: int = 10, db: Session = Depends(get_db)):
 
     # Country is recorded only from a trusted Cloudflare header. "Unknown" is
     # an honest outcome for earlier/direct-local signups; never infer it from email.
-    # Keep this chart aligned with its selected date range: it represents
-    # accounts that signed up in that period, not an unrelated all-time total.
+    # Keep this chart aligned with the reportable users in its selected period:
+    # an older account appears only after fresh activity following the reset.
     country_users = [
         user for user in users
-        if (_as_utc(user.created_at) or now) >= start
+        if (
+            (_as_utc(user.created_at) or datetime.min.replace(tzinfo=timezone.utc)) >= start
+            or (_as_utc(user.last_login_at) or datetime.min.replace(tzinfo=timezone.utc)) >= start
+            or any(job.user_id == user.id for job, _email in recent_window)
+        )
     ]
     country_counts = Counter(
         (user.billing_country or "Unknown").upper() for user in country_users
@@ -518,7 +539,7 @@ async def dashboard(days: int = 10, db: Session = Depends(get_db)):
 def list_users(limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
     rows = db.execute(
         select(User)
-        .where(User.created_at >= _reporting_start())
+        .where(_reportable_user_condition(_reporting_start()))
         .order_by(User.created_at.desc())
         .limit(min(limit, 200)).offset(offset)
     ).scalars().all()
@@ -545,7 +566,9 @@ def users_overview(
 
     reporting_start = _reporting_start()
     users = db.execute(
-        select(User).where(User.created_at >= reporting_start).order_by(User.created_at.desc())
+        select(User)
+        .where(_reportable_user_condition(reporting_start))
+        .order_by(User.created_at.desc())
     ).scalars().all()
     jobs = db.execute(
         select(ProcessingJob).where(ProcessingJob.started_at >= reporting_start)
@@ -554,10 +577,12 @@ def users_overview(
         select(UsageEvent).where(UsageEvent.created_at >= reporting_start)
     ).scalars().all()
     devices = db.execute(
-        select(Device).where(Device.created_at >= reporting_start)
+        select(Device).where(Device.last_seen_at >= reporting_start)
     ).scalars().all()
     subscriptions = db.execute(
-        select(Subscription).where(Subscription.created_at >= reporting_start)
+        select(Subscription).where(
+            Subscription.user_id.in_(select(User.id).where(_reportable_user_condition(reporting_start)))
+        )
     ).scalars().all()
     subscriptions_by_user: dict[str, list[Subscription]] = {}
     for subscription in subscriptions:
@@ -634,7 +659,6 @@ def billing_history(
     start = _window_start(days, datetime.now(timezone.utc))
     conditions = [
         func.coalesce(BillingPayment.paid_at, BillingPayment.created_at) >= start,
-        User.created_at >= _reporting_start(),
     ]
     if status_filter == "successful":
         conditions.append(BillingPayment.status.in_({"captured", "paid", "succeeded", "success"}))
@@ -721,7 +745,7 @@ def user_detail(user_id: str, db: Session = Depends(get_db)):
     """Full support profile for one user, without returning sensitive data."""
     user = db.get(User, user_id)
     reporting_start = _reporting_start()
-    if user is None or (_as_utc(user.created_at) or datetime.min.replace(tzinfo=timezone.utc)) < reporting_start:
+    if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
     all_jobs = db.execute(
@@ -739,12 +763,12 @@ def user_detail(user_id: str, db: Session = Depends(get_db)):
     ).scalars().all()
     devices = db.execute(
         select(Device)
-        .where(Device.user_id == user.id, Device.created_at >= reporting_start)
+        .where(Device.user_id == user.id, Device.last_seen_at >= reporting_start)
         .order_by(Device.last_seen_at.desc())
     ).scalars().all()
     subscriptions = db.execute(
         select(Subscription)
-        .where(Subscription.user_id == user.id, Subscription.created_at >= reporting_start)
+        .where(Subscription.user_id == user.id)
         .order_by(Subscription.updated_at.desc())
     ).scalars().all()
     active = subscriptions[0] if subscriptions and _subscription_status(subscriptions[0].status) in {"active", "trialing"} else None

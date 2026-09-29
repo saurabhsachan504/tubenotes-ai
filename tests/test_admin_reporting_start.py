@@ -24,8 +24,8 @@ def test_admin_reporting_start_hides_old_records_without_deleting_them(
         ProcessingJob(
             user_id=old_user.id, kind="summary", status="success",
             # An old account can still use the site after the reporting reset.
-            # Its activity must not inflate a card whose click-through directory
-            # deliberately hides that account.
+            # Its fresh activity must appear, while its pre-reset history stays
+            # hidden from the admin dashboard.
             started_at=cutoff + timedelta(seconds=2),
         ),
         ProcessingJob(
@@ -58,31 +58,37 @@ def test_admin_reporting_start_hides_old_records_without_deleting_them(
     dashboard = client.get(f"{API}/admin/dashboard", headers=headers)
     assert dashboard.status_code == 200, dashboard.text
     payload = dashboard.json()
-    assert payload["metrics"]["total_users"] == 1
-    assert payload["metrics"]["video_jobs"] == 1
-    assert payload["metrics"]["active_today"] == 1
-    assert payload["metrics"]["paid_users"] == 1
-    assert payload["metrics"]["active_pro_users"] == 1
-    assert [row["email"] for row in payload["recent_jobs"]] == ["after@example.com"]
+    assert payload["metrics"]["total_users"] == 2
+    assert payload["metrics"]["video_jobs"] == 2
+    assert payload["metrics"]["active_today"] == 2
+    assert payload["metrics"]["paid_users"] == 2
+    assert payload["metrics"]["active_pro_users"] == 2
+    assert {row["email"] for row in payload["recent_jobs"]} == {
+        "before@example.com", "after@example.com"
+    }
 
-    # Each card filter now returns exactly the reportable account it counted.
+    # Each card filter includes every account with report-period activity,
+    # including accounts created before the reporting reset.
     for user_filter in ("active_today", "paid", "subscribed"):
         directory = client.get(
             f"{API}/admin/users/overview?status={user_filter}", headers=headers
         )
         assert directory.status_code == 200, directory.text
-        assert [row["email"] for row in directory.json()["users"]] == ["after@example.com"]
+        assert {row["email"] for row in directory.json()["users"]} == {
+            "before@example.com", "after@example.com"
+        }
 
     billing = client.get(f"{API}/admin/billing-history?days=10", headers=headers)
     assert billing.status_code == 200, billing.text
     billing_payload = billing.json()
-    assert billing_payload["total_payments"] == 1
-    assert billing_payload["successful_payments"] == 1
-    assert billing_payload["paid_by_currency"] == {"INR": 9_900}
-    assert billing_payload["payments"][0]["email"] == "after@example.com"
-    assert billing_payload["payments"][0]["payment_id"] == "pay_after"
-    assert billing_payload["payments"][0]["invoice_url"] == "https://rzp.io/i/inv_after"
+    assert billing_payload["total_payments"] == 2
+    assert billing_payload["successful_payments"] == 2
+    assert billing_payload["paid_by_currency"] == {"INR": 39_800}
+    payments = {item["payment_id"]: item for item in billing_payload["payments"]}
+    assert payments["pay_after"]["email"] == "after@example.com"
+    assert payments["pay_after"]["invoice_url"] == "https://rzp.io/i/inv_after"
 
-    # The old account is still in PostgreSQL; only its admin reporting view is hidden.
+    # The old account is still in PostgreSQL and re-enters the admin report
+    # when it performs fresh activity; no historical row was deleted.
     assert db.query(User).filter_by(email="before@example.com").one_or_none() is not None
 
