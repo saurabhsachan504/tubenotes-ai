@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from app.config import settings
-from app.models import ProcessingJob, Subscription, SubscriptionStatus, User
+from app.models import BillingPayment, ProcessingJob, Subscription, SubscriptionStatus, User
 from tests.conftest import API, register
 
 
@@ -40,6 +40,17 @@ def test_admin_reporting_start_hides_old_records_without_deleting_them(
             user_id=new_user.id, provider="mock", status=SubscriptionStatus.active,
             price_cents=29_900, currency="INR", created_at=cutoff + timedelta(seconds=1),
         ),
+        BillingPayment(
+            user_id=old_user.id, provider="razorpay", provider_payment_id="pay_before",
+            status="captured", amount_subunits=29_900, currency="INR",
+            created_at=cutoff + timedelta(seconds=2),
+        ),
+        BillingPayment(
+            user_id=new_user.id, provider="razorpay", provider_payment_id="pay_after",
+            provider_invoice_id="inv_after", status="captured", amount_subunits=9_900,
+            currency="INR", invoice_url="https://rzp.io/i/inv_after",
+            created_at=cutoff + timedelta(seconds=1),
+        ),
     ])
     db.commit()
 
@@ -61,6 +72,16 @@ def test_admin_reporting_start_hides_old_records_without_deleting_them(
         )
         assert directory.status_code == 200, directory.text
         assert [row["email"] for row in directory.json()["users"]] == ["after@example.com"]
+
+    billing = client.get(f"{API}/admin/billing-history?days=10", headers=headers)
+    assert billing.status_code == 200, billing.text
+    billing_payload = billing.json()
+    assert billing_payload["total_payments"] == 1
+    assert billing_payload["successful_payments"] == 1
+    assert billing_payload["paid_by_currency"] == {"INR": 9_900}
+    assert billing_payload["payments"][0]["email"] == "after@example.com"
+    assert billing_payload["payments"][0]["payment_id"] == "pay_after"
+    assert billing_payload["payments"][0]["invoice_url"] == "https://rzp.io/i/inv_after"
 
     # The old account is still in PostgreSQL; only its admin reporting view is hidden.
     assert db.query(User).filter_by(email="before@example.com").one_or_none() is not None

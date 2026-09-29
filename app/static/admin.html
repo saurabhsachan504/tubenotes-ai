@@ -7,7 +7,7 @@
   <title>TubeNotes — Admin Panel</title>
   <link rel="stylesheet" href="/static/admin.css?v=1">
   <script>try { if (localStorage.getItem("tn_admin_theme") === "light") document.documentElement.dataset.adminTheme = "light"; } catch (_) {}</script>
-  <link rel="stylesheet" href="/static/admin-extra.css?v=16">
+  <link rel="stylesheet" href="/static/admin-extra.css?v=17">
 </head>
 <body>
   <div class="app-shell">
@@ -16,6 +16,7 @@
       <nav class="nav">
         <button class="nav-item active" data-section="dashboard"><span>▣</span>Dashboard</button>
         <button class="nav-item" data-section="users"><span>♟</span>Users</button>
+        <button class="nav-item" data-section="billing"><span>₹</span>Billing History</button>
         <button class="nav-item" data-section="recent"><span>◷</span>Recent Video Jobs</button>
         <button class="nav-item" data-section="jobs"><span>▶</span>Summary Generation</button>
         <button class="nav-item" data-section="pdf"><span>▤</span>PDF Generation</button>
@@ -122,6 +123,13 @@
         <article class="panel table-panel operations-directory"><div class="panel-head"><h2 id="operationsTableTitle">Video Jobs</h2><span id="operationsCount" class="muted">Loading...</span></div><div class="table-wrap"><table><thead><tr><th>User</th><th>City</th><th>Country</th><th>Video URL</th><th>Title</th><th>Type</th><th>Status</th><th>PDF</th><th>Language</th><th>Time</th><th>Tokens*</th><th>Started</th></tr></thead><tbody id="operationsRows"></tbody></table></div></article>
       </section>
 
+      <section id="billing" class="page-section operations-page hidden" aria-labelledby="billingHeading">
+        <div class="users-title-row"><div><h1 id="billingHeading">Billing History</h1><p class="lead">Verified payment records and customer invoice links from Razorpay.</p></div><button id="billingRefresh" class="action-button" type="button">Refresh payments</button></div>
+        <div class="operation-metrics"><article class="panel operation-card success-card"><small>Successful payments</small><strong id="billingSuccessful">-</strong><em id="billingCollected">Captured amount</em></article><article class="panel operation-card failed-card"><small>Failed payments</small><strong id="billingFailed">-</strong><em>In selected period</em></article><article class="panel operation-card"><small>Pending payments</small><strong id="billingPending">-</strong><em>Awaiting capture or invoice</em></article><article class="panel operation-card"><small>Total records</small><strong id="billingTotal">-</strong><em id="billingRange">In selected period</em></article></div>
+        <div class="users-filters panel"><label class="search"><span>Search</span><input id="billingSearch" type="search" placeholder="Search email, Razorpay payment ID or invoice ID"></label><label class="filter-label">Payment status<select id="billingStatus"><option value="all">All payments</option><option value="successful">Successful</option><option value="failed">Failed / refunded</option><option value="pending">Pending</option></select></label></div>
+        <article class="panel table-panel operations-directory"><div class="panel-head"><h2>Payment-by-payment history</h2><span id="billingCount" class="muted">Loading...</span></div><div class="table-wrap"><table><thead><tr><th>User email</th><th>Amount</th><th>Status</th><th>Provider</th><th>Payment ID</th><th>Invoice</th><th>Payment date</th></tr></thead><tbody id="billingRows"></tbody></table></div></article>
+      </section>
+
       <section id="errorLogs" class="page-section operations-page hidden" aria-labelledby="errorLogsHeading">
         <div class="users-title-row"><div><h1 id="errorLogsHeading">Error Logs</h1><p class="lead">Failed jobs recorded in the selected period.</p></div><button id="errorsRefresh" class="action-button" type="button">Refresh errors</button></div>
         <div class="operation-metrics"><article class="panel operation-card failed-card"><small>Failed jobs</small><strong id="errorTotal">-</strong><em>In selected period</em></article><article class="panel operation-card"><small>Affected users</small><strong id="errorUsers">-</strong><em>Unique accounts</em></article></div>
@@ -152,6 +160,6 @@
     </section>
   </div>
   <div id="blocked" class="blocked hidden"><div><span class="blocked-logo">▶</span><h2>Admin access required</h2><p id="blockedText">Sign in with the admin account first.</p><a href="/" class="sign-in">Open TubeNotes sign in</a></div></div>
-  <script src="/static/admin.js?v=18" defer></script>
+  <script src="/static/admin.js?v=19" defer></script>
 </body>
 </html>

@@ -7,11 +7,13 @@
   let operationData = null;
   let operationCategory = "jobs";
   let errorData = null;
+  let billingData = null;
   let settingsData = null;
   let dashboardLoading = false;
   let usersLoading = false;
   let operationsLoading = false;
   let errorsLoading = false;
+  let billingLoading = false;
   let settingsLoading = false;
   let autoUpdateInFlight = false;
   let lastSettingsAutoUpdate = 0;
@@ -239,11 +241,70 @@
     $("systemHealth").classList.add("hidden");
     $("users").classList.remove("hidden");
     $("operations").classList.add("hidden");
+    $("billing").classList.add("hidden");
     $("errorLogs").classList.add("hidden");
     $("adminSettings").classList.add("hidden");
     $("userStatus").value = filter;
     document.querySelectorAll(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.section === "users"));
     loadUsers();
+    window.scrollTo({top: 0, behavior: "smooth"});
+  }
+  function billingMoney(item) {
+    if (typeof item.amount_subunits !== "number" || !item.currency) return "Amount pending";
+    try { return new Intl.NumberFormat(undefined, {style: "currency", currency: item.currency}).format(item.amount_subunits / 100); }
+    catch (_) { return String(item.currency).toUpperCase() + " " + (item.amount_subunits / 100).toFixed(2); }
+  }
+  function billingTotalLabel(totals) {
+    const entries = Object.entries(totals || {});
+    if (!entries.length) return "No captured payments";
+    return entries.map(([currency, amount]) => billingMoney({currency, amount_subunits: amount})).join(" · ");
+  }
+  function renderBillingRows(rows) {
+    $("billingRows").innerHTML = rows.length ? rows.map(payment => {
+      const status = String(payment.status || "pending").toLowerCase();
+      const invoice = payment.invoice_url
+        ? `<a class="video-link" target="_blank" rel="noopener noreferrer" href="${esc(payment.invoice_url)}">View invoice</a>`
+        : `<span class="muted">Invoice pending</span>`;
+      const paymentId = payment.payment_id || "—";
+      return `<tr><td>${esc(payment.email)}</td><td>${esc(billingMoney(payment))}</td><td title="${esc(payment.failure_message || "")}"><span class="status ${esc(payment.state || status)}">${esc(status)}</span></td><td>${esc(payment.provider)}</td><td><code>${esc(paymentId)}</code></td><td>${invoice}</td><td>${esc(dateTime(payment.paid_at || payment.created_at))}</td></tr>`;
+    }).join("") : tableEmpty(7, "No payment records match these filters.");
+  }
+  function renderBillingHistory(payload) {
+    billingData = payload;
+    $("billingSuccessful").textContent = number(payload.successful_payments);
+    $("billingFailed").textContent = number(payload.failed_payments);
+    $("billingPending").textContent = number(payload.pending_payments);
+    $("billingTotal").textContent = number(payload.total_payments);
+    $("billingCollected").textContent = billingTotalLabel(payload.paid_by_currency);
+    $("billingRange").textContent = "Last " + payload.range_days + " days";
+    $("billingCount").textContent = number(payload.total_payments) + " total · latest " + number((payload.payments || []).length) + " shown";
+    renderBillingRows(payload.payments || []);
+  }
+  async function loadBillingHistory() {
+    if (billingLoading) return;
+    billingLoading = true;
+    const button = $("billingRefresh");
+    button.disabled = true;
+    try {
+      const query = encodeURIComponent($("billingSearch").value.trim());
+      const status = encodeURIComponent($("billingStatus").value);
+      renderBillingHistory(await api("/billing-history?days=" + encodeURIComponent($("range").value) + "&limit=500&query=" + query + "&status=" + status));
+    } catch (e) {
+      $("billingRows").innerHTML = tableEmpty(7, e.status === 403 ? "Admin access required." : "Could not load billing history. Please refresh.");
+      $("billingCount").textContent = "Unavailable";
+    } finally { button.disabled = false; billingLoading = false; }
+  }
+  function showBillingHistory() {
+    closeUserDrawer();
+    $("dashboard").classList.add("hidden");
+    $("systemHealth").classList.add("hidden");
+    $("users").classList.add("hidden");
+    $("operations").classList.add("hidden");
+    $("billing").classList.remove("hidden");
+    $("errorLogs").classList.add("hidden");
+    $("adminSettings").classList.add("hidden");
+    document.querySelectorAll(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.section === "billing"));
+    loadBillingHistory();
     window.scrollTo({top: 0, behavior: "smooth"});
   }
   function operationCopy(category) {
@@ -301,6 +362,7 @@
     $("systemHealth").classList.add("hidden");
     $("users").classList.add("hidden");
     $("operations").classList.remove("hidden");
+    $("billing").classList.add("hidden");
     $("errorLogs").classList.add("hidden");
     $("adminSettings").classList.add("hidden");
     document.querySelectorAll(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.section === category));
@@ -337,6 +399,7 @@
     $("systemHealth").classList.add("hidden");
     $("users").classList.add("hidden");
     $("operations").classList.add("hidden");
+    $("billing").classList.add("hidden");
     $("errorLogs").classList.remove("hidden");
     $("adminSettings").classList.add("hidden");
     document.querySelectorAll(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.section === "errors"));
@@ -398,6 +461,7 @@
     $("systemHealth").classList.add("hidden");
     $("users").classList.add("hidden");
     $("operations").classList.add("hidden");
+    $("billing").classList.add("hidden");
     $("errorLogs").classList.add("hidden");
     $("adminSettings").classList.remove("hidden");
     document.querySelectorAll(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.section === "settings"));
@@ -409,6 +473,7 @@
     $("dashboard").classList.add("hidden");
     $("users").classList.add("hidden");
     $("operations").classList.add("hidden");
+    $("billing").classList.add("hidden");
     $("errorLogs").classList.add("hidden");
     $("adminSettings").classList.add("hidden");
     $("systemHealth").classList.remove("hidden");
@@ -471,6 +536,7 @@
       if (!$("dashboard").classList.contains("hidden")) await load();
       else if (!$("users").classList.contains("hidden")) await loadUsers();
       else if (!$("operations").classList.contains("hidden")) await loadOperations();
+      else if (!$("billing").classList.contains("hidden")) await loadBillingHistory();
       else if (!$("errorLogs").classList.contains("hidden")) await loadErrorLogs();
       else if (!$("systemHealth").classList.contains("hidden")) await load();
       else if (!$("adminSettings").classList.contains("hidden") && Date.now() - lastSettingsAutoUpdate >= 15000) {
@@ -492,6 +558,7 @@
     document.querySelectorAll(".range-control").forEach(control => { control.value = String(value); });
     load();
     if (!$("operations").classList.contains("hidden")) loadOperations();
+    if (!$("billing").classList.contains("hidden")) loadBillingHistory();
     if (!$("errorLogs").classList.contains("hidden")) loadErrorLogs();
   }
   document.querySelectorAll(".range-control").forEach(control => control.onchange = () => setDashboardRange(control.value));
@@ -510,6 +577,10 @@
   document.querySelectorAll(".payment-filter-card").forEach(card => card.onclick = () => showUsers(card.dataset.userFilter));
   $("operationsRefresh").onclick = loadOperations;
   $("operationSearch").oninput = () => { if (operationData) renderOperationRows(operationData.operations || []); };
+  let billingSearchTimer = null;
+  $("billingRefresh").onclick = loadBillingHistory;
+  $("billingSearch").oninput = () => { clearTimeout(billingSearchTimer); billingSearchTimer = setTimeout(loadBillingHistory, 300); };
+  $("billingStatus").onchange = loadBillingHistory;
   $("errorsRefresh").onclick = loadErrorLogs;
   $("errorSearch").oninput = () => { if (errorData) renderErrorRows(errorData.errors || []); };
   $("settingsRefresh").onclick = loadSettings;
@@ -557,6 +628,9 @@
     if (requested === "users") {
       showUsers("all"); return;
     }
+    if (requested === "billing") {
+      showBillingHistory(); return;
+    }
     if (["recent", "jobs", "pdf", "translations"].includes(requested)) {
       showOperations(requested); return;
     }
@@ -572,6 +646,7 @@
     usersPage.classList.add("hidden"); dashboardPage.classList.remove("hidden");
     $("systemHealth").classList.add("hidden");
     $("operations").classList.add("hidden");
+    $("billing").classList.add("hidden");
     $("errorLogs").classList.add("hidden");
     $("adminSettings").classList.add("hidden");
     const section = $(requested); if (section) section.scrollIntoView({behavior:"smooth",block:"start"});

@@ -1,5 +1,5 @@
 /* Dashboard-specific status states kept separate from the compact base theme. */
-.status.failed{background:#662f3c;color:#ff9da2}
+.status.failed{background:#662f3c;color:#ff9da2}.status.successful{background:#124c3b;color:#69e5a8}.status.pending{background:#66541d;color:#ffe071}
 .status.partial{background:#765618;color:#ffd761}
 .status.processing{background:#66541d;color:#ffe071}
 .pdf-yes{color:#ff828a;font-size:15px}
@@ -95,6 +95,7 @@ html[data-admin-theme="light"] th:last-child{border-radius:0 7px 0 0}
 html[data-admin-theme="light"] .table-wrap{border-radius:8px}
 html[data-admin-theme="light"] .health-row{min-height:37px}
 html[data-admin-theme="light"] .status{background:#dff9ec;color:#008d59}
+html[data-admin-theme="light"] .status.pending{background:#fff1c9;color:#9a6700}html[data-admin-theme="light"] .status.failed{background:#ffe3e7;color:#c6334b}
 html[data-admin-theme="light"] .payment-summary{padding:14px 16px;margin:14px 0}
 html[data-admin-theme="light"] .payment-summary .metric{min-height:96px}
 html[data-admin-theme="light"] .side-bottom{border-color:#d8e5f3}

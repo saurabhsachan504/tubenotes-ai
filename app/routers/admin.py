@@ -22,6 +22,7 @@ from app.config import settings
 from app.database import get_db
 from app.deps import get_admin_user
 from app.models import (
+    BillingPayment,
     Device,
     DeviceTrialLedger,
     CachedOutput,
@@ -35,6 +36,7 @@ from app.models import (
 from app.schemas import MessageOut, UserOut
 from app.services import devices as device_service
 from app.services import output_cache
+from app.services.payments import get_provider
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(get_admin_user)])
 _STARTED_AT = time.monotonic()
@@ -107,6 +109,16 @@ def _reporting_start() -> datetime:
 def _window_start(days: int, now: datetime) -> datetime:
     """Selected dashboard range, clamped to the reporting reset point."""
     return max(now - timedelta(days=days - 1), _reporting_start())
+
+
+def _payment_state(status_value: str | None) -> str:
+    """Small, provider-neutral grouping for the operator payment table."""
+    status_value = (status_value or "").strip().lower()
+    if status_value in {"captured", "paid", "succeeded", "success"}:
+        return "successful"
+    if status_value in {"failed", "refunded", "reversed"}:
+        return "failed"
+    return "pending"
 
 
 def _usage_meta(raw: str | None) -> dict:
@@ -602,6 +614,106 @@ def users_overview(
         if len(rows) >= limit:
             break
     return {"users": rows, "total": len(rows)}
+
+
+@router.get("/billing-history")
+def billing_history(
+    days: int = 10,
+    query: str = "",
+    status: str = "all",
+    limit: int = 500,
+    db: Session = Depends(get_db),
+):
+    """Admin-only payment ledger, scoped to the configured reporting period."""
+    days = max(1, min(days, 90))
+    limit = max(1, min(limit, 1_000))
+    status_filter = status.strip().lower()
+    if status_filter not in {"all", "successful", "failed", "pending"}:
+        raise HTTPException(status_code=422, detail="Unsupported payment status filter")
+
+    start = _window_start(days, datetime.now(timezone.utc))
+    conditions = [
+        func.coalesce(BillingPayment.paid_at, BillingPayment.created_at) >= start,
+        User.created_at >= _reporting_start(),
+    ]
+    if status_filter == "successful":
+        conditions.append(BillingPayment.status.in_({"captured", "paid", "succeeded", "success"}))
+    elif status_filter == "failed":
+        conditions.append(BillingPayment.status.in_({"failed", "refunded", "reversed"}))
+    elif status_filter == "pending":
+        conditions.append(BillingPayment.status.not_in({"captured", "paid", "succeeded", "success", "failed", "refunded", "reversed"}))
+
+    needle = query.strip().lower()
+    if needle:
+        pattern = f"%{needle}%"
+        conditions.append(
+            func.lower(User.email).like(pattern)
+            | func.lower(func.coalesce(BillingPayment.provider_payment_id, "")).like(pattern)
+            | func.lower(func.coalesce(BillingPayment.provider_invoice_id, "")).like(pattern)
+            | func.lower(BillingPayment.provider).like(pattern)
+        )
+
+    rows = db.execute(
+        select(BillingPayment, User.email)
+        .join(User, BillingPayment.user_id == User.id)
+        .where(*conditions)
+        .order_by(BillingPayment.paid_at.desc(), BillingPayment.created_at.desc())
+        .limit(limit)
+    ).all()
+
+    # Razorpay can publish the payment before its customer-facing invoice URL
+    # is ready.  An admin refresh also completes that link, so support does
+    # not need the customer to open their Account page first.
+    try:
+        provider = get_provider()
+        fetch_invoice_url = getattr(provider, "fetch_invoice_url", None)
+        changed = False
+        if fetch_invoice_url:
+            for payment, _email in rows:
+                if payment.provider == provider.name and payment.provider_invoice_id and not payment.invoice_url:
+                    url = fetch_invoice_url(payment.provider_invoice_id)
+                    if url:
+                        payment.invoice_url = url
+                        changed = True
+        if changed:
+            db.commit()
+    except Exception:
+        db.rollback()
+
+    counts = Counter(_payment_state(payment.status) for payment, _email in rows)
+    paid_by_currency: dict[str, int] = {}
+    for payment, _email in rows:
+        if _payment_state(payment.status) != "successful" or payment.amount_subunits is None:
+            continue
+        currency = (payment.currency or "Unknown").upper()
+        paid_by_currency[currency] = paid_by_currency.get(currency, 0) + payment.amount_subunits
+
+    return {
+        "range_days": days,
+        "total_payments": len(rows),
+        "successful_payments": counts["successful"],
+        "failed_payments": counts["failed"],
+        "pending_payments": counts["pending"],
+        "paid_by_currency": paid_by_currency,
+        "payments": [
+            {
+                "id": payment.id,
+                "email": email,
+                "provider": payment.provider,
+                "payment_id": payment.provider_payment_id,
+                "invoice_id": payment.provider_invoice_id,
+                "status": payment.status,
+                "state": _payment_state(payment.status),
+                "amount_subunits": payment.amount_subunits,
+                "currency": payment.currency,
+                "paid_at": _iso(payment.paid_at),
+                "created_at": _iso(payment.created_at),
+                "failure_message": payment.failure_message,
+                "invoice_url": payment.invoice_url,
+            }
+            for payment, email in rows
+        ],
+    }
 
 
 @router.get("/users/{user_id}/detail")
