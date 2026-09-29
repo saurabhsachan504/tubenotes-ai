@@ -110,6 +110,9 @@ class User(TimestampMixin, Base):
     subscriptions: Mapped[list["Subscription"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    billing_payments: Mapped[list["BillingPayment"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
     usage_events: Mapped[list["UsageEvent"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
@@ -287,6 +290,40 @@ class Subscription(TimestampMixin, Base):
     canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     user: Mapped[User] = relationship(back_populates="subscriptions")
+
+
+class BillingPayment(TimestampMixin, Base):
+    """A user's provider-confirmed payment/receipt history.
+
+    This is deliberately populated only from signature-verified provider
+    webhooks.  It is an account history, not a browser-supplied payment log.
+    """
+
+    __tablename__ = "billing_payments"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider", "provider_payment_id", name="uq_billing_payment_provider_id"
+        ),
+        Index("ix_billing_payments_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_payment_id: Mapped[str | None] = mapped_column(String(128))
+    provider_subscription_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    provider_invoice_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    amount_subunits: Mapped[int | None] = mapped_column(Integer)
+    currency: Mapped[str | None] = mapped_column(String(8))
+    # A verified provider-hosted receipt/invoice URL. Never supplied by the browser.
+    invoice_url: Mapped[str | None] = mapped_column(Text)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failure_message: Mapped[str | None] = mapped_column(String(500))
+
+    user: Mapped[User] = relationship(back_populates="billing_payments")
 
 
 class WebhookEvent(Base):

@@ -11,10 +11,11 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import Subscription, SubscriptionStatus, User
+from app.models import BillingPayment, Subscription, SubscriptionStatus, User
 from app.schemas import (
     CheckoutRequest,
     CheckoutSessionOut,
+    BillingPaymentOut,
     MessageOut,
     PlanOut,
     SubscriptionOut,
@@ -135,6 +136,47 @@ def get_subscription(
     if sub is None:
         return None
     return SubscriptionOut.model_validate(sub)
+
+
+@router.get("/history", response_model=list[BillingPaymentOut])
+def billing_history(
+    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """Customer-visible history from verified payment webhooks only."""
+    # Existing customers may have paid before billing history was added. Pull
+    # only the caller's already-recorded provider subscriptions to backfill
+    # those rows; failure here never blocks Account from opening.
+    try:
+        billing_service.sync_subscription_payment_history(db, user, get_provider())
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    records = db.execute(
+        select(BillingPayment)
+        .where(BillingPayment.user_id == user.id)
+        .order_by(BillingPayment.paid_at.desc(), BillingPayment.created_at.desc())
+    ).scalars().all()
+
+    # Razorpay sends an invoice id with a payment, but its shareable link can
+    # appear a little later. Refresh it on Account open until it is available.
+    changed = False
+    provider = None
+    for record in records:
+        if record.invoice_url or not record.provider_invoice_id:
+            continue
+        try:
+            provider = provider or get_provider()
+            fetch_url = getattr(provider, "fetch_invoice_url", None)
+            url = fetch_url(record.provider_invoice_id) if fetch_url and provider.name == record.provider else None
+        except Exception:
+            url = None
+        if url:
+            record.invoice_url = url
+            changed = True
+    if changed:
+        db.commit()
+    return [BillingPaymentOut.model_validate(record) for record in records]
 
 
 @router.post("/portal", response_model=MessageOut)

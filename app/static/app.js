@@ -1463,6 +1463,70 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     }
   }
 
+  function setBillingHistoryMessage(message) {
+    const list = $("billingHistory");
+    list.replaceChildren();
+    const note = document.createElement("span");
+    note.className = "billing-empty";
+    note.textContent = message;
+    list.appendChild(note);
+  }
+
+  function billingAmount(item) {
+    if (!item.currency || typeof item.amount_subunits !== "number") return "Amount pending";
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: "currency", currency: item.currency, maximumFractionDigits: 2,
+      }).format(item.amount_subunits / 100);
+    } catch (_) {
+      return `${item.currency} ${(item.amount_subunits / 100).toFixed(2)}`;
+    }
+  }
+
+  function renderBillingHistory(items) {
+    const list = $("billingHistory");
+    list.replaceChildren();
+    if (!items.length) {
+      setBillingHistoryMessage("No billing payments yet. Your invoices will appear here after a successful payment.");
+      return;
+    }
+    items.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "billing-row";
+      const detail = document.createElement("div");
+      const amount = document.createElement("b");
+      amount.textContent = billingAmount(item);
+      const meta = document.createElement("small");
+      const status = String(item.status || "pending").replace(/_/g, " ");
+      meta.textContent = `${status} · ${accountDate(item.paid_at || item.created_at)}`;
+      detail.append(amount, meta);
+      if (item.invoice_url) {
+        const invoice = document.createElement("a");
+        invoice.href = item.invoice_url;
+        invoice.target = "_blank";
+        invoice.rel = "noopener noreferrer";
+        invoice.textContent = "View invoice";
+        row.append(detail, invoice);
+      } else {
+        const pending = document.createElement("span");
+        pending.className = "billing-pending";
+        pending.textContent = "Invoice pending";
+        row.append(detail, pending);
+      }
+      list.appendChild(row);
+    });
+  }
+
+  async function loadBillingHistory() {
+    setBillingHistoryMessage("Loading billing history...");
+    try {
+      const history = await api("/billing/history");
+      renderBillingHistory(Array.isArray(history) ? history : []);
+    } catch (e) {
+      setBillingHistoryMessage(e.status === 401 ? "Sign in again to view billing history." : "Couldn't load billing history. Close and reopen Account to try again.");
+    }
+  }
+
   async function removeAccountDevice(deviceId, button, name) {
     if (!window.confirm(`Remove ${name}? You can sign in again from that device later.`)) return;
     button.disabled = true;
@@ -1507,6 +1571,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
       paintBillingPrice(pro);
       $("upgradeBtn").classList.toggle("hidden", pro);
       loadAccountDevices();
+      loadBillingHistory();
       // The link itself is cosmetic. /admin and every data endpoint verify
       // the signed JWT on the server, so revealing it cannot grant access.
       api("/admin/session")

@@ -237,7 +237,27 @@ def test_razorpay_webhook_activates_and_is_idempotent(client, device, monkeypatc
     monkeypatch.setattr(live, "RAZORPAY_PLAN_ID", "plan_123")
 
     from app.services import payments
+    from app.services.payments.razorpay_provider import RazorpayProvider
 
+    monkeypatch.setattr(
+        RazorpayProvider,
+        "fetch_invoice_url",
+        lambda _self, invoice_id: f"https://rzp.io/i/{invoice_id}",
+    )
+    monkeypatch.setattr(
+        RazorpayProvider,
+        "fetch_subscription_payments",
+        lambda _self, _subscription_id: [
+            {
+                "id": "pay_before_history",
+                "status": "captured",
+                "amount": 29900,
+                "currency": "INR",
+                "invoice_id": "inv_before_history",
+                "created_at": 1690000000,
+            }
+        ],
+    )
     payments.get_provider.cache_clear()
     try:
         payload = json.dumps(
@@ -253,7 +273,17 @@ def test_razorpay_webhook_activates_and_is_idempotent(client, device, monkeypatc
                             "current_end": 1900000000,
                             "notes": {"user_id": user_id},
                         }
-                    }
+                    },
+                    "payment": {
+                        "entity": {
+                            "id": "pay_test_1",
+                            "status": "captured",
+                            "amount": 9900,
+                            "currency": "INR",
+                            "invoice_id": "inv_test_1",
+                            "created_at": 1700000000,
+                        }
+                    },
                 },
             }
         ).encode()
@@ -276,6 +306,19 @@ def test_razorpay_webhook_activates_and_is_idempotent(client, device, monkeypatc
 
     sub = client.get(f"{API}/billing/subscription", headers=headers).json()
     assert sub["status"] == "active"
+
+    history = client.get(f"{API}/billing/history", headers=headers)
+    assert history.status_code == 200, history.text
+    rows = history.json()
+    assert len(rows) == 2
+    assert rows[0]["provider"] == "razorpay"
+    assert rows[0]["status"] == "captured"
+    assert rows[0]["amount_subunits"] == 9900
+    assert rows[0]["currency"] == "INR"
+    assert rows[0]["paid_at"] is not None
+    assert rows[0]["invoice_url"] == "https://rzp.io/i/inv_test_1"
+    assert rows[1]["amount_subunits"] == 29900
+    assert rows[1]["invoice_url"] == "https://rzp.io/i/inv_before_history"
 
     from app.models import Subscription
 

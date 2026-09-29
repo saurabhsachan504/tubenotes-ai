@@ -252,4 +252,17 @@ class SubscriptionOut(BaseModel):
     cancel_at_period_end: bool
 
 
+class BillingPaymentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    provider: str
+    status: str
+    amount_subunits: int | None
+    currency: str | None
+    paid_at: datetime | None
+    created_at: datetime
+    invoice_url: str | None
+
+
 AuthResponse.model_rebuild()

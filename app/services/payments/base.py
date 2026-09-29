@@ -33,6 +33,14 @@ class NormalizedEvent:
     status: SubscriptionStatus | None = None
     current_period_end: datetime | None = None
     cancel_at_period_end: bool = False
+    payment_id: str | None = None
+    payment_status: str | None = None
+    amount_subunits: int | None = None
+    currency: str | None = None
+    invoice_id: str | None = None
+    invoice_url: str | None = None
+    paid_at: datetime | None = None
+    failure_message: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
 

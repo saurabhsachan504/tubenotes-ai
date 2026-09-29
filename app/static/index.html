@@ -392,6 +392,13 @@
   .remove-device{flex:0 0 auto;border:1px solid #f2b7bf;border-radius:8px;background:#fff5f6;color:#c63749;padding:7px 9px;font:inherit;font-size:11px;font-weight:650;cursor:pointer}
   .remove-device:hover{background:#ffeaec}.remove-device:disabled{opacity:.55;cursor:wait}
   .device-empty{color:var(--muted);font-size:12px;padding:5px 0}
+  .billing-history{margin:14px 0 2px;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--field)}
+  .billing-history-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:9px}
+  .billing-history h4{font-size:13px;margin:0;color:var(--ink)}
+  .billing-history p{margin:3px 0 0;color:var(--muted);font-size:11.5px;line-height:1.4}
+  .billing-list{display:grid;gap:7px;max-height:190px;overflow-y:auto;padding-right:2px}
+  .billing-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+  .billing-row:first-child{border-top:0}.billing-row b{display:block;color:var(--ink);font-size:12px}.billing-row small{display:block;margin-top:3px;color:var(--muted);font-size:10.5px;line-height:1.35}.billing-row a{flex:0 0 auto;color:var(--brand1);font-size:11.5px;font-weight:700;text-decoration:none}.billing-row a:hover{text-decoration:underline}.billing-pending{flex:0 0 auto;color:var(--muted);font-size:10.5px}.billing-empty{color:var(--muted);font-size:12px;padding:5px 0}
 
   /* language picker */
   .modal.picker{max-width:420px;display:flex;flex-direction:column;max-height:78vh}
@@ -674,6 +681,10 @@
       <div style="font-weight:700;font-size:17px" id="acctStatus">—</div>
       <div class="meter"><i id="acctMeter" style="width:0"></i></div>
       <p class="lead" id="acctDetail" style="margin-bottom:0"></p>
+      <section class="billing-history" aria-labelledby="billingHistoryTitle">
+        <div class="billing-history-head"><div><h4 id="billingHistoryTitle">Billing history</h4><p>Your verified TubeNotes payments and Razorpay invoices.</p></div></div>
+        <div id="billingHistory" class="billing-list" aria-live="polite"><span class="billing-empty">Loading billing history...</span></div>
+      </section>
       <section class="account-devices" aria-labelledby="accountDevicesTitle">
         <div class="account-devices-head"><div><h4 id="accountDevicesTitle">Manage devices</h4><p>Remove an old browser or device to free an account slot.</p></div><span id="accountDeviceCount" class="device-count">Loading...</span></div>
         <div id="accountDevices" class="device-list" aria-live="polite"><span class="device-empty">Loading registered devices...</span></div>
