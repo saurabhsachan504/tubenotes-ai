@@ -97,6 +97,20 @@ def test_hindi_title_prefers_hindi_track_over_wrong_asr_default():
     assert youtube._pick_track([bengali_asr, hindi_manual], "hi") is hindi_manual
 
 
+def test_multiple_auto_caption_languages_use_source_language_resolution():
+    class Track:
+        def __init__(self, code: str, generated: bool = True):
+            self.language_code = code
+            self.is_generated = generated
+
+    # Auto-dubbed videos return translated tracks alphabetically, where Arabic
+    # can precede the original English captions.
+    tracks = [Track("ar"), Track("bn"), Track("en")]
+    assert youtube._needs_source_language_resolution(tracks) is True
+    # A title with an unambiguous native script remains a safe preference.
+    assert youtube._needs_source_language_resolution(tracks, "hi") is False
+
+
 def test_language_directive_names_the_language():
     assert "Devanagari" in summarizer.language_directive("hi")
     assert "Tamil" in summarizer.language_directive("ta")

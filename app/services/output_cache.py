@@ -40,10 +40,11 @@ logger = logging.getLogger("trialguard.cache")
 # changes. Old rows keep their old number and are simply never matched again;
 # the cleanup job removes them once they go cold.
 # ---------------------------------------------------------------------------
-# Version 5 validates Latin-script transcript text too, rather than trusting a
-# wrong YouTube caption label. Older rows may be summaries in that label's
-# language and must not answer auto-language requests.
-PROMPT_VERSION = 5
+# Version 6 resolves multi-language auto-caption listings through the video's
+# actual audio language rather than using YouTube's alphabetical first entry.
+# Older rows may be summaries in a translated caption language and must not
+# answer auto-language requests.
+PROMPT_VERSION = 6
 
 
 def _key(video_id: str, mode: str, lang: str, model: str) -> tuple:

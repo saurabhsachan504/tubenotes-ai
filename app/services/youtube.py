@@ -267,6 +267,23 @@ def _pick_track(transcript_list, preferred_language: str | None = None):
     return next((t for t in tracks if not t.is_generated), tracks[0])
 
 
+def _needs_source_language_resolution(tracks, preferred_language: str | None = None) -> bool:
+    """Return True when YouTube's caption list has translated auto tracks.
+
+    Such listings are alphabetical (``ar`` before ``en``), rather than ordered
+    by the video's spoken language.  yt-dlp exposes the source audio language,
+    so it is the reliable route whenever this ambiguity exists.
+    """
+    if preferred_language:
+        return False
+    generated_languages = {
+        (track.language_code or "").split("-")[0].lower()
+        for track in tracks
+        if track.is_generated and (track.language_code or "")
+    }
+    return len(generated_languages) > 1
+
+
 def _fetch_via_api(video_id: str, preferred_language: str | None = None) -> Transcript:
     import requests
     from youtube_transcript_api import YouTubeTranscriptApi
@@ -280,8 +297,15 @@ def _fetch_via_api(video_id: str, preferred_language: str | None = None) -> Tran
         api = YouTubeTranscriptApi(
             proxy_config=_proxy_config(), http_client=session
         )
-        listing = api.list(video_id)
-        track = _pick_track(listing, preferred_language)
+        tracks = list(api.list(video_id))
+        if _needs_source_language_resolution(tracks, preferred_language):
+            logger.info(
+                "caption listing for %s has multiple generated languages; resolving source language via yt-dlp",
+                video_id,
+            )
+            raise TranscriptUnavailable("caption listing has multiple translated languages")
+
+        track = _pick_track(tracks, preferred_language)
         if track is None:
             raise TranscriptUnavailable("no caption tracks")
 
