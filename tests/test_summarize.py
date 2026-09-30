@@ -84,6 +84,19 @@ def test_latin_transcript_overrides_wrong_caption_label(monkeypatch):
     assert summarizer.detect_language(ENGLISH, hint="bn") == "en"
 
 
+def test_chat_language_follows_the_question_not_the_summary(monkeypatch):
+    assert summarizer.detect_chat_language("\u092f\u0939 \u0915\u094d\u092f\u093e \u0939\u0948", "en") == "hi"
+    # Keep Latin language guessing deterministic in a local environment.
+    monkeypatch.setattr(
+        summarizer,
+        "detect_langs",
+        lambda text: [type("Guess", (), {"lang": "fr", "prob": 0.99})()],
+    )
+    assert summarizer.detect_chat_language(
+        "Pouvez-vous expliquer cette idee simplement", "hi"
+    ) == "fr"
+
+
 def test_hindi_title_prefers_hindi_track_over_wrong_asr_default():
     class Track:
         def __init__(self, code: str, generated: bool):
@@ -219,6 +232,33 @@ def test_video_chat_is_authenticated_and_does_not_consume_a_trial(client, device
         f"{API}/entitlement/check", json={"device": device}, headers=headers
     ).json()
     assert entitlement["trials_used"] == 0
+
+
+def test_video_chat_replies_in_the_question_language(client, device, monkeypatch):
+    _, headers, _ = register(client, device=device)
+
+    async def fake_answer(summary, question, history, *, lang):
+        assert lang == "hi"
+        return "\u0939\u093f\u0902\u0926\u0940 \u091c\u0935\u093e\u092c", "hi", None
+
+    async def fake_ensure(text, target):
+        assert target == "hi"
+        return text, False
+
+    monkeypatch.setattr(summarizer, "answer_about_summary", fake_answer)
+    monkeypatch.setattr("app.routers.summarize.translate.ensure_language", fake_ensure)
+    res = client.post(
+        f"{API}/video-chat",
+        json={
+            "summary": "This video explains photosynthesis in plants and how they make food.",
+            "question": "\u092f\u0939 \u0915\u094d\u092f\u093e \u0939\u0948",
+            "language": "en",
+            "history": [],
+        },
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["language"] == "hi"
 
 
 def test_chat_command_translates_the_full_summary_without_a_trial(client, device, monkeypatch):

@@ -972,9 +972,9 @@ async def video_chat(
     is busy, without limiting how many questions a user may ask.
     """
     del user  # Authentication is required; no user record is changed for chat.
-    target = payload.language.split("-")[0].lower()
-    if target not in summarizer.LANG_NAMES:
-        target = "en"
+    # The latest question sets the reply language. The summary's language is
+    # only a fallback for a very short or otherwise ambiguous question.
+    target = summarizer.detect_chat_language(payload.question, payload.language)
     history = [(turn.role, turn.content) for turn in payload.history]
     try:
         answer, _write_lang, translate_to = await summarizer.answer_about_summary(

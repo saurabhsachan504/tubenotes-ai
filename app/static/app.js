@@ -1048,7 +1048,7 @@
       if (pdfAction) {
         if (pending) pending.remove();
         showPdfButtons(pdfAction);
-        addChatMessage("assistant", "Main aapko upar **Full PDF Notes** button tak le gaya hoon. Use click karke detailed PDF banaiye.");
+        addChatMessage("assistant", "Please use the **Full PDF Notes** button above to generate and download the detailed PDF notes.");
         return;
       }
       if (translateTarget) {

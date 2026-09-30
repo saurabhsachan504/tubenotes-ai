@@ -208,6 +208,36 @@ def detect_language(text: str, hint: str | None = None) -> str:
     return text_code or "en"
 
 
+def detect_chat_language(question: str, fallback: str = "en") -> str:
+    """Choose the reply language from the user's latest chat question.
+
+    Transcript detection waits for substantial text because a wrong summary
+    language is expensive. Chat questions are short, so clear native scripts
+    win immediately and longer Latin-script questions get a lower-threshold
+    statistical guess. A truly ambiguous short question uses the summary
+    language as its sensible fallback.
+    """
+    text = (question or "").strip()
+    for pattern, code in _SCRIPT_RANGES:
+        if len(pattern.findall(text)) >= 2:
+            return code
+    if len(_DEVANAGARI.findall(text)) >= 2:
+        return "hi"
+
+    if detect_langs is not None and len(text) >= 20:
+        try:
+            candidates = detect_langs(text)
+        except LangDetectException:
+            candidates = []
+        if candidates and candidates[0].prob >= 0.75:
+            code = _LANGDETECT_CODES.get(candidates[0].lang, candidates[0].lang)
+            if code in LANG_NAMES:
+                return code
+
+    code = (fallback or "en").split("-")[0].lower()
+    return code if code in LANG_NAMES else "en"
+
+
 def language_name(code: str) -> str:
     return LANG_NAMES.get(code, code)
 
