@@ -1147,7 +1147,7 @@
     item.className = `chat-message ${role}`;
     item.innerHTML = typing
       ? '<span class="chat-typing"><i></i>Thinking about the video…</span>'
-      : `<span class="chat-label">${role === "user" ? "You" : "TubeNotes"}</span><div class="chat-copy">${md2html(text)}</div>`;
+      : `<span class="chat-label ${role === "user" ? "user-label" : "assistant-label"}">${role === "user" ? "You" : "TubeNotes"}</span><div class="chat-copy">${md2html(text)}</div>`;
     if (!typing && role === "assistant") {
       item.classList.add("has-copy");
       const copy = document.createElement("button");
