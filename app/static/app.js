@@ -1103,6 +1103,40 @@
     return res;
   }
 
+  async function copyChatReply(button, text) {
+    let copied = false;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      }
+    } catch (_) {
+      // Older browsers can use the short-lived textarea fallback below.
+    }
+    if (!copied) {
+      const helper = document.createElement("textarea");
+      helper.value = text;
+      helper.setAttribute("readonly", "");
+      helper.style.cssText = "position:fixed;opacity:0;pointer-events:none";
+      document.body.appendChild(helper);
+      try {
+        helper.select();
+        copied = document.execCommand("copy");
+      } finally {
+        helper.remove();
+      }
+    }
+    if (!copied) return;
+    button.classList.add("copied");
+    button.setAttribute("aria-label", "Reply copied");
+    button.title = "Copied";
+    setTimeout(() => {
+      button.classList.remove("copied");
+      button.setAttribute("aria-label", "Copy reply");
+      button.title = "Copy reply";
+    }, 1800);
+  }
+
   function addChatMessage(role, text, typing) {
     const messages = $("chatMessages");
     if (!messages) return null;
@@ -1114,6 +1148,19 @@
     item.innerHTML = typing
       ? '<span class="chat-typing"><i></i>Thinking about the video…</span>'
       : `<span class="chat-label">${role === "user" ? "You" : "TubeNotes"}</span><div class="chat-copy">${md2html(text)}</div>`;
+    if (!typing && role === "assistant") {
+      item.classList.add("has-copy");
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "chat-reply-copy";
+      copy.setAttribute("aria-label", "Copy reply");
+      copy.title = "Copy reply";
+      copy.innerHTML = `${ICONS.copy}<svg class="chat-reply-copied" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>`;
+      copy.addEventListener("click", () => {
+        copyChatReply(copy, item.querySelector(".chat-copy")?.innerText || text);
+      });
+      item.appendChild(copy);
+    }
     messages.appendChild(item);
     messages.scrollTop = messages.scrollHeight;
     return item;
