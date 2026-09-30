@@ -269,22 +269,15 @@
 
   /* ---------------- follow-up video chat ---------------- */
   /* The chat lives inside the result card, directly below the summary. */
-  .video-chat{
-    position:relative;margin-top:26px;padding:22px 0 0;
-    border-top:1px solid var(--line);background:transparent;
+  .video-chat{margin-top:18px;background:transparent}
+  .chat-starter{margin:20px 0 13px;text-align:center}
+  .chat-starter p{margin:0 0 10px;color:var(--muted);font-size:12.5px;line-height:1.45}
+  .chat-suggestions{display:flex;flex-wrap:wrap;justify-content:center;gap:7px}
+  .chat-suggestions button{
+    border:1px solid var(--line);border-radius:999px;padding:7px 12px;background:var(--chip);color:var(--ink);
+    font:600 12px/1.25 inherit;cursor:pointer;transition:transform .16s ease,border-color .16s ease,background .16s ease;
   }
-  .video-chat::before{
-    content:"";position:absolute;inset:-1px 0 auto;height:2px;
-    background:linear-gradient(90deg,var(--brand1),var(--brand2),var(--brand3));
-  }
-  .video-chat-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:15px}
-  .video-chat-icon{
-    display:grid;place-items:center;flex:0 0 auto;width:40px;height:40px;border-radius:12px;
-    color:#fff;background:linear-gradient(135deg,var(--brand1),var(--brand3));
-    box-shadow:0 8px 18px rgba(124,58,237,.24);
-  }
-  .video-chat h2{margin:0;font-size:17px;line-height:1.3}
-  .video-chat-head p{margin:3px 0 0;color:var(--muted);font-size:12.5px;line-height:1.5}
+  .chat-suggestions button:hover{transform:translateY(-1px);border-color:var(--brand2);background:rgba(168,85,247,.10)}
   .chat-messages{
     display:grid;gap:10px;max-height:390px;overflow-y:auto;padding:2px 2px 4px;
     scroll-behavior:smooth;
@@ -304,14 +297,17 @@
   .chat-typing{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:12.5px}
   .chat-typing i{width:8px;height:8px;border-radius:50%;background:var(--brand2);animation:chat-pulse 1s ease-in-out infinite}
   @keyframes chat-pulse{50%{opacity:.32;transform:scale(.72)}}
-  .chat-form{display:flex;gap:9px;align-items:flex-end;margin-top:14px}
+  .chat-form{
+    display:flex;gap:8px;align-items:center;margin-top:12px;padding:3px 4px 3px 14px;
+    border:1px solid var(--line);border-radius:999px;background:var(--field);
+  }
   .chat-form textarea{
-    flex:1;min-height:46px;max-height:120px;resize:vertical;padding:12px 13px;
-    border:1px solid var(--line);border-radius:11px;background:var(--field);color:var(--ink);
+    flex:1;min-height:40px;max-height:110px;resize:none;padding:10px 0;
+    border:0;border-radius:0;background:transparent;color:var(--ink);
     font:inherit;font-size:13.5px;line-height:1.4;outline:none;
   }
-  .chat-form textarea:focus{border-color:var(--brand2);box-shadow:0 0 0 3px rgba(168,85,247,.12)}
-  .chat-send{min-height:46px;border:0;border-radius:11px;padding:0 16px;color:#fff;font-weight:700;font-size:13px;background:linear-gradient(135deg,var(--brand1),var(--brand3));box-shadow:0 5px 13px rgba(124,58,237,.2)}
+  .chat-form:focus-within{border-color:var(--brand2);box-shadow:0 0 0 3px rgba(168,85,247,.12)}
+  .chat-send{display:grid;place-items:center;flex:0 0 auto;width:40px;min-height:40px;padding:0;border:0;border-radius:50%;color:#fff;background:linear-gradient(135deg,var(--brand1),var(--brand3));box-shadow:0 5px 13px rgba(124,58,237,.2)}
   .chat-send:hover{filter:brightness(1.08)}.chat-send:disabled,.chat-form textarea:disabled{opacity:.62;cursor:wait}
   .tool.chat-pdf-focus{outline:3px solid rgba(250,204,21,.92);outline-offset:3px;animation:chat-pdf-pulse .9s ease-in-out 3}
   @keyframes chat-pdf-pulse{50%{transform:translateY(-3px) scale(1.035);filter:brightness(1.16)}}
@@ -462,7 +458,7 @@
     .body{padding:18px}
     .toolbar{padding:12px}
     .tool{min-height:42px}
-    .video-chat{padding:18px}
+    .video-chat{margin-top:16px}
   }
 
   @media(max-width:620px){
@@ -535,9 +531,12 @@
     .pdf-step-dot{width:20px;height:20px}
     .pdf-step.active .pdf-step-dot::after{inset:-5px}
     .modal{padding:18px}
-    .video-chat{padding:16px;border-radius:13px}
-    .chat-form{align-items:stretch;flex-direction:column}
-    .chat-send{width:100%}
+    .video-chat{margin-top:14px}
+    .chat-starter{margin-top:17px}
+    .chat-suggestions{gap:6px}
+    .chat-suggestions button{padding:7px 10px;font-size:11.5px}
+    .chat-form{align-items:center;flex-direction:row;padding-left:12px}
+    .chat-send{width:40px}
     .chat-message{max-width:94%}
   }
   .pdf-flow-live{height:34vh;overflow-y:auto;margin:10px 0 4px;padding:10px 12px;
@@ -735,6 +734,6 @@
 </div>
 
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="/static/app.js?v=12"></script>
+<script src="/static/app.js?v=13"></script>
 </body>
 </html>

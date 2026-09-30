@@ -918,19 +918,40 @@
     if (!isNotes) mountVideoChat(text);
   }
 
+  function chatStarter() {
+    return `
+      <div class="chat-starter" id="chatStarter">
+        <p>Want to explore this summary further?</p>
+        <div class="chat-suggestions" aria-label="Suggested questions">
+          <button type="button" data-chat-question="What are the key takeaways?">What are the key takeaways?</button>
+          <button type="button" data-chat-question="Explain this simply">Explain this simply</button>
+          <button type="button" data-chat-question="What should I remember?">What should I remember?</button>
+        </div>
+      </div>`;
+  }
+
+  function bindChatSuggestions() {
+    document.querySelectorAll("[data-chat-question]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const input = $("videoChatInput");
+        const form = $("videoChatForm");
+        if (!input || !form || videoChat.busy) return;
+        input.value = button.dataset.chatQuestion || "";
+        form.requestSubmit();
+      });
+    });
+  }
+
   function chatCard() {
     return `
       <section class="video-chat" id="videoChat" aria-label="Ask questions about this video">
-        <div class="video-chat-head">
-          <div class="video-chat-icon" aria-hidden="true">
-            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 10h.01M12 10h.01M16 10h.01"/></svg>
-          </div>
-          <div><h2>Ask about this video</h2><p>Ask follow-up questions from this video’s summary. Answers stay within the video context.</p></div>
-        </div>
-        <div class="chat-messages" id="chatMessages"><p class="chat-empty">Ask anything you want to understand better from this video.</p></div>
+        ${chatStarter()}
+        <div class="chat-messages" id="chatMessages" aria-live="polite"></div>
         <form class="chat-form" id="videoChatForm">
-          <textarea id="videoChatInput" rows="2" maxlength="2000" placeholder="Ask a question about this video…" aria-label="Your question about this video" required></textarea>
-          <button class="chat-send" id="videoChatSend" type="submit">Send</button>
+          <textarea id="videoChatInput" rows="1" maxlength="2000" placeholder="Ask a question…" aria-label="Your question about this video" required></textarea>
+          <button class="chat-send" id="videoChatSend" type="submit" aria-label="Send question" title="Send question">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+          </button>
         </form>
       </section>`;
   }
@@ -950,6 +971,7 @@
     const form = $("videoChatForm");
     const input = $("videoChatInput");
     form.addEventListener("submit", sendVideoChat);
+    bindChatSuggestions();
     // Chat convention: Enter sends. Shift + Enter is reserved for a new line.
     // isComposing protects Hindi/Indic IME users while they are choosing text.
     input.addEventListener("keydown", (event) => {
@@ -964,7 +986,11 @@
     videoChat.context = { summary, language: lastNotes.lang || "en" };
     videoChat.history = [];
     const messages = $("chatMessages");
-    if (messages) messages.innerHTML = '<p class="chat-empty">The summary language changed, so this chat is ready for new questions.</p>';
+    if (!messages) return;
+    messages.innerHTML = "";
+    $("chatStarter")?.remove();
+    messages.insertAdjacentHTML("beforebegin", chatStarter());
+    bindChatSuggestions();
   }
 
   function chatTranslationTarget(question) {
@@ -1028,6 +1054,7 @@
   function addChatMessage(role, text, typing) {
     const messages = $("chatMessages");
     if (!messages) return null;
+    if (role === "user") $("chatStarter")?.remove();
     const empty = messages.querySelector(".chat-empty");
     if (empty) empty.remove();
     const item = document.createElement("article");
