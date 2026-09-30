@@ -54,6 +54,56 @@
     ["ja", ["japanese", "जापानी", "日本語"]], ["ko", ["korean", "कोरियाई", "한국어"]],
   ];
 
+  // The chat starter is rendered locally, so it should use the exact output
+  // language without making a second translation request.
+  const CHAT_STARTER_COPY = {
+    en: ["Want to explore this summary further?", "What are the key takeaways?", "Explain this simply", "What should I remember?", "Ask a question…"],
+    hi: ["इस सारांश को और समझना चाहते हैं?", "मुख्य बातें क्या हैं?", "इसे सरल भाषा में समझाइए", "मुझे क्या याद रखना चाहिए?", "कोई प्रश्न पूछें…"],
+    mr: ["या सारांशाचा अधिक शोध घ्यायचा आहे?", "मुख्य मुद्दे कोणते आहेत?", "हे सोप्या भाषेत समजावून सांगा", "मला काय लक्षात ठेवावे?", "प्रश्न विचारा…"],
+    gu: ["આ સારાંશને વધુ સમજવા માંગો છો?", "મુખ્ય મુદ્દાઓ કયા છે?", "આને સરળ રીતે સમજાવો", "મારે શું યાદ રાખવું જોઈએ?", "પ્રશ્ન પૂછો…"],
+    bn: ["এই সারাংশটি আরও জানতে চান?", "মূল বিষয়গুলো কী?", "এটি সহজভাবে ব্যাখ্যা করুন", "আমার কী মনে রাখা উচিত?", "একটি প্রশ্ন করুন…"],
+    pa: ["ਕੀ ਤੁਸੀਂ ਇਸ ਸਾਰਾਂਸ਼ ਨੂੰ ਹੋਰ ਸਮਝਣਾ ਚਾਹੁੰਦੇ ਹੋ?", "ਮੁੱਖ ਨੁਕਤੇ ਕੀ ਹਨ?", "ਇਸ ਨੂੰ ਸੌਖੇ ਤਰੀਕੇ ਨਾਲ ਸਮਝਾਓ", "ਮੈਨੂੰ ਕੀ ਯਾਦ ਰੱਖਣਾ ਚਾਹੀਦਾ ਹੈ?", "ਸਵਾਲ ਪੁੱਛੋ…"],
+    ta: ["இந்தச் சுருக்கத்தை மேலும் அறிய விரும்புகிறீர்களா?", "முக்கிய கருத்துகள் என்ன?", "இதை எளிமையாக விளக்கவும்", "நான் எதை நினைவில் வைத்துக்கொள்ள வேண்டும்?", "ஒரு கேள்வியைக் கேளுங்கள்…"],
+    te: ["ఈ సారాంశాన్ని మరింత తెలుసుకోవాలనుకుంటున్నారా?", "ముఖ్యాంశాలు ఏమిటి?", "దీన్ని సులభంగా వివరించండి", "నేను ఏమి గుర్తుంచుకోవాలి?", "ఒక ప్రశ్న అడగండి…"],
+    kn: ["ಈ ಸಾರಾಂಶವನ್ನು ಇನ್ನಷ್ಟು ತಿಳಿದುಕೊಳ್ಳಲು ಬಯಸುವಿರಾ?", "ಮುಖ್ಯ ಅಂಶಗಳೇನು?", "ಇದನ್ನು ಸರಳವಾಗಿ ವಿವರಿಸಿ", "ನಾನು ಏನನ್ನು ನೆನಪಿಟ್ಟುಕೊಳ್ಳಬೇಕು?", "ಒಂದು ಪ್ರಶ್ನೆ ಕೇಳಿ…"],
+    ml: ["ഈ സംഗ്രഹം കൂടുതൽ അറിയണോ?", "പ്രധാന കാര്യങ്ങൾ എന്തൊക്കെയാണ്?", "ഇത് ലളിതമായി വിശദീകരിക്കൂ", "ഞാൻ എന്ത് ഓർക്കണം?", "ഒരു ചോദ്യം ചോദിക്കൂ…"],
+    or: ["ଏହି ସାରାଂଶ ବିଷୟରେ ଆହୁରି ଜାଣିବାକୁ ଚାହାଁନ୍ତି କି?", "ମୁଖ୍ୟ ବିଷୟଗୁଡ଼ିକ କ’ଣ?", "ଏହାକୁ ସରଳ ଭାବରେ ବୁଝାନ୍ତୁ", "ମୁଁ କ’ଣ ମନେ ରଖିବା ଉଚିତ?", "ଏକ ପ୍ରଶ୍ନ ପଚାରନ୍ତୁ…"],
+    as: ["এই সাৰাংশটো আৰু জানিব বিচাৰেনে?", "মূল কথাবোৰ কি?", "ইয়াক সহজকৈ বুজাওক", "মই কি মনত ৰাখিব লাগে?", "এটা প্ৰশ্ন সোধক…"],
+    ur: ["کیا آپ اس خلاصے کو مزید سمجھنا چاہتے ہیں؟", "اہم نکات کیا ہیں؟", "اسے آسان الفاظ میں سمجھائیں", "مجھے کیا یاد رکھنا چاہیے؟", "ایک سوال پوچھیں…"],
+    ne: ["यो सारांश अझ बुझ्न चाहनुहुन्छ?", "मुख्य बुँदाहरू के हुन्?", "यसलाई सजिलो रूपमा बुझाउनुहोस्", "मैले के सम्झनुपर्छ?", "प्रश्न सोध्नुहोस्…"],
+    sa: ["एतत् सारांशं अधिकं ज्ञातुम् इच्छसि वा?", "मुख्यबिन्दवः के सन्ति?", "एतत् सरलतया व्याख्यातु", "मया किं स्मर्तव्यम्?", "प्रश्नं पृच्छ…"],
+    es: ["¿Quieres explorar más este resumen?", "¿Cuáles son las ideas clave?", "Explícalo de forma sencilla", "¿Qué debería recordar?", "Haz una pregunta…"],
+    fr: ["Voulez-vous approfondir ce résumé ?", "Quels sont les points clés ?", "Expliquez ceci simplement", "Que dois-je retenir ?", "Posez une question…"],
+    de: ["Möchten Sie diese Zusammenfassung weiter erkunden?", "Was sind die wichtigsten Erkenntnisse?", "Einfach erklären", "Was sollte ich mir merken?", "Stellen Sie eine Frage…"],
+    pt: ["Quer explorar mais este resumo?", "Quais são os pontos principais?", "Explique isso de forma simples", "Do que devo me lembrar?", "Faça uma pergunta…"],
+    it: ["Vuoi approfondire questo riepilogo?", "Quali sono i punti chiave?", "Spiegalo in modo semplice", "Cosa dovrei ricordare?", "Fai una domanda…"],
+    nl: ["Wilt u deze samenvatting verder verkennen?", "Wat zijn de belangrijkste punten?", "Leg dit eenvoudig uit", "Wat moet ik onthouden?", "Stel een vraag…"],
+    ru: ["Хотите подробнее изучить это резюме?", "Каковы главные выводы?", "Объясните это просто", "Что мне следует запомнить?", "Задайте вопрос…"],
+    uk: ["Хочете дізнатися більше про цей підсумок?", "Які головні висновки?", "Поясніть це простіше", "Що мені слід запам’ятати?", "Поставте запитання…"],
+    ar: ["هل تريد استكشاف هذا الملخص أكثر؟", "ما أهم النقاط؟", "اشرح هذا ببساطة", "ما الذي ينبغي أن أتذكره؟", "اطرح سؤالاً…"],
+    fa: ["می‌خواهید این خلاصه را بیشتر بررسی کنید؟", "نکات کلیدی چیستند؟", "این را ساده توضیح دهید", "چه چیزی را باید به خاطر بسپارم؟", "یک سؤال بپرسید…"],
+    tr: ["Bu özeti daha fazla incelemek ister misiniz?", "Temel çıkarımlar nelerdir?", "Bunu basitçe açıklayın", "Ne hatırlamalıyım?", "Bir soru sorun…"],
+    he: ["רוצה להעמיק בסיכום הזה?", "מהן הנקודות העיקריות?", "הסבר זאת בפשטות", "מה כדאי לי לזכור?", "שאל שאלה…"],
+    zh: ["想进一步了解这份摘要吗？", "关键要点是什么？", "请简单解释一下", "我应该记住什么？", "提出问题…"],
+    ja: ["この要約をさらに詳しく見ますか？", "重要なポイントは何ですか？", "簡単に説明してください", "何を覚えておくべきですか？", "質問する…"],
+    ko: ["이 요약을 더 자세히 살펴볼까요?", "핵심 내용은 무엇인가요?", "쉽게 설명해 주세요", "무엇을 기억해야 하나요?", "질문하기…"],
+    th: ["ต้องการสำรวจสรุปนี้เพิ่มเติมไหม?", "ประเด็นสำคัญคืออะไร?", "อธิบายแบบเข้าใจง่าย", "ฉันควรจำอะไรไว้?", "ถามคำถาม…"],
+    vi: ["Bạn muốn tìm hiểu thêm về bản tóm tắt này không?", "Những ý chính là gì?", "Giải thích điều này một cách đơn giản", "Tôi nên nhớ điều gì?", "Đặt câu hỏi…"],
+    id: ["Ingin mempelajari ringkasan ini lebih lanjut?", "Apa poin-poin utamanya?", "Jelaskan ini dengan sederhana", "Apa yang harus saya ingat?", "Ajukan pertanyaan…"],
+    ms: ["Ingin meneroka ringkasan ini dengan lebih lanjut?", "Apakah perkara pentingnya?", "Terangkan ini dengan mudah", "Apakah yang perlu saya ingat?", "Tanya soalan…"],
+    pl: ["Chcesz lepiej poznać to podsumowanie?", "Jakie są najważniejsze wnioski?", "Wyjaśnij to prosto", "Co powinienem zapamiętać?", "Zadaj pytanie…"],
+    ro: ["Doriți să explorați mai mult acest rezumat?", "Care sunt ideile principale?", "Explicați simplu", "Ce ar trebui să rețin?", "Puneți o întrebare…"],
+    el: ["Θέλετε να εξερευνήσετε περισσότερο αυτή τη σύνοψη;", "Ποια είναι τα βασικά σημεία;", "Εξηγήστε το απλά", "Τι πρέπει να θυμάμαι;", "Κάντε μια ερώτηση…"],
+    sv: ["Vill du utforska den här sammanfattningen vidare?", "Vilka är de viktigaste punkterna?", "Förklara detta enkelt", "Vad bör jag komma ihåg?", "Ställ en fråga…"],
+    cs: ["Chcete tento souhrn dále prozkoumat?", "Jaké jsou hlavní body?", "Vysvětlete to jednoduše", "Co si mám zapamatovat?", "Položte otázku…"],
+    hu: ["Szeretné tovább felfedezni ezt az összefoglalót?", "Melyek a fő tanulságok?", "Magyarázza el egyszerűen", "Mire kell emlékeznem?", "Tegyen fel egy kérdést…"],
+    fi: ["Haluatko tutkia tätä yhteenvetoa tarkemmin?", "Mitkä ovat keskeiset asiat?", "Selitä tämä yksinkertaisesti", "Mitä minun pitäisi muistaa?", "Esitä kysymys…"],
+    da: ["Vil du udforske dette resumé yderligere?", "Hvad er de vigtigste pointer?", "Forklar dette enkelt", "Hvad skal jeg huske?", "Stil et spørgsmål…"],
+    no: ["Vil du utforske dette sammendraget videre?", "Hva er hovedpoengene?", "Forklar dette enkelt", "Hva bør jeg huske?", "Still et spørsmål…"],
+    sw: ["Je, unataka kuchunguza muhtasari huu zaidi?", "Mambo muhimu ni yapi?", "Eleza hili kwa urahisi", "Ninapaswa kukumbuka nini?", "Uliza swali…"],
+    si: ["මෙම සාරාංශය තවදුරටත් ගවේෂණය කිරීමට අවශ්‍යද?", "ප්‍රධාන කරුණු මොනවාද?", "මෙය සරලව පැහැදිලි කරන්න", "මා මතක තබාගත යුත්තේ කුමක්ද?", "ප්‍රශ්නයක් අසන්න…"],
+  };
+
   function fillLangSelect(el, { includeAuto }) {
     el.innerHTML = "";
     if (includeAuto) {
@@ -919,13 +969,14 @@
   }
 
   function chatStarter() {
+    const copy = CHAT_STARTER_COPY[lastNotes?.lang] || CHAT_STARTER_COPY.en;
     return `
       <div class="chat-starter" id="chatStarter">
-        <p>Want to explore this summary further?</p>
+        <p>${copy[0]}</p>
         <div class="chat-suggestions" aria-label="Suggested questions">
-          <button type="button" data-chat-question="What are the key takeaways?">What are the key takeaways?</button>
-          <button type="button" data-chat-question="Explain this simply">Explain this simply</button>
-          <button type="button" data-chat-question="What should I remember?">What should I remember?</button>
+          <button type="button" data-chat-question="${copy[1]}">${copy[1]}</button>
+          <button type="button" data-chat-question="${copy[2]}">${copy[2]}</button>
+          <button type="button" data-chat-question="${copy[3]}">${copy[3]}</button>
         </div>
       </div>`;
   }
@@ -943,12 +994,13 @@
   }
 
   function chatCard() {
+    const copy = CHAT_STARTER_COPY[lastNotes?.lang] || CHAT_STARTER_COPY.en;
     return `
       <section class="video-chat" id="videoChat" aria-label="Ask questions about this video">
         ${chatStarter()}
         <div class="chat-messages" id="chatMessages" aria-live="polite"></div>
         <form class="chat-form" id="videoChatForm">
-          <textarea id="videoChatInput" rows="1" maxlength="2000" placeholder="Ask a question…" aria-label="Your question about this video" required></textarea>
+          <textarea id="videoChatInput" rows="1" maxlength="2000" placeholder="${copy[4]}" aria-label="${copy[4]}" required></textarea>
           <button class="chat-send" id="videoChatSend" type="submit" aria-label="Send question" title="Send question">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
           </button>
