@@ -7,7 +7,7 @@
   <title>TubeNotes — Admin Panel</title>
   <link rel="stylesheet" href="/static/admin.css?v=1">
   <script>try { if (localStorage.getItem("tn_admin_theme") === "light") document.documentElement.dataset.adminTheme = "light"; } catch (_) {}</script>
-  <link rel="stylesheet" href="/static/admin-extra.css?v=17">
+  <link rel="stylesheet" href="/static/admin-extra.css?v=18">
 </head>
 <body>
   <div class="app-shell">
@@ -153,6 +153,7 @@
     <section class="drawer-card">
       <div class="drawer-head"><div><p class="eyebrow">User profile</p><h2 id="drawerTitle">User details</h2></div><button id="closeUserDrawer" class="icon-btn" type="button" aria-label="Close user details">Close</button></div>
       <div id="userProfile" class="profile-summary"></div>
+      <section class="detail-section manual-pro-section"><h3>Complimentary Pro access</h3><div id="manualProPanel" class="manual-pro-panel"></div><div id="manualProHistory" class="detail-table-wrap"></div></section>
       <section class="detail-section"><h3>Subscriptions and payment status</h3><div id="userSubscriptions" class="detail-table-wrap"></div></section>
       <section class="detail-section"><h3>Registered devices</h3><div id="userDevices" class="detail-table-wrap"></div></section>
       <section class="detail-section"><h3>Recent video jobs</h3><div id="userJobs" class="detail-table-wrap"></div></section>
@@ -160,6 +161,6 @@
     </section>
   </div>
   <div id="blocked" class="blocked hidden"><div><span class="blocked-logo">▶</span><h2>Admin access required</h2><p id="blockedText">Sign in with the admin account first.</p><a href="/" class="sign-in">Open TubeNotes sign in</a></div></div>
-  <script src="/static/admin.js?v=19" defer></script>
+  <script src="/static/admin.js?v=20" defer></script>
 </body>
 </html>

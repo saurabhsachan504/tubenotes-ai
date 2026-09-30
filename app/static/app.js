@@ -1692,14 +1692,17 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
       $("acctEmail").textContent = user.email;
       paintChip(ent);
       const pro = ent.plan === "subscription";
+      const complimentaryPro = ent.subscription_status === "manual";
       const left = Math.min(ent.trials_remaining, ent.device_trials_remaining);
       $("acctStatus").textContent = pro
-        ? "Subscription active"
+        ? (complimentaryPro ? "Complimentary Pro active" : "Subscription active")
         : left > 0 ? `${left} of ${ent.trials_limit} free videos left` : "Free videos used up";
       $("acctMeter").style.width = pro ? "100%" : `${((ent.trials_limit - left) / ent.trials_limit) * 100}%`;
       const price = priceForPlan(plan);
       $("acctDetail").textContent = pro
-        ? (ent.current_period_end ? "Renews " + new Date(ent.current_period_end).toLocaleDateString() : `Billed ${price ? price.label : "monthly"}`)
+        ? (complimentaryPro
+          ? (ent.current_period_end ? "Complimentary access ends " + new Date(ent.current_period_end).toLocaleDateString() : "Complimentary lifetime access")
+          : (ent.current_period_end ? "Renews " + new Date(ent.current_period_end).toLocaleDateString() : `Billed ${price ? price.label : "monthly"}`))
         : "One video = one credit. Re-running a video you already did is free.";
       paintBillingPrice(pro);
       $("upgradeBtn").classList.toggle("hidden", pro);

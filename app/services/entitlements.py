@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import (
     Device,
+    ManualProGrant,
     Subscription,
     SubscriptionStatus,
     UsageEvent,
@@ -63,6 +64,22 @@ def active_subscription(db: Session, user: User) -> Subscription | None:
             continue
         return sub
     return None
+
+
+def active_manual_pro(db: Session, user: User) -> ManualProGrant | None:
+    """Newest unexpired complimentary-Pro grant for an account."""
+    now = _now()
+    return db.execute(
+        select(ManualProGrant)
+        .where(
+            ManualProGrant.user_id == user.id,
+            ManualProGrant.status == "active",
+            ManualProGrant.starts_at <= now,
+            (ManualProGrant.expires_at.is_(None)) | (ManualProGrant.expires_at > now),
+        )
+        .order_by(ManualProGrant.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
 
 
 def machine_remaining(db: Session, machine_hash: str | None) -> int:
@@ -117,6 +134,22 @@ def build_entitlement(
             )
 
     user_remaining = max(0, limit - user.trials_used)
+
+    manual_pro = active_manual_pro(db, user)
+    if manual_pro is not None:
+        return EntitlementOut(
+            allowed=user.is_active,
+            reason="manual_pro_active" if user.is_active else "account_disabled",
+            plan="subscription" if user.is_active else "blocked",
+            trials_limit=limit,
+            trials_used=user.trials_used,
+            trials_remaining=user_remaining,
+            device_trials_used=device_used,
+            device_trials_remaining=device_remaining,
+            subscription_status="manual",
+            current_period_end=_aware(manual_pro.expires_at),
+            upgrade_url=None,
+        )
 
     sub = active_subscription(db, user)
     if sub is not None:
@@ -267,7 +300,10 @@ def consume(
             },
         )
 
-    granted_by = "subscription" if entitlement.plan == "subscription" else "trial"
+    granted_by = (
+        "manual_pro" if entitlement.reason == "manual_pro_active"
+        else "subscription" if entitlement.plan == "subscription" else "trial"
+    )
     counted = granted_by == "trial"
 
     if counted:

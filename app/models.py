@@ -113,6 +113,9 @@ class User(TimestampMixin, Base):
     billing_payments: Mapped[list["BillingPayment"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    manual_pro_grants: Mapped[list["ManualProGrant"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
     usage_events: Mapped[list["UsageEvent"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
@@ -122,6 +125,21 @@ class User(TimestampMixin, Base):
             if SubscriptionStatus(sub.status).grants_access:
                 return sub
         return None
+
+    def active_manual_pro(self, now: datetime | None = None) -> "ManualProGrant | None":
+        """Return the latest valid complimentary-Pro grant, if any.
+
+        Manual access deliberately lives outside provider subscriptions so a
+        Razorpay webhook can never overwrite a support or promotional grant.
+        """
+        now = now or utcnow()
+        active = [
+            grant for grant in self.manual_pro_grants
+            if grant.status == "active"
+            and grant.starts_at <= now
+            and (grant.expires_at is None or grant.expires_at > now)
+        ]
+        return max(active, key=lambda grant: grant.created_at or grant.starts_at, default=None)
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +308,38 @@ class Subscription(TimestampMixin, Base):
     canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     user: Mapped[User] = relationship(back_populates="subscriptions")
+
+
+class ManualProGrant(TimestampMixin, Base):
+    """Append-only-ish operator grants for complimentary Pro access.
+
+    A replacement/extension creates a fresh active row and closes the previous
+    one, preserving a support audit trail without creating a fake payment or
+    Razorpay subscription.
+    """
+
+    __tablename__ = "manual_pro_grants"
+    __table_args__ = (
+        Index("ix_manual_pro_grants_user_status", "user_id", "status"),
+        Index("ix_manual_pro_grants_active_expires", "status", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # NULL means deliberately granted for the lifetime of the account.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    note: Mapped[str | None] = mapped_column(String(500))
+    granted_by_user_id: Mapped[str | None] = mapped_column(String(36))
+    granted_by_email: Mapped[str | None] = mapped_column(String(320))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_by_user_id: Mapped[str | None] = mapped_column(String(36))
+    revoked_by_email: Mapped[str | None] = mapped_column(String(320))
+
+    user: Mapped[User] = relationship(back_populates="manual_pro_grants")
 
 
 class BillingPayment(TimestampMixin, Base):

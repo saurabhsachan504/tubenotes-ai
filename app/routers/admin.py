@@ -26,6 +26,7 @@ from app.models import (
     Device,
     DeviceTrialLedger,
     CachedOutput,
+    ManualProGrant,
     ProcessingJob,
     Subscription,
     SubscriptionStatus,
@@ -51,6 +52,12 @@ class BlockDeviceRequest(BaseModel):
     device_hash: str
     blocked: bool = True
     reason: str | None = None
+
+
+class ManualProRequest(BaseModel):
+    duration_days: int = Field(default=30, ge=1, le=3650)
+    lifetime: bool = False
+    note: str | None = Field(default=None, max_length=500)
 
 
 @router.get("/stats")
@@ -126,6 +133,14 @@ def _reportable_user_condition(reporting_start: datetime):
                 )
             )
         ),
+        User.id.in_(
+            select(ManualProGrant.user_id).where(
+                or_(
+                    ManualProGrant.created_at >= reporting_start,
+                    ManualProGrant.updated_at >= reporting_start,
+                )
+            )
+        ),
     )
 
 
@@ -190,6 +205,33 @@ def _subscription_data(subscription: Subscription | None) -> dict | None:
         "canceled_at": _iso(subscription.canceled_at),
         "created_at": _iso(subscription.created_at),
         "updated_at": _iso(subscription.updated_at),
+    }
+
+
+def _active_manual_pro(grants: list[ManualProGrant], now: datetime | None = None) -> ManualProGrant | None:
+    now = now or datetime.now(timezone.utc)
+    valid = [
+        grant for grant in grants
+        if grant.status == "active"
+        and (_as_utc(grant.starts_at) or now) <= now
+        and (grant.expires_at is None or (_as_utc(grant.expires_at) or now) > now)
+    ]
+    return max(valid, key=lambda grant: _as_utc(grant.created_at) or _as_utc(grant.starts_at) or now, default=None)
+
+
+def _manual_pro_data(grant: ManualProGrant | None) -> dict | None:
+    if grant is None:
+        return None
+    return {
+        "id": grant.id,
+        "status": grant.status,
+        "starts_at": _iso(grant.starts_at),
+        "expires_at": _iso(grant.expires_at),
+        "note": grant.note,
+        "granted_by": grant.granted_by_email or "Administrator",
+        "granted_at": _iso(grant.created_at),
+        "revoked_at": _iso(grant.revoked_at),
+        "revoked_by": grant.revoked_by_email,
     }
 
 
@@ -370,6 +412,11 @@ async def dashboard(days: int = 10, db: Session = Depends(get_db)):
         .join(User, Subscription.user_id == User.id)
         .where(_reportable_user_condition(reporting_start))
     ).scalars().all()
+    manual_grants = db.execute(
+        select(ManualProGrant).where(
+            ManualProGrant.user_id.in_(select(User.id).where(_reportable_user_condition(reporting_start)))
+        )
+    ).scalars().all()
 
     recent_window = [
         (job, email) for job, email in job_rows
@@ -393,8 +440,19 @@ async def dashboard(days: int = 10, db: Session = Depends(get_db)):
         user_id: _subscription_status(subscription.status)
         for user_id, subscription in latest_subscriptions.items()
     }
+    manual_by_user: dict[str, list[ManualProGrant]] = {}
+    for grant in manual_grants:
+        manual_by_user.setdefault(grant.user_id, []).append(grant)
+    manual_active_ids = {
+        user_id for user_id, grants in manual_by_user.items()
+        if _active_manual_pro(grants, now) is not None
+    }
     paid_users = sum(1 for state in current_statuses.values() if state == "active")
-    active_pro_users = sum(1 for state in current_statuses.values() if state in {"active", "trialing"})
+    active_pro_ids = {
+        user_id for user_id, state in current_statuses.items()
+        if state in {"active", "trialing"}
+    } | manual_active_ids
+    active_pro_users = len(active_pro_ids)
     payment_issue_users = sum(1 for state in current_statuses.values() if state in {"past_due", "unpaid", "incomplete"})
     cancelled_users = sum(1 for state in current_statuses.values() if state == "canceled")
     notes_outputs = sum(1 for job, _email in recent_window if job.kind == "notes" and job.status == "success")
@@ -584,9 +642,17 @@ def users_overview(
             Subscription.user_id.in_(select(User.id).where(_reportable_user_condition(reporting_start)))
         )
     ).scalars().all()
+    manual_grants = db.execute(
+        select(ManualProGrant).where(
+            ManualProGrant.user_id.in_(select(User.id).where(_reportable_user_condition(reporting_start)))
+        )
+    ).scalars().all()
     subscriptions_by_user: dict[str, list[Subscription]] = {}
     for subscription in subscriptions:
         subscriptions_by_user.setdefault(subscription.user_id, []).append(subscription)
+    manual_by_user: dict[str, list[ManualProGrant]] = {}
+    for grant in manual_grants:
+        manual_by_user.setdefault(grant.user_id, []).append(grant)
     today = datetime.now(timezone.utc).date()
     active_today_ids = {
         job.user_id for job in jobs
@@ -605,11 +671,12 @@ def users_overview(
         current = user_subscriptions[0] if user_subscriptions else None
         current_status = _subscription_status(current.status) if current is not None else ""
         active = current if current_status in {"active", "trialing"} else None
+        manual_pro = _active_manual_pro(manual_by_user.get(user.id, []))
         if requested_status == "paid" and current_status != "active":
             continue
-        if requested_status == "subscribed" and active is None:
+        if requested_status == "subscribed" and active is None and manual_pro is None:
             continue
-        if requested_status == "free" and (current is not None or not user.is_active):
+        if requested_status == "free" and (current is not None or manual_pro is not None or not user.is_active):
             continue
         if requested_status == "payment_issue" and current_status not in {"past_due", "unpaid", "incomplete"}:
             continue
@@ -634,6 +701,7 @@ def users_overview(
             "trials_used": user.trials_used,
             "trial_limit": trial_limit,
             "subscription": _subscription_data(active or current),
+            "manual_pro": _manual_pro_data(manual_pro),
             "counts": _user_counts(user.id, jobs, usage_events, devices),
         })
         if len(rows) >= limit:
@@ -771,7 +839,13 @@ def user_detail(user_id: str, db: Session = Depends(get_db)):
         .where(Subscription.user_id == user.id)
         .order_by(Subscription.updated_at.desc())
     ).scalars().all()
+    manual_grants = db.execute(
+        select(ManualProGrant)
+        .where(ManualProGrant.user_id == user.id)
+        .order_by(ManualProGrant.created_at.desc())
+    ).scalars().all()
     active = subscriptions[0] if subscriptions and _subscription_status(subscriptions[0].status) in {"active", "trialing"} else None
+    manual_pro = _active_manual_pro(manual_grants)
     trial_limit = user.trial_limit_override if user.trial_limit_override is not None else settings.FREE_TRIAL_LIMIT
     return {
         "user": {
@@ -787,9 +861,11 @@ def user_detail(user_id: str, db: Session = Depends(get_db)):
             "trials_used": user.trials_used,
             "trial_limit": trial_limit,
             "subscription": _subscription_data(active or (subscriptions[0] if subscriptions else None)),
+            "manual_pro": _manual_pro_data(manual_pro),
             "counts": _user_counts(user.id, all_jobs, usage_events, devices),
         },
         "subscriptions": [_subscription_data(item) for item in subscriptions],
+        "manual_pro_history": [_manual_pro_data(item) for item in manual_grants],
         "devices": [{
             "label": item.label or "Unnamed device",
             "platform": item.platform or "Unknown platform",
@@ -911,6 +987,80 @@ def grant_trials(payload: GrantTrialsRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     return UserOut.model_validate(user)
+
+
+@router.post("/users/{user_id}/manual-pro")
+def grant_manual_pro(
+    user_id: str,
+    payload: ManualProRequest,
+    admin: User | None = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Grant or extend complimentary Pro without forging a provider payment."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    now = datetime.now(timezone.utc)
+    active_rows = db.execute(
+        select(ManualProGrant).where(
+            ManualProGrant.user_id == user.id,
+            ManualProGrant.status == "active",
+        )
+    ).scalars().all()
+    current = _active_manual_pro(active_rows, now)
+    if current is not None:
+        current.status = "superseded"
+        current.revoked_at = now
+        current.revoked_by_user_id = admin.id if admin else None
+        current.revoked_by_email = admin.email if admin else "Server administrator"
+
+    if payload.lifetime:
+        expires_at = None
+    else:
+        base = now
+        if current is not None and current.expires_at is not None:
+            base = max(base, _as_utc(current.expires_at) or now)
+        expires_at = base + timedelta(days=payload.duration_days)
+    grant = ManualProGrant(
+        user_id=user.id,
+        status="active",
+        starts_at=now,
+        expires_at=expires_at,
+        note=(payload.note or "").strip() or None,
+        granted_by_user_id=admin.id if admin else None,
+        granted_by_email=admin.email if admin else "Server administrator",
+    )
+    db.add(grant)
+    db.commit()
+    db.refresh(grant)
+    return {"detail": "Complimentary Pro access granted", "manual_pro": _manual_pro_data(grant)}
+
+
+@router.delete("/users/{user_id}/manual-pro", response_model=MessageOut)
+def revoke_manual_pro(
+    user_id: str,
+    admin: User | None = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    now = datetime.now(timezone.utc)
+    rows = db.execute(
+        select(ManualProGrant).where(
+            ManualProGrant.user_id == user.id,
+            ManualProGrant.status == "active",
+        )
+    ).scalars().all()
+    active = _active_manual_pro(rows, now)
+    if active is None:
+        raise HTTPException(status_code=404, detail="No active complimentary Pro access")
+    active.status = "revoked"
+    active.revoked_at = now
+    active.revoked_by_user_id = admin.id if admin else None
+    active.revoked_by_email = admin.email if admin else "Server administrator"
+    db.commit()
+    return MessageOut(detail="Complimentary Pro access revoked")
 
 
 @router.post("/block-device", response_model=MessageOut)

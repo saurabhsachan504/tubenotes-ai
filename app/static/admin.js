@@ -17,6 +17,7 @@
   let settingsLoading = false;
   let autoUpdateInFlight = false;
   let lastSettingsAutoUpdate = 0;
+  let activeDrawerUserId = null;
 
   function currentTheme() { return document.documentElement.dataset.adminTheme === "light" ? "light" : "dark"; }
   function applyTheme(theme, persist = true) {
@@ -102,6 +103,12 @@
     return money + "/month · " + String(subscription.status || "unknown");
   }
   function tableEmpty(columns, message) { return `<tr><td colspan="${columns}" class="muted">${esc(message)}</td></tr>`; }
+  function manualProText(manualPro) {
+    if (!manualPro) return "";
+    return manualPro.expires_at
+      ? "Complimentary Pro · ends " + dateTime(manualPro.expires_at)
+      : "Complimentary Pro · lifetime";
+  }
 
   function lineChart(el, labels, values) {
     const width = 580, height = 164, left = 24, bottom = 22, top = 11, right = 6;
@@ -206,6 +213,7 @@
   }
   function userStatus(user) {
     if (!user.is_active) return "Disabled";
+    if (user.manual_pro) return "Complimentary Pro";
     const state = String((user.subscription || {}).status || "").toLowerCase();
     if (["active", "trialing"].includes(state)) return "Subscribed";
     if (["past_due", "unpaid", "incomplete"].includes(state)) return "Payment issue";
@@ -219,7 +227,7 @@
       const counts = user.counts || {};
       const trialLimit = Number(user.trial_limit || 0);
       const status = userStatus(user).toLowerCase().replace(" ", "-");
-      return `<tr><td><b>${esc(user.full_name || user.email)}</b><br><small>${esc(user.email)}</small></td><td>${esc(dateTime(user.signup_at))}</td><td>${esc(dateTime(user.last_login_at))}</td><td>${esc(countryLabel(user.country))}</td><td>${esc(planText(user.subscription))}</td><td>${number(user.trials_used)} / ${number(trialLimit)}</td><td>${number(counts.videos)}</td><td>${number(counts.pdfs)}</td><td>${number(counts.translations)}</td><td>${number(counts.active_devices)} / ${number(counts.devices)}</td><td><span class="status ${esc(status)}">${esc(userStatus(user))}</span></td><td><button class="view-user" type="button" data-user-id="${esc(user.id)}">View</button></td></tr>`;
+      return `<tr><td><b>${esc(user.full_name || user.email)}</b><br><small>${esc(user.email)}</small></td><td>${esc(dateTime(user.signup_at))}</td><td>${esc(dateTime(user.last_login_at))}</td><td>${esc(countryLabel(user.country))}</td><td>${esc(user.manual_pro ? manualProText(user.manual_pro) : planText(user.subscription))}</td><td>${number(user.trials_used)} / ${number(trialLimit)}</td><td>${number(counts.videos)}</td><td>${number(counts.pdfs)}</td><td>${number(counts.translations)}</td><td>${number(counts.active_devices)} / ${number(counts.devices)}</td><td><span class="status ${esc(status)}">${esc(userStatus(user))}</span></td><td><button class="view-user" type="button" data-user-id="${esc(user.id)}">View</button></td></tr>`;
     }).join("") : tableEmpty(12, "No users match these filters.");
   }
   async function loadUsers() {
@@ -493,7 +501,7 @@
       setActionResult("maintenanceActionResult", number(payload.total_errors) + " error logs exported.", "success");
     } catch (_) { setActionResult("maintenanceActionResult", "Could not export error logs. Please retry.", "failed"); }
   }
-  function closeUserDrawer() { $("userDrawer").classList.add("hidden"); }
+  function closeUserDrawer() { activeDrawerUserId = null; $("userDrawer").classList.add("hidden"); }
   function renderSubscriptionRows(subscriptions) {
     return subscriptions.length ? `<table><thead><tr><th>Provider</th><th>Status</th><th>Price</th><th>Renewal</th><th>Cancellation</th></tr></thead><tbody>${subscriptions.map(sub => `<tr><td>${esc(sub.provider)}</td><td><span class="status ${esc(String(sub.status || "").toLowerCase())}">${esc(sub.status)}</span></td><td>${esc(planText(sub).replace("/month · " + sub.status, ""))}</td><td>${esc(dateTime(sub.current_period_end))}</td><td>${sub.cancel_at_period_end ? "At period end" : "No"}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">No subscription has been created for this user.</p>`;
   }
@@ -504,20 +512,35 @@
     const rows = errorsOnly ? jobs.filter(item => item.status === "failed") : jobs;
     return rows.length ? `<table><thead><tr><th>Started</th><th>Video / title</th><th>Type</th><th>Language</th><th>Status</th><th>PDF</th><th>Time</th><th>Tokens*</th><th>Error</th></tr></thead><tbody>${rows.map(job => `<tr><td>${esc(dateTime(job.started_at))}</td><td>${job.video_url ? `<a class="video-link" target="_blank" rel="noreferrer" href="${esc(job.video_url)}">${esc(job.title || job.video_id || "YouTube video")}</a>` : esc(job.title || job.video_id || "—")}</td><td>${esc(job.kind)}</td><td>${esc(language(job.language))}</td><td><span class="status ${esc(String(job.status || "").toLowerCase())}">${esc(job.status)}</span></td><td>${job.pdf_generated ? "Yes" : "—"}</td><td>${esc(elapsed(job.duration_ms))}</td><td>${job.output_tokens == null ? "—" : number(job.output_tokens)}</td><td title="${esc(job.error_message || "")}">${esc(job.error_message || "—")}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">${errorsOnly ? "No recorded errors for this user." : "No recorded jobs for this user yet."}</p>`;
   }
+  function renderManualPro(payload) {
+    const current = payload.user.manual_pro;
+    const panel = $("manualProPanel");
+    const history = payload.manual_pro_history || [];
+    const currentCopy = current
+      ? `<p class="manual-pro-current"><b>Active:</b> ${esc(manualProText(current))}${current.note ? `<br><span>${esc(current.note)}</span>` : ""}</p>`
+      : `<p class="muted">No complimentary Pro access is currently active.</p>`;
+    panel.innerHTML = `${currentCopy}<form id="manualProForm" class="manual-pro-form"><label>Duration<select id="manualProDuration"><option value="30">1 month</option><option value="90">3 months</option><option value="365">1 year</option><option value="lifetime">Lifetime</option></select></label><label>Internal note<input id="manualProNote" maxlength="500" placeholder="e.g. promotional access"></label><button class="action-button" type="submit">${current ? "Extend Pro" : "Grant Pro"}</button>${current ? '<button class="danger-button" type="button" data-revoke-manual-pro="true">Revoke Pro</button>' : ""}</form><p id="manualProActionResult" class="action-result"></p>`;
+    history.innerHTML = history.length
+      ? `<table><thead><tr><th>Status</th><th>Access period</th><th>Note</th><th>Granted by</th></tr></thead><tbody>${history.map(item => `<tr><td><span class="status ${esc(String(item.status || "").toLowerCase())}">${esc(item.status)}</span></td><td>${esc(dateTime(item.starts_at))}<br><small>${item.expires_at ? "Ends " + esc(dateTime(item.expires_at)) : "Lifetime"}</small></td><td>${esc(item.note || "—")}</td><td>${esc(item.granted_by || "Administrator")}<br><small>${esc(dateTime(item.granted_at))}</small></td></tr>`).join("")}</tbody></table>`
+      : "";
+  }
   function renderUserDetail(payload) {
     const user = payload.user, counts = user.counts || {};
     $("drawerTitle").textContent = user.full_name || user.email;
     $("userProfile").innerHTML = `<div><h3>${esc(user.full_name || "No name supplied")}</h3><p>${esc(user.email)}</p><p class="muted">Signed up ${esc(dateTime(user.signup_at))} · Last login ${esc(dateTime(user.last_login_at))}</p></div><div class="profile-grid"><span><b>${esc(countryLabel(user.country))}</b>Country</span><span><b>${number(user.trials_used)} / ${number(user.trial_limit)}</b>Free trials used</span><span><b>${number(counts.videos)}</b>Videos</span><span><b>${number(counts.pdfs)}</b>PDFs</span><span><b>${number(counts.translations)}</b>Translations</span><span><b>${number(counts.active_devices)} / ${number(counts.devices)}</b>Active devices</span></div><p class="profile-plan"><b>${esc(planText(user.subscription))}</b> · ${user.is_active ? "Account active" : "Account disabled"} · ${user.email_verified ? "Email verified" : "Email not verified"}</p>`;
+    if (user.manual_pro) $("userProfile").querySelector(".profile-plan b").textContent = manualProText(user.manual_pro);
+    renderManualPro(payload);
     $("userSubscriptions").innerHTML = renderSubscriptionRows(payload.subscriptions || []);
     $("userDevices").innerHTML = renderDeviceRows(payload.devices || []);
     $("userJobs").innerHTML = renderJobRows(payload.jobs || []);
     $("userErrors").innerHTML = renderJobRows(payload.errors || [], true);
   }
   async function openUserDetail(userId) {
+    activeDrawerUserId = userId;
     $("userDrawer").classList.remove("hidden");
     $("drawerTitle").textContent = "Loading user...";
     $("userProfile").innerHTML = `<p class="muted">Loading account details...</p>`;
-    ["userSubscriptions", "userDevices", "userJobs", "userErrors"].forEach(id => $(id).innerHTML = "");
+    ["manualProPanel", "manualProHistory", "userSubscriptions", "userDevices", "userJobs", "userErrors"].forEach(id => $(id).innerHTML = "");
     try { renderUserDetail(await api("/users/" + encodeURIComponent(userId) + "/detail")); }
     catch (_) { $("userProfile").innerHTML = `<p class="muted">Could not load this user. Close the panel and try again.</p>`; }
   }
@@ -598,6 +621,37 @@
       const user = await api("/grant-trials", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({email, trial_limit: trialLimit})});
       setActionResult("trialActionResult", "Trial allowance updated for " + user.email + ".", "success");
     } catch (_) { setActionResult("trialActionResult", "Could not update trials. Check the email and retry.", "failed"); }
+  };
+  $("manualProPanel").onsubmit = async event => {
+    if (event.target.id !== "manualProForm") return;
+    event.preventDefault();
+    if (!activeDrawerUserId) return;
+    const duration = $("manualProDuration").value;
+    const lifetime = duration === "lifetime";
+    const note = $("manualProNote").value.trim();
+    const label = lifetime ? "lifetime" : duration + " days";
+    if (!window.confirm(`Grant complimentary Pro access for ${label}? This does not create a Razorpay payment.`)) return;
+    try {
+      const result = await api("/users/" + encodeURIComponent(activeDrawerUserId) + "/manual-pro", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({duration_days: lifetime ? 30 : Number(duration), lifetime, note}),
+      });
+      await openUserDetail(activeDrawerUserId);
+      setActionResult("manualProActionResult", result.detail || "Complimentary Pro access granted.", "success");
+      loadUsers();
+      load();
+    } catch (_) { setActionResult("manualProActionResult", "Could not grant Pro access. Please retry.", "failed"); }
+  };
+  $("manualProPanel").onclick = async event => {
+    if (!event.target.closest("[data-revoke-manual-pro]") || !activeDrawerUserId) return;
+    if (!window.confirm("Revoke this user's complimentary Pro access now?")) return;
+    try {
+      const result = await api("/users/" + encodeURIComponent(activeDrawerUserId) + "/manual-pro", {method: "DELETE"});
+      await openUserDetail(activeDrawerUserId);
+      setActionResult("manualProActionResult", result.detail || "Complimentary Pro access revoked.", "success");
+      loadUsers();
+      load();
+    } catch (_) { setActionResult("manualProActionResult", "Could not revoke Pro access. Please retry.", "failed"); }
   };
   $("purgeCache").onclick = async () => {
     const days = Number($("purgeDays").value);

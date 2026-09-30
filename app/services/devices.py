@@ -130,7 +130,10 @@ def register_device(
             .select_from(Device)
             .where(Device.user_id == user.id, Device.revoked.is_(False))
         ).scalar_one()
-        subscribed = user.active_subscription() is not None
+        subscribed = (
+            user.active_subscription() is not None
+            or user.active_manual_pro() is not None
+        )
         # Owner/team accounts are exempt: they have to be able to test from the
         # extension, the web app and a second browser without hitting a cap
         # meant for ordinary free users.
