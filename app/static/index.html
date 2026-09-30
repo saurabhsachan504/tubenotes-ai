@@ -41,8 +41,9 @@
     position:sticky; top:0; z-index:40;
   }
   .nav-in{display:flex;align-items:center;justify-content:space-between;height:60px}
-  .logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:19px;letter-spacing:-.02em}
+  .logo{display:flex;align-items:center;gap:9px;color:var(--ink);font-weight:800;font-size:19px;letter-spacing:-.02em;text-decoration:none}
   .logo svg{flex-shrink:0}
+  .logo:hover{color:var(--brand1)}.logo:focus-visible{border-radius:8px;outline:3px solid rgba(168,85,247,.28);outline-offset:4px}
   .nav-right{display:flex;align-items:center;gap:6px}
   .nav-btn{
     background:none;border:1px solid transparent;color:var(--muted);
@@ -567,10 +568,10 @@
 <body>
 
 <nav class="nav"><div class="wrap nav-in">
-  <div class="logo">
+  <a class="logo" href="/" aria-label="TubeNotes home">
     <svg width="28" height="28" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="url(#lg)"/><path d="M13 10l9 6-9 6z" fill="#fff"/><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#ec4899"/></linearGradient></defs></svg>
     <span>TubeNotes</span>
-  </div>
+  </a>
   <div class="nav-right">
     <span id="trialChip" class="chip-trials hidden"></span>
     <div class="legal-menu"><button class="nav-btn legal-trigger" id="legalMenuBtn" type="button" aria-expanded="false" aria-controls="legalMenu">Legal</button><nav class="legal-popover hidden" id="legalMenu" aria-label="Legal pages"><a href="/about">About Us</a><a href="/terms">Terms &amp; Conditions</a><a href="/privacy">Privacy Policy</a><a href="/refund-policy">Refund Policy</a><a href="/contact">Contact Us</a></nav></div>
