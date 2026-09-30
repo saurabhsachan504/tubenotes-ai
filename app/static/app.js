@@ -949,7 +949,7 @@
       { label: "Copy Summary", icon: ICONS.copy, tone: "t-copy", onClick: () => {
           navigator.clipboard.writeText(text).then(() => status("Copied to clipboard"));
         } },
-      ...(isNotes ? [] : [{ label: "Full PDF Notes", icon: ICONS.notes, tone: "t-notes",
+      ...(isNotes ? [] : [{ label: "Full Notes PDF", icon: ICONS.notes, tone: "t-notes",
                             onClick: () => pdfFlow({ full: true }) }]),
       { label: "Open on YouTube", icon: ICONS.open, tone: "t-youtube", onClick: () => {
           if (lastNotes) window.open(lastNotes.url, "_blank", "noopener");
@@ -1187,7 +1187,7 @@
       if (pdfAction) {
         if (pending) pending.remove();
         showPdfButtons(pdfAction);
-        addChatMessage("assistant", "Please use the **Full PDF Notes** button above to generate and download the detailed PDF notes.");
+        addChatMessage("assistant", "Please use the **Full Notes PDF** button above to generate and download the detailed PDF notes.");
         return;
       }
       if (translateTarget) {
@@ -1850,7 +1850,8 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     } finally { btn.disabled = false; }
   });
 
-  $("forgotBtn").onclick = async () => {
+  const forgotBtn = $("forgotBtn");
+  if (forgotBtn) forgotBtn.onclick = async () => {
     const email = $("email").value.trim();
     const msg = $("authMsg");
     if (!email) { msg.textContent = "Enter your email first."; return; }
@@ -1933,10 +1934,11 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     }
   }
 
-  $("showPwd").onclick = () => {
+  const showPwd = $("showPwd");
+  if (showPwd) showPwd.onclick = () => {
     const opening = $("pwdWrap").classList.contains("hidden");
     $("pwdWrap").classList.toggle("hidden");
-    $("showPwd").textContent = opening
+    showPwd.textContent = opening
       ? "Hide email & password"
       : "Continue with email & password";
     if (opening) $("email").focus();
