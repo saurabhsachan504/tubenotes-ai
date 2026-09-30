@@ -1752,7 +1752,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     google.accounts.id.renderButton($("gsiButton"), {
       theme: document.documentElement.dataset.theme === "dark" ? "filled_black" : "outline",
       size: "large",
-      width: 280,
+      width: 340,
       text: "continue_with",
       shape: "pill",
     });
@@ -1789,7 +1789,12 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   }
 
   $("showPwd").onclick = () => {
+    const opening = $("pwdWrap").classList.contains("hidden");
     $("pwdWrap").classList.toggle("hidden");
+    $("showPwd").textContent = opening
+      ? "Hide email & password"
+      : "Continue with email & password";
+    if (opening) $("email").focus();
   };
 
   // ---- boot ----
