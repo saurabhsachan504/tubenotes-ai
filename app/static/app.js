@@ -896,17 +896,11 @@
 
   function finishTools(text, isNotes) {
     tools([
-      { label: "Copy", icon: ICONS.copy, tone: "t-copy", onClick: () => {
+      { label: "Copy Summary", icon: ICONS.copy, tone: "t-copy", onClick: () => {
           navigator.clipboard.writeText(text).then(() => status("Copied to clipboard"));
         } },
-      // Download exactly what is on screen. This preserves a translation and
-      // never regenerates the text or opens the browser print dialog.
-      { label: "Download PDF", icon: ICONS.pdf, tone: "t-pdf",
-        onClick: () => pdfFlow({ full: false }) },
-      ...(isNotes ? [] : [{ label: "Full notes → PDF", icon: ICONS.notes, tone: "t-notes",
+      ...(isNotes ? [] : [{ label: "Full PDF Notes", icon: ICONS.notes, tone: "t-notes",
                             onClick: () => pdfFlow({ full: true }) }]),
-      { label: "Download .md", icon: ICONS.md, tone: "t-md",
-        onClick: () => downloadMd(lastNotes ? lastNotes.markdown : text) },
       { label: "Open on YouTube", icon: ICONS.open, tone: "t-youtube", onClick: () => {
           if (lastNotes) window.open(lastNotes.url, "_blank", "noopener");
         } },
@@ -994,12 +988,7 @@
   function showPdfButtons(action) {
     const toolbar = $("rTools");
     if (!toolbar) return;
-    const all = Array.from(toolbar.querySelectorAll(".t-pdf, .t-notes"));
-    const targets = action === "full"
-      ? all.filter((button) => button.classList.contains("t-notes"))
-      : action === "download"
-        ? all.filter((button) => button.classList.contains("t-pdf"))
-        : all;
+    const targets = Array.from(toolbar.querySelectorAll(".t-notes"));
     toolbar.scrollIntoView({ behavior: "smooth", block: "center" });
     targets.forEach((button) => {
       button.classList.remove("chat-pdf-focus");
@@ -1059,12 +1048,7 @@
       if (pdfAction) {
         if (pending) pending.remove();
         showPdfButtons(pdfAction);
-        const message = pdfAction === "full"
-          ? "Main aapko upar **Full notes → PDF** button tak le gaya hoon. Use click karke detailed PDF banaiye."
-          : pdfAction === "download"
-            ? "Main aapko upar **Download PDF** button tak le gaya hoon. Use click karke current summary ka PDF download kijiye."
-            : "Main aapko upar PDF buttons tak le gaya hoon. **Download PDF** current summary ke liye hai, aur **Full notes → PDF** detailed notes ke liye hai.";
-        addChatMessage("assistant", message);
+        addChatMessage("assistant", "Main aapko upar **Full PDF Notes** button tak le gaya hoon. Use click karke detailed PDF banaiye.");
         return;
       }
       if (translateTarget) {
