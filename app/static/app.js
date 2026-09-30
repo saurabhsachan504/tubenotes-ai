@@ -977,6 +977,18 @@
     return null;
   }
 
+  function chatReplyLanguage(question) {
+    // "Hindi me answer do" and "explain in French" should change only the
+    // reply language. A translation command is handled separately above.
+    const q = String(question || "").toLocaleLowerCase();
+    const asksForReply = /answer|reply|respond|explain|describe|tell|bata|samjha|bol|language|\bin\b|\bme\b|\bmein\b/i.test(q);
+    if (!asksForReply) return null;
+    for (const [code, aliases] of CHAT_LANGUAGE_ALIASES) {
+      if (aliases.some((alias) => q.includes(alias.toLocaleLowerCase()))) return code;
+    }
+    return null;
+  }
+
   function chatPdfAction(question) {
     const q = String(question || "").toLocaleLowerCase();
     if (!/(\bpdf\b|पीडीएफ)/i.test(q)) return null;
@@ -1037,6 +1049,7 @@
     if (!question) return;
     const prior = videoChat.history.slice(-10);
     const translateTarget = chatTranslationTarget(question);
+    const replyLanguage = chatReplyLanguage(question);
     const pdfAction = chatPdfAction(question);
     videoChat.busy = true;
     input.value = "";
@@ -1059,7 +1072,13 @@
       }
       const res = await api("/video-chat", {
         method: "POST",
-        body: { summary: videoChat.context.summary, language: videoChat.context.language, question, history: prior },
+        body: {
+          summary: videoChat.context.summary,
+          language: videoChat.context.language,
+          reply_language: replyLanguage,
+          question,
+          history: prior,
+        },
       });
       if (pending) pending.remove();
       addChatMessage("assistant", res.answer || "I could not find an answer in this video’s summary.");

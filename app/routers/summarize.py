@@ -101,6 +101,10 @@ class VideoChatRequest(BaseModel):
     summary: str = Field(min_length=20, max_length=80_000)
     question: str = Field(min_length=1, max_length=2_000)
     language: str = Field(default="en", min_length=2, max_length=8)
+    # A language explicitly requested in chat (for example, "answer in Hindi").
+    # The browser derives this only from a language-command phrase; it does not
+    # alter the video summary or the saved output language.
+    reply_language: str | None = Field(default=None, min_length=2, max_length=8)
     history: list[VideoChatTurn] = Field(default_factory=list, max_length=12)
 
 
@@ -972,9 +976,15 @@ async def video_chat(
     is busy, without limiting how many questions a user may ask.
     """
     del user  # Authentication is required; no user record is changed for chat.
-    # The latest question sets the reply language. The summary's language is
-    # only a fallback for a very short or otherwise ambiguous question.
-    target = summarizer.detect_chat_language(payload.question, payload.language)
+    # An explicit chat command ("answer in Hindi") wins over the language of
+    # the typed question. Otherwise the latest question decides, with the
+    # summary's language only as a fallback for an ambiguous short question.
+    requested = (payload.reply_language or "").split("-")[0].lower()
+    target = (
+        requested
+        if requested in summarizer.LANG_NAMES
+        else summarizer.detect_chat_language(payload.question, payload.language)
+    )
     history = [(turn.role, turn.content) for turn in payload.history]
     try:
         answer, _write_lang, translate_to = await summarizer.answer_about_summary(

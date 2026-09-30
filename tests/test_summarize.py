@@ -261,6 +261,35 @@ def test_video_chat_replies_in_the_question_language(client, device, monkeypatch
     assert res.json()["language"] == "hi"
 
 
+def test_video_chat_explicit_language_command_overrides_question_language(client, device, monkeypatch):
+    _, headers, _ = register(client, device=device)
+
+    async def fake_answer(summary, question, history, *, lang):
+        assert question == "Please explain this in Hindi."
+        assert lang == "hi"
+        return "\u0939\u093f\u0902\u0926\u0940 \u092e\u0947\u0902 \u0938\u094d\u092a\u0937\u094d\u091f\u0940\u0915\u0930\u0923", "hi", None
+
+    async def fake_ensure(text, target):
+        assert target == "hi"
+        return text, False
+
+    monkeypatch.setattr(summarizer, "answer_about_summary", fake_answer)
+    monkeypatch.setattr("app.routers.summarize.translate.ensure_language", fake_ensure)
+    res = client.post(
+        f"{API}/video-chat",
+        json={
+            "summary": "This video explains photosynthesis in plants and how they make food.",
+            "question": "Please explain this in Hindi.",
+            "language": "en",
+            "reply_language": "hi",
+            "history": [],
+        },
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["language"] == "hi"
+
+
 def test_chat_command_translates_the_full_summary_without_a_trial(client, device, monkeypatch):
     _, headers, _ = register(client, device=device)
 
