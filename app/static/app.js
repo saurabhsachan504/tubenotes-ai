@@ -948,7 +948,11 @@
     videoChat = {
       context: { summary, language: lastNotes.lang || "en" }, history: [], busy: false,
     };
-    R().insertAdjacentHTML("beforeend", chatCard());
+    // Keep follow-up chat within the same result card as the summary, rather
+    // than creating a visually separate card beneath it.
+    const summaryBody = $("rBody");
+    if (!summaryBody) return;
+    summaryBody.insertAdjacentHTML("afterend", chatCard());
     const form = $("videoChatForm");
     const input = $("videoChatInput");
     form.addEventListener("submit", sendVideoChat);

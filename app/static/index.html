@@ -270,13 +270,13 @@
   [data-theme="dark"] .note.warn{color:#fbbf24}
 
   /* ---------------- follow-up video chat ---------------- */
+  /* The chat lives inside the result card, directly below the summary. */
   .video-chat{
-    position:relative;overflow:hidden;margin-top:20px;padding:20px;
-    border:1px solid var(--line);border-radius:16px;background:var(--panel);
-    box-shadow:var(--shadow);
+    position:relative;margin-top:26px;padding:22px 0 0;
+    border-top:1px solid var(--line);background:transparent;
   }
   .video-chat::before{
-    content:"";position:absolute;inset:0 0 auto;height:3px;
+    content:"";position:absolute;inset:-1px 0 auto;height:2px;
     background:linear-gradient(90deg,var(--brand1),var(--brand2),var(--brand3));
   }
   .video-chat-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:15px}
@@ -317,7 +317,7 @@
   .chat-send:hover{filter:brightness(1.08)}.chat-send:disabled,.chat-form textarea:disabled{opacity:.62;cursor:wait}
   .tool.chat-pdf-focus{outline:3px solid rgba(250,204,21,.92);outline-offset:3px;animation:chat-pdf-pulse .9s ease-in-out 3}
   @keyframes chat-pdf-pulse{50%{transform:translateY(-3px) scale(1.035);filter:brightness(1.16)}}
-  [data-theme="dark"] .video-chat{background:linear-gradient(145deg,rgba(41,30,83,.46),var(--panel) 42%)}
+  [data-theme="dark"] .video-chat{background:transparent}
 
   /* ---------------- how it works / faq ---------------- */
   .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:8px}
