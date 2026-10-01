@@ -250,6 +250,7 @@ class ProcessingJob(Base):
         Index("ix_processing_jobs_started_at", "started_at"),
         Index("ix_processing_jobs_user_started", "user_id", "started_at"),
         Index("ix_processing_jobs_status_started", "status", "started_at"),
+        Index("ix_processing_jobs_source_started", "client_source", "started_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -258,6 +259,9 @@ class ProcessingJob(Base):
     video_url: Mapped[str | None] = mapped_column(String(500))
     title: Mapped[str | None] = mapped_column(String(500))
     kind: Mapped[str] = mapped_column(String(32), nullable=False)  # summary|notes|pdf|translation
+    # ``web`` for the TubeNotes site; ``extension`` for Chrome extension
+    # requests. This is analytics only, never an entitlement/security check.
+    client_source: Mapped[str] = mapped_column(String(20), default="web", nullable=False)
     language: Mapped[str | None] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="processing")
     pdf_generated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

@@ -92,3 +92,72 @@ def test_admin_reporting_start_hides_old_records_without_deleting_them(
     # when it performs fresh activity; no historical row was deleted.
     assert db.query(User).filter_by(email="before@example.com").one_or_none() is not None
 
+
+def test_dashboard_separates_completed_extension_operations(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", "admin-test-key")
+    body, _headers, _device = register(client, email="extension@example.com")
+    now = datetime.now(timezone.utc)
+    db.add_all([
+        ProcessingJob(
+            user_id=body["user"]["id"], kind="summary", client_source="extension",
+            status="success", started_at=now,
+        ),
+        ProcessingJob(
+            user_id=body["user"]["id"], kind="notes", client_source="extension",
+            status="success", pdf_generated=True, started_at=now,
+        ),
+        ProcessingJob(
+            user_id=body["user"]["id"], kind="translation", client_source="extension",
+            status="success", started_at=now,
+        ),
+        ProcessingJob(
+            user_id=body["user"]["id"], kind="summary", client_source="web",
+            status="success", started_at=now,
+        ),
+    ])
+    db.commit()
+
+    admin_headers = {"X-Admin-Key": "admin-test-key"}
+    dashboard = client.get(f"{API}/admin/dashboard", headers=admin_headers)
+    assert dashboard.status_code == 200, dashboard.text
+    metrics = dashboard.json()["metrics"]
+    assert metrics["extension_summaries"] == 1
+    assert metrics["extension_pdfs"] == 1
+    assert metrics["extension_translations"] == 1
+
+    overview = client.get(
+        f"{API}/admin/operations?category=extension_summaries&days=10",
+        headers=admin_headers,
+    )
+    assert overview.status_code == 200, overview.text
+    assert overview.json()["total_jobs"] == 1
+    assert overview.json()["operations"][0]["client_source"] == "extension"
+
+
+def test_extension_translation_activity_is_counted_only_for_extension_origin(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", "admin-test-key")
+    _body, headers, _device = register(client, email="extension-translate@example.com")
+    payload = {
+        "kind": "translation",
+        "language": "hi",
+        "video_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "title": "Extension translation",
+        "output_chars": 42,
+    }
+
+    blocked = client.post(f"{API}/extension/activity", json=payload, headers=headers)
+    assert blocked.status_code == 403
+
+    allowed = client.post(
+        f"{API}/extension/activity",
+        json=payload,
+        headers={**headers, "Origin": "chrome-extension://abcdefghijklmnop"},
+    )
+    assert allowed.status_code == 200, allowed.text
+
+    dashboard = client.get(
+        f"{API}/admin/dashboard", headers={"X-Admin-Key": "admin-test-key"}
+    )
+    assert dashboard.status_code == 200, dashboard.text
+    assert dashboard.json()["metrics"]["extension_translations"] == 1
+

@@ -53,6 +53,21 @@ def _job_city(request: Request) -> str:
     return pricing.city_for_headers(request.headers) or "Unknown"
 
 
+def _is_extension_origin(request: Request) -> bool:
+    return request.headers.get("origin", "").strip().lower().startswith("chrome-extension://")
+
+
+def _job_client_source(request: Request) -> str:
+    """Classify Chrome extension activity without trusting a body parameter.
+
+    Chrome supplies its protected ``chrome-extension://…`` Origin on its
+    cross-origin fetches. Same-origin web-app calls are therefore recorded as
+    web by default. This affects dashboard analytics only, never access rules.
+    """
+    declared = request.headers.get("x-tubenotes-client", "").strip().lower()
+    return "extension" if _is_extension_origin(request) or declared == "extension" else "web"
+
+
 # ---------------------------------------------------------------------------
 class VideoRequest(BaseModel):
     url: str = Field(min_length=5, max_length=500)
@@ -88,6 +103,16 @@ class TranslateOut(BaseModel):
     text: str
     target_lang: str
     language_name: str
+
+
+class ExtensionActivityRequest(BaseModel):
+    """Completion notice for an extension action performed locally."""
+
+    kind: Literal["translation"]
+    language: str | None = Field(default=None, max_length=8)
+    video_url: str | None = Field(default=None, max_length=500)
+    title: str | None = Field(default=None, max_length=500)
+    output_chars: int = Field(default=0, ge=0, le=200_000)
 
 
 class VideoChatTurn(BaseModel):
@@ -497,6 +522,7 @@ async def summarize(
         video_id=video_id,
         video_url=payload.url,
         kind=payload.mode,
+        client_source=_job_client_source(request),
         language=payload.target_lang,
         request_city=_job_city(request),
         request_country=_job_country(request),
@@ -700,6 +726,7 @@ async def notes(
         video_id=video_id,
         video_url=payload.url,
         kind="notes",
+        client_source=_job_client_source(request),
         language=payload.target_lang,
         request_city=_job_city(request),
         request_country=_job_country(request),
@@ -939,6 +966,7 @@ async def translate_text(
         video_id=None,
         video_url=None,
         kind="translation",
+        client_source=_job_client_source(request),
         language=target,
         request_city=_job_city(request),
         request_country=_job_country(request),
@@ -962,6 +990,42 @@ async def translate_text(
     return TranslateOut(
         text=text, target_lang=target, language_name=summarizer.language_name(target)
     )
+
+
+@router.post("/extension/activity")
+async def record_extension_activity(
+    payload: ExtensionActivityRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    """Record a completed extension-only action such as local translation.
+
+    The Chrome extension uses Google Translate for its in-panel conversion, so
+    there is no normal backend generation request to audit. Its browser-origin
+    request is required here; a web page cannot create extension analytics.
+    """
+    if not _is_extension_origin(request):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Extension origin required")
+    job_id = await run_in_threadpool(
+        job_audit.start,
+        user_id=user.id,
+        video_id=None,
+        video_url=payload.video_url,
+        kind=payload.kind,
+        client_source="extension",
+        language=payload.language,
+        request_city=_job_city(request),
+        request_country=_job_country(request),
+    )
+    await run_in_threadpool(
+        job_audit.finish,
+        job_id,
+        status="success",
+        title=payload.title or "Extension translated output",
+        language=payload.language,
+        output_text="x" * payload.output_chars if payload.output_chars else None,
+    )
+    return {"detail": "Extension activity recorded"}
 
 
 @router.post("/video-chat", response_model=VideoChatOut)
@@ -1101,6 +1165,7 @@ async def notes_pdf(
         video_id=video_id,
         video_url=payload.url,
         kind="pdf",
+        client_source=_job_client_source(request),
         language=target or payload.target_lang,
         request_city=_job_city(request),
         request_country=_job_country(request),

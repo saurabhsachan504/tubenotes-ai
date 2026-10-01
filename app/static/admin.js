@@ -155,7 +155,7 @@
     const rows = $(bodyId).querySelectorAll("tr");
     if (!jobs.length) {
       const empty = $(bodyId).querySelector("td[colspan]");
-      if (empty) empty.colSpan = bodyId === "operationsRows" ? 12 : 11;
+      if (empty) empty.colSpan = bodyId === "operationsRows" ? 13 : 11;
       return;
     }
     rows.forEach((row, index) => {
@@ -206,7 +206,7 @@
   }
   function render(d) {
     data = d; const m = d.metrics, labels = d.charts.labels;
-    $("totalUsers").textContent = number(m.total_users); $("activeToday").textContent = number(m.active_today); $("videoJobs").textContent = number(m.video_jobs); $("summaryOutputs").textContent = number(m.summary_outputs); $("pdfGenerated").textContent = number(m.pdf_requests); $("translations").textContent = number(m.translations); $("failedJobs").textContent = number(m.failed_jobs); $("subscriptions").textContent = number(m.active_subscriptions) + " active subscriptions";
+    $("totalUsers").textContent = number(m.total_users); $("activeToday").textContent = number(m.active_today); $("videoJobs").textContent = number(m.video_jobs); $("summaryOutputs").textContent = number(m.summary_outputs); $("pdfGenerated").textContent = number(m.pdf_requests); $("translations").textContent = number(m.translations); $("failedJobs").textContent = number(m.failed_jobs); $("extensionSummaries").textContent = number(m.extension_summaries); $("extensionPdfs").textContent = number(m.extension_pdfs); $("extensionTranslations").textContent = number(m.extension_translations); $("subscriptions").textContent = number(m.active_subscriptions) + " active subscriptions";
     $("paidUsers").textContent = number(m.paid_users); $("activeProUsers").textContent = number(m.active_pro_users); $("paymentIssueUsers").textContent = number(m.payment_issue_users); $("cancelledUsers").textContent = number(m.cancelled_users);
     const word = `Last ${d.range_days} Days`; $("activityRange").textContent = word; $("rangeJobs").textContent = "In selected period"; $("updated").textContent = "Live · updated " + new Date(d.generated_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
     lineChart($("activityChart"), labels, d.charts.user_activity); barChart($("jobsChart"), labels, d.charts.jobs); countryChart(d.charts.countries, d.charts.country_total == null ? m.total_users : d.charts.country_total); renderHealth(d.health); renderHealthDetails(); renderTables(d);
@@ -323,6 +323,9 @@
       pdf: { heading: "PDF Generation", lead: "PDF-ready operations created in the selected period.", userLabel: "Created PDFs", totalLabel: "PDF operations", table: "PDF Generation" },
       translations: { heading: "Translations", lead: "Translation jobs created in the selected period.", userLabel: "Created translations", totalLabel: "Translation jobs", table: "Translations" },
       completed_translations: { heading: "Completed Translations", lead: "Completed translation jobs in the selected period.", userLabel: "Users with translations", totalLabel: "Completed translations", table: "Completed Translations" },
+      extension_summaries: { heading: "Extension Summaries", lead: "Completed summary and key-points jobs created from the Chrome extension.", userLabel: "Extension users with summaries", totalLabel: "Extension summaries", table: "Extension Summaries" },
+      extension_pdf: { heading: "Extension Full Notes PDFs", lead: "Completed Full Notes PDF operations created from the Chrome extension.", userLabel: "Extension users with PDFs", totalLabel: "Extension PDFs", table: "Extension Full Notes PDFs" },
+      extension_translations: { heading: "Extension Translations", lead: "Completed translation jobs created from the Chrome extension.", userLabel: "Extension users with translations", totalLabel: "Extension translations", table: "Extension Translations" },
     }[category];
   }
   function renderOperationRows(rows) {
@@ -331,8 +334,8 @@
     $("operationsRows").innerHTML = filtered.length ? filtered.map(job => {
       const state = String(job.status || "processing").toLowerCase();
       const video = job.video_url ? `<a class="video-link" target="_blank" rel="noreferrer" href="${esc(job.video_url)}">youtube ↗</a>` : "—";
-      return `<tr><td>${esc(job.email)}</td><td>${video}</td><td title="${esc(job.title || job.video_id || job.kind)}">${esc(job.title || job.video_id || job.kind)}</td><td>${esc(job.kind)}</td><td><span class="status ${esc(state)}">${esc(state)}</span></td><td>${job.pdf_generated ? "Yes" : "—"}</td><td>${esc(language(job.language))}</td><td>${esc(elapsed(job.duration_ms))}</td><td>${job.output_tokens == null ? "—" : number(job.output_tokens)}</td><td>${esc(dateTime(job.started_at))}</td></tr>`;
-    }).join("") : tableEmpty(10, "No matching operations in the selected period.");
+      return `<tr><td>${esc(job.email)}</td><td>${video}</td><td title="${esc(job.title || job.video_id || job.kind)}">${esc(job.title || job.video_id || job.kind)}</td><td>${esc(job.kind)}</td><td>${esc(job.client_source === "extension" ? "Extension" : "Web")}</td><td><span class="status ${esc(state)}">${esc(state)}</span></td><td>${job.pdf_generated ? "Yes" : "—"}</td><td>${esc(language(job.language))}</td><td>${esc(elapsed(job.duration_ms))}</td><td>${job.output_tokens == null ? "—" : number(job.output_tokens)}</td><td>${esc(dateTime(job.started_at))}</td></tr>`;
+    }).join("") : tableEmpty(11, "No matching operations in the selected period.");
     addJobLocationCells("operationsRows", filtered);
   }
   function renderOperations(payload) {
@@ -685,7 +688,7 @@
     if (requested === "billing") {
       showBillingHistory(); return;
     }
-    if (["recent", "jobs", "pdf", "translations"].includes(requested)) {
+    if (["recent", "jobs", "pdf", "translations", "extension_summaries", "extension_pdf", "extension_translations"].includes(requested)) {
       showOperations(requested); return;
     }
     if (requested === "errors") {

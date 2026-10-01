@@ -242,6 +242,7 @@ def _job_data(job: ProcessingJob) -> dict:
         "video_url": job.video_url,
         "title": job.title,
         "kind": job.kind,
+        "client_source": job.client_source or "web",
         "language": job.language or "Auto",
         "status": job.status,
         "pdf_generated": job.pdf_generated,
@@ -459,6 +460,22 @@ async def dashboard(days: int = 10, db: Session = Depends(get_db)):
     summary_outputs = sum(1 for job, _email in recent_window if job.kind in {"summary", "key_points"} and job.status == "success")
     pdf_requests = sum(1 for job, _email in recent_window if job.pdf_generated and job.status == "success")
     translations = sum(1 for job, _email in recent_window if job.kind == "translation" and job.status == "success")
+    extension_summaries = sum(
+        1 for job, _email in recent_window
+        if job.client_source == "extension"
+        and job.kind in {"summary", "key_points"}
+        and job.status == "success"
+    )
+    extension_pdfs = sum(
+        1 for job, _email in recent_window
+        if job.client_source == "extension" and job.pdf_generated and job.status == "success"
+    )
+    extension_translations = sum(
+        1 for job, _email in recent_window
+        if job.client_source == "extension"
+        and job.kind == "translation"
+        and job.status == "success"
+    )
     failed_jobs = sum(1 for job, _email in recent_window if job.status == "failed")
 
     date_keys = [(now - timedelta(days=offset)).date() for offset in range(days - 1, -1, -1)]
@@ -498,6 +515,7 @@ async def dashboard(days: int = 10, db: Session = Depends(get_db)):
             "video_url": job.video_url,
             "title": job.title,
             "kind": job.kind,
+            "client_source": job.client_source or "web",
             "language": job.language or "Auto",
             "status": job.status,
             "pdf_generated": job.pdf_generated,
@@ -534,6 +552,9 @@ async def dashboard(days: int = 10, db: Session = Depends(get_db)):
             "full_notes": notes_outputs,
             "pdf_requests": pdf_requests,
             "translations": translations,
+            "extension_summaries": extension_summaries,
+            "extension_pdfs": extension_pdfs,
+            "extension_translations": extension_translations,
             "failed_jobs": failed_jobs,
             "active_subscriptions": active_pro_users,
             "paid_users": paid_users,
@@ -888,7 +909,7 @@ def operations_overview(
 ):
     """Filtered operational history for the Video Jobs/PDF/Translations tabs."""
     category = category.strip().lower()
-    if category not in {"recent", "jobs", "successful_summaries", "pdf", "translations", "completed_translations"}:
+    if category not in {"recent", "jobs", "successful_summaries", "pdf", "translations", "completed_translations", "extension_summaries", "extension_pdf", "extension_translations"}:
         raise HTTPException(status_code=422, detail="Unsupported operation category")
     days = max(1, min(days, 90))
     limit = max(1, min(limit, 1_000))
@@ -910,6 +931,27 @@ def operations_overview(
     elif category == "completed_translations":
         conditions = (
             ProcessingJob.started_at >= start,
+            ProcessingJob.kind == "translation",
+            ProcessingJob.status == "success",
+        )
+    elif category == "extension_summaries":
+        conditions = (
+            ProcessingJob.started_at >= start,
+            ProcessingJob.client_source == "extension",
+            ProcessingJob.kind.in_({"summary", "key_points"}),
+            ProcessingJob.status == "success",
+        )
+    elif category == "extension_pdf":
+        conditions = (
+            ProcessingJob.started_at >= start,
+            ProcessingJob.client_source == "extension",
+            ProcessingJob.pdf_generated.is_(True),
+            ProcessingJob.status == "success",
+        )
+    elif category == "extension_translations":
+        conditions = (
+            ProcessingJob.started_at >= start,
+            ProcessingJob.client_source == "extension",
             ProcessingJob.kind == "translation",
             ProcessingJob.status == "success",
         )

@@ -104,7 +104,15 @@ app.add_middleware(
     allow_origins=settings.allowed_origins_list,
     allow_credentials=False,  # we use Authorization headers, not cookies
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Admin-Key"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Idempotency-Key",
+        "X-Admin-Key",
+        # Explicitly identifies requests made by the official Chrome extension
+        # so their completed operations can be shown separately in admin.
+        "X-TubeNotes-Client",
+    ],
     max_age=600,
 )
 

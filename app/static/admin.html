@@ -53,6 +53,9 @@
           <button class="metric metric-link coral" type="button" data-dashboard-action="pdf"><span class="metric-icon">▤</span><span><small>PDF Generated</small><strong id="pdfGenerated">—</strong><em>Completed PDF downloads</em></span></button>
           <button class="metric metric-link gold" type="button" data-dashboard-action="completed_translations"><span class="metric-icon">◎</span><span><small>Translations</small><strong id="translations">—</strong><em>Completed translations</em></span></button>
           <button class="metric metric-link danger" type="button" data-dashboard-action="failed" aria-label="Open failed video jobs"><span class="metric-icon">!</span><span><small>Failed Videos</small><strong id="failedJobs">—</strong><em>Open failed-job details</em></span></button>
+          <button class="metric metric-link purple" type="button" data-dashboard-action="extension_summaries"><span class="metric-icon">EXT</span><span><small>Extension Summaries</small><strong id="extensionSummaries">—</strong><em>Completed from extension</em></span></button>
+          <button class="metric metric-link coral" type="button" data-dashboard-action="extension_pdf"><span class="metric-icon">PDF</span><span><small>Extension Full Notes PDFs</small><strong id="extensionPdfs">—</strong><em>Completed from extension</em></span></button>
+          <button class="metric metric-link gold" type="button" data-dashboard-action="extension_translations"><span class="metric-icon">◎</span><span><small>Extension Translations</small><strong id="extensionTranslations">—</strong><em>Completed from extension</em></span></button>
         </div>
 
         <section class="payment-summary" aria-label="Subscription payment summary">
@@ -120,7 +123,7 @@
           <article class="panel operation-card failed-card"><small>Failed / processing</small><strong id="operationState">-</strong><em id="operationStateLabel">Awaiting data</em></article>
         </div>
         <div class="users-filters panel"><label class="search"><span>Search</span><input id="operationSearch" type="search" placeholder="Search user, video title, URL or language"></label></div>
-        <article class="panel table-panel operations-directory"><div class="panel-head"><h2 id="operationsTableTitle">Video Jobs</h2><span id="operationsCount" class="muted">Loading...</span></div><div class="table-wrap"><table><thead><tr><th>User</th><th>City</th><th>Country</th><th>Video URL</th><th>Title</th><th>Type</th><th>Status</th><th>PDF</th><th>Language</th><th>Time</th><th>Tokens*</th><th>Started</th></tr></thead><tbody id="operationsRows"></tbody></table></div></article>
+        <article class="panel table-panel operations-directory"><div class="panel-head"><h2 id="operationsTableTitle">Video Jobs</h2><span id="operationsCount" class="muted">Loading...</span></div><div class="table-wrap"><table><thead><tr><th>User</th><th>City</th><th>Country</th><th>Video URL</th><th>Title</th><th>Type</th><th>Source</th><th>Status</th><th>PDF</th><th>Language</th><th>Time</th><th>Tokens*</th><th>Started</th></tr></thead><tbody id="operationsRows"></tbody></table></div></article>
       </section>
 
       <section id="billing" class="page-section operations-page hidden" aria-labelledby="billingHeading">
