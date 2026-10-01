@@ -61,6 +61,8 @@ def test_india_launch_offer_claim_issues_one_personal_coupon(client, device):
     )
     assert offer.status_code == 200
     assert offer.json()["price_cents"] == 9_900
+    assert offer.json()["ends_at"]
+    assert offer.json()["server_time"]
     first = client.post(
         f"{API}/billing/offers/launch/claim",
         headers={**headers, "CF-IPCountry": "IN"},

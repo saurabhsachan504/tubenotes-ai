@@ -33,6 +33,8 @@ def launch_offer_for_headers(headers: Mapping[str, str]) -> BillingPlan:
         raise ValueError("This offer is not available right now.")
     if country_for_headers(headers) != BILLING_COUNTRY_INDIA:
         raise ValueError("This offer is available only for India billing accounts.")
+    if utcnow() >= settings.INDIA_LAUNCH_OFFER_ENDS_AT:
+        raise ValueError("This limited-time offer has ended.")
     return india_launch_offer_plan()
 
 

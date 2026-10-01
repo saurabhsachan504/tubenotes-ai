@@ -1,7 +1,7 @@
 """Application settings, loaded from environment variables / .env file."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Literal
 
@@ -79,6 +79,12 @@ class Settings(BaseSettings):
     # 14_900 and point RAZORPAY_PLAN_ID_INR_LAUNCH_OFFER at the matching
     # Razorpay monthly plan when running a Rs 149 campaign.
     INDIA_LAUNCH_COUPON_TTL_HOURS: int = 168
+    # New coupons stop being issued after this India Standard Time deadline.
+    # Existing coupons retain their own short expiry. Change the value in .env
+    # for a future campaign; the browser receives this server-controlled time.
+    INDIA_LAUNCH_OFFER_ENDS_AT: datetime = datetime(
+        2026, 10, 31, 18, 29, 59, tzinfo=timezone.utc
+    )
 
     # Cloudflare adds CF-IPCountry, and its visitor-location managed transform
     # can add CF-IPCity, only when it proxies the visitor request. Keep this

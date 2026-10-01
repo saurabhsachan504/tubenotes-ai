@@ -121,6 +121,8 @@ def launch_offer(request: Request, user: User = Depends(get_current_user)):
         price_cents=plan.price_cents,
         currency=plan.currency,
         interval=plan.interval,
+        ends_at=settings.INDIA_LAUNCH_OFFER_ENDS_AT,
+        server_time=datetime.now(timezone.utc),
     )
 
 

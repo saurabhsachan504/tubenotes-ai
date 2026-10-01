@@ -14,6 +14,7 @@
   let lastTranscript = null; // { videoId, text, lang }; reused by Full Notes
   let videoChat = { context: null, history: [], busy: false };
   let busy = false;
+  let offerCountdownTimer = null;
   // Empty on the primary site. A legacy domain can set this through /meta so
   // its Subscribe button takes users to the canonical checkout domain.
   let billingPrimarySiteUrl = "";
@@ -1734,13 +1735,44 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     $("offerClaim").textContent = `Claim ${price}/month offer`;
   }
 
+  function stopOfferCountdown() {
+    if (offerCountdownTimer) clearInterval(offerCountdownTimer);
+    offerCountdownTimer = null;
+  }
+
+  function startOfferCountdown(endsAt, serverTime) {
+    stopOfferCountdown();
+    const remainingAtLoad = new Date(endsAt).getTime() - new Date(serverTime).getTime();
+    const monotonicStart = performance.now();
+    const render = () => {
+      const remaining = Math.max(0, remainingAtLoad - (performance.now() - monotonicStart));
+      if (!remaining) {
+        $("offerCountdown").textContent = "Offer ended";
+        $("offerClaim").disabled = true;
+        stopOfferCountdown();
+        return;
+      }
+      const seconds = Math.floor(remaining / 1000);
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const secs = seconds % 60;
+      $("offerCountdown").textContent = `${days}d : ${String(hours).padStart(2, "0")}h : ${String(minutes).padStart(2, "0")}m : ${String(secs).padStart(2, "0")}s`;
+    };
+    render();
+    offerCountdownTimer = setInterval(render, 1000);
+  }
+
   async function openOffer() {
     $("offerMsg").textContent = "";
+    $("offerClaim").disabled = false;
     $("offerClaim").classList.remove("hidden");
     $("couponPanel").classList.add("hidden");
     $("offerModal").classList.remove("hidden");
     try {
-      paintOfferPrice(await api("/billing/offers/launch"));
+      const offer = await api("/billing/offers/launch");
+      paintOfferPrice(offer);
+      startOfferCountdown(offer.ends_at, offer.server_time);
       $("offerClaim").focus();
     } catch (e) {
       closeOffer();
@@ -1748,7 +1780,10 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     }
   }
 
-  function closeOffer() { $("offerModal").classList.add("hidden"); }
+  function closeOffer() {
+    stopOfferCountdown();
+    $("offerModal").classList.add("hidden");
+  }
 
   function showCoupon(coupon) {
     paintOfferPrice(coupon);
