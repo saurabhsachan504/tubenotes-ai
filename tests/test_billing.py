@@ -54,11 +54,33 @@ def test_automatic_country_price_uses_trusted_cloudflare_header(client, device):
     assert sub["price_cents"] == 29_900
 
 
-def test_india_launch_offer_checkout_uses_the_server_selected_rs99_plan(client, device):
+def test_india_launch_offer_claim_issues_one_personal_coupon(client, device):
     _, headers, _ = register(client, email="offer@example.com", device=device)
+    offer = client.get(
+        f"{API}/billing/offers/launch", headers={**headers, "CF-IPCountry": "IN"}
+    )
+    assert offer.status_code == 200
+    assert offer.json()["price_cents"] == 9_900
+    first = client.post(
+        f"{API}/billing/offers/launch/claim",
+        headers={**headers, "CF-IPCountry": "IN"},
+    )
+    assert first.status_code == 200, first.text
+    coupon = first.json()
+    assert coupon["code"].startswith("TUBE99-")
+    assert coupon["price_cents"] == 9_900
+
+    # Reopening the offer does not mint shareable/unlimited codes.
+    again = client.post(
+        f"{API}/billing/offers/launch/claim",
+        headers={**headers, "CF-IPCountry": "IN"},
+    )
+    assert again.status_code == 200
+    assert again.json()["code"] == coupon["code"]
+
     checkout = client.post(
         f"{API}/billing/checkout",
-        json={"offer_code": "india_launch_99"},
+        json={"coupon_code": coupon["code"]},
         headers={**headers, "CF-IPCountry": "IN"},
     )
     assert checkout.status_code == 200, checkout.text
@@ -67,10 +89,38 @@ def test_india_launch_offer_checkout_uses_the_server_selected_rs99_plan(client, 
     assert sub["price_cents"] == 9_900
 
 
+def test_india_launch_offer_coupon_cannot_be_shared_or_reused(client, device):
+    _, owner_headers, _ = register(client, email="offer-owner@example.com", device=device)
+    claim = client.post(
+        f"{API}/billing/offers/launch/claim",
+        headers={**owner_headers, "CF-IPCountry": "IN"},
+    )
+    assert claim.status_code == 200
+    code = claim.json()["code"]
+
+    _, other_headers, _ = register(client, email="offer-other@example.com")
+    shared = client.post(
+        f"{API}/billing/checkout",
+        json={"coupon_code": code}, headers={**other_headers, "CF-IPCountry": "IN"}
+    )
+    assert shared.status_code == 422
+
+    used = client.post(
+        f"{API}/billing/checkout",
+        json={"coupon_code": code}, headers={**owner_headers, "CF-IPCountry": "IN"}
+    )
+    assert used.status_code == 200
+    duplicate = client.post(
+        f"{API}/billing/checkout",
+        json={"coupon_code": code}, headers={**owner_headers, "CF-IPCountry": "IN"}
+    )
+    assert duplicate.status_code == 422
+
+
 def test_india_launch_offer_rejects_non_india_billing_accounts(client, device):
     _, headers, _ = register(client, email="not-india@example.com", device=device)
     res = client.post(
-        f"{API}/billing/checkout", json={"offer_code": "india_launch_99"}, headers=headers
+        f"{API}/billing/offers/launch/claim", headers=headers
     )
     assert res.status_code == 422
 

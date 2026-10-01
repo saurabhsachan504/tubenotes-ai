@@ -1721,21 +1721,67 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
 
   function closeModal() { $("authModal").classList.add("hidden"); }
 
-  function openOffer() {
+  function formatOfferPrice(offer) {
+    if (offer.currency === "INR") return `₹${offer.price_cents / 100}`;
+    if (offer.currency === "USD") return `$${(offer.price_cents / 100).toFixed(2)}`;
+    return `${offer.price_cents / 100} ${offer.currency}`;
+  }
+
+  function paintOfferPrice(offer) {
+    const price = formatOfferPrice(offer);
+    $("offerTitle").textContent = `Unlock Pro for ${price}`;
+    $("offerNow").textContent = price;
+    $("offerClaim").textContent = `Claim ${price}/month offer`;
+  }
+
+  async function openOffer() {
     $("offerMsg").textContent = "";
+    $("offerClaim").classList.remove("hidden");
+    $("couponPanel").classList.add("hidden");
     $("offerModal").classList.remove("hidden");
-    $("offerClaim").focus();
+    try {
+      paintOfferPrice(await api("/billing/offers/launch"));
+      $("offerClaim").focus();
+    } catch (e) {
+      closeOffer();
+      throw e;
+    }
   }
 
   function closeOffer() { $("offerModal").classList.add("hidden"); }
 
-  async function startCheckout(offerCode) {
-    const buttons = [$("upgradeBtn"), $("offerClaim"), $("offerRegular")];
+  function showCoupon(coupon) {
+    paintOfferPrice(coupon);
+    $("couponCode").textContent = coupon.code;
+    $("couponInput").value = coupon.code;
+    const until = new Date(coupon.expires_at);
+    $("couponExpiry").textContent = `Valid until ${until.toLocaleString()}. This code works only on this account.`;
+    $("offerClaim").classList.add("hidden");
+    $("couponPanel").classList.remove("hidden");
+    $("couponInput").focus();
+  }
+
+  async function claimOfferCoupon() {
+    const button = $("offerClaim");
+    button.disabled = true;
+    $("offerMsg").textContent = "";
+    try {
+      const coupon = await api("/billing/offers/launch/claim", { method: "POST", body: {} });
+      showCoupon(coupon);
+    } catch (e) {
+      $("offerMsg").textContent = e.message || "Couldn't claim your offer.";
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function startCheckout(couponCode) {
+    const buttons = [$("upgradeBtn"), $("offerClaim"), $("offerRegular"), $("couponApply")];
     buttons.forEach((button) => { if (button) button.disabled = true; });
     $("offerMsg").textContent = "";
     try {
       const s = await api("/billing/checkout", {
-        method: "POST", body: offerCode ? { offer_code: offerCode } : {},
+        method: "POST", body: couponCode ? { coupon_code: couponCode } : {},
       });
       closeOffer();
       window.open(s.checkout_url, "_blank", "noopener");
@@ -1765,7 +1811,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
       }
       // The offer is only presented for the server-selected INR tier. The
       // checkout endpoint repeats this country check before selecting Rs 99.
-      if (currentBillingPlan && currentBillingPlan.currency === "INR") openOffer();
+      if (currentBillingPlan && currentBillingPlan.currency === "INR") await openOffer();
       else await startCheckout(null);
     } catch (e) {
       $("acctMsg").textContent = e.message || "Couldn't start checkout.";
@@ -1872,7 +1918,21 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
 
   $("upgradeBtn").onclick = beginSubscription;
   $("offerClose").onclick = closeOffer;
-  $("offerClaim").onclick = () => startCheckout("india_launch_99");
+  $("offerClaim").onclick = claimOfferCoupon;
+  $("couponApply").onclick = () => startCheckout($("couponInput").value.trim());
+  $("couponInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); startCheckout($("couponInput").value.trim()); }
+  });
+  $("couponCopy").onclick = async () => {
+    const code = $("couponCode").textContent;
+    try {
+      await navigator.clipboard.writeText(code);
+      $("couponCopy").textContent = "Copied";
+      setTimeout(() => { $("couponCopy").textContent = "Copy"; }, 1600);
+    } catch (_) {
+      $("offerMsg").textContent = "Select and copy the code manually.";
+    }
+  };
   $("offerRegular").onclick = () => startCheckout(null);
   $("offerModal").addEventListener("click", (e) => { if (e.target === $("offerModal")) closeOffer(); });
 

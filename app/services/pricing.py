@@ -20,7 +20,6 @@ VALID_BILLING_COUNTRIES = {
     BILLING_COUNTRY_INDIA,
     BILLING_COUNTRY_INTERNATIONAL,
 }
-INDIA_LAUNCH_OFFER_CODE = "india_launch_99"
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,14 +70,14 @@ def plan_for_country(country: str | None) -> BillingPlan:
 
 
 def india_launch_offer_plan() -> BillingPlan:
-    """The recurring Rs 99 Razorpay plan used only after an offer is claimed."""
+    """The campaign plan stored with a newly issued personal coupon."""
     return BillingPlan(
         id="pro-monthly-india-launch99",
         billing_country=BILLING_COUNTRY_INDIA,
         price_cents=settings.INDIA_LAUNCH_OFFER_PRICE_SUBUNITS,
         currency="INR",
         interval=settings.PLAN_INTERVAL,
-        description="Limited launch offer: unlimited usage, billed monthly at Rs 99.",
+        description="Limited launch offer: unlimited usage at the campaign price.",
         razorpay_plan_id=settings.RAZORPAY_PLAN_ID_INR_LAUNCH_OFFER,
     )
 
@@ -132,12 +131,6 @@ def city_for_headers(headers: Mapping[str, str]) -> str | None:
     return city
 
 
-def plan_for_headers(
-    headers: Mapping[str, str], *, offer_code: str | None = None
-) -> BillingPlan:
-    country = country_for_headers(headers)
-    if offer_code == INDIA_LAUNCH_OFFER_CODE:
-        if country != BILLING_COUNTRY_INDIA or not settings.INDIA_LAUNCH_OFFER_ENABLED:
-            raise ValueError("This launch offer is available only for India billing accounts.")
-        return india_launch_offer_plan()
-    return plan_for_country(country)
+def plan_for_headers(headers: Mapping[str, str]) -> BillingPlan:
+    """Return the normal public price; promotional pricing needs a coupon."""
+    return plan_for_country(country_for_headers(headers))

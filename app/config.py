@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     # for a different recurring amount, so its ID is configured separately.
     INDIA_LAUNCH_OFFER_ENABLED: bool = True
     INDIA_LAUNCH_OFFER_PRICE_SUBUNITS: int = 9_900  # Rs 99.00, in paise
+    # A claimed offer remains usable for this many hours.  Set the price to
+    # 14_900 and point RAZORPAY_PLAN_ID_INR_LAUNCH_OFFER at the matching
+    # Razorpay monthly plan when running a Rs 149 campaign.
+    INDIA_LAUNCH_COUPON_TTL_HOURS: int = 168
 
     # Cloudflare adds CF-IPCountry, and its visitor-location managed transform
     # can add CF-IPCity, only when it proxies the visitor request. Keep this

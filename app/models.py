@@ -113,6 +113,9 @@ class User(TimestampMixin, Base):
     billing_payments: Mapped[list["BillingPayment"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    promotion_coupons: Mapped[list["PromotionCoupon"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
     manual_pro_grants: Mapped[list["ManualProGrant"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
@@ -340,6 +343,42 @@ class ManualProGrant(TimestampMixin, Base):
     revoked_by_email: Mapped[str | None] = mapped_column(String(320))
 
     user: Mapped[User] = relationship(back_populates="manual_pro_grants")
+
+
+class PromotionCoupon(TimestampMixin, Base):
+    """A personal, short-lived price offer issued before hosted checkout.
+
+    Coupon codes are not Razorpay discounts.  They authorise one authenticated
+    TubeNotes account to use a server-selected Razorpay subscription plan.
+    This keeps the amount and plan ID out of the browser and makes a shared
+    code useless to every other account.
+    """
+
+    __tablename__ = "promotion_coupons"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_promotion_coupons_code"),
+        Index("ix_promotion_coupons_user_status", "user_id", "status"),
+        Index("ix_promotion_coupons_status_expires", "status", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Safe-to-display code, e.g. TUBE99-AB12CD34.  The database uniqueness
+    # constraint is the final guard even if random code generation collides.
+    code: Mapped[str] = mapped_column(String(48), nullable=False)
+    offer_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="issued", nullable=False)
+    price_subunits: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False)
+    razorpay_plan_id: Mapped[str | None] = mapped_column(String(128))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    redeemed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    provider: Mapped[str | None] = mapped_column(String(32))
+    provider_session_id: Mapped[str | None] = mapped_column(String(128))
+
+    user: Mapped[User] = relationship(back_populates="promotion_coupons")
 
 
 class BillingPayment(TimestampMixin, Base):

@@ -16,14 +16,22 @@ from app.schemas import (
     CheckoutRequest,
     CheckoutSessionOut,
     BillingPaymentOut,
+    CouponClaimOut,
     MessageOut,
     PlanOut,
+    PromotionOfferOut,
     SubscriptionOut,
 )
 from app.security import constant_time_equals
 from app.services import billing as billing_service
 from app.services.payments import get_provider
 from app.services.pricing import plan_for_headers, plans
+from app.services.promotions import (
+    claim_launch_coupon,
+    launch_offer_for_headers,
+    plan_for_coupon,
+    redeem_coupon,
+)
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
@@ -67,6 +75,55 @@ def current_price(request: Request, response: Response):
     return _plan_out(plan_for_headers(request.headers))
 
 
+@router.post("/offers/launch/claim", response_model=CouponClaimOut)
+def claim_launch_offer(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Issue an expiring, account-bound code for the current India campaign."""
+    from app.services.entitlements import active_subscription
+
+    if active_subscription(db, user) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have an active subscription.",
+        )
+    try:
+        coupon = claim_launch_coupon(db, user, request.headers)
+        db.commit()
+        db.refresh(coupon)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+    return CouponClaimOut(
+        code=coupon.code,
+        price_cents=coupon.price_subunits,
+        currency=coupon.currency,
+        interval=settings.PLAN_INTERVAL,
+        expires_at=coupon.expires_at,
+    )
+
+
+@router.get("/offers/launch", response_model=PromotionOfferOut)
+def launch_offer(request: Request, user: User = Depends(get_current_user)):
+    """Return display information for the server-controlled campaign price."""
+    try:
+        plan = launch_offer_for_headers(request.headers)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    return PromotionOfferOut(
+        price_cents=plan.price_cents,
+        currency=plan.currency,
+        interval=plan.interval,
+    )
+
+
 @router.post("/checkout", response_model=CheckoutSessionOut)
 def create_checkout(
     payload: CheckoutRequest,
@@ -97,8 +154,12 @@ def create_checkout(
             detail="You already have an active subscription.",
         )
 
+    coupon = None
     try:
-        plan = plan_for_headers(request.headers, offer_code=payload.offer_code)
+        if payload.coupon_code:
+            coupon, plan = plan_for_coupon(db, user, payload.coupon_code, request.headers)
+        else:
+            plan = plan_for_headers(request.headers)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
@@ -114,6 +175,10 @@ def create_checkout(
     if provider.name == "razorpay":
         # Razorpay creates the subscription up front, so we already know its id.
         sub.provider_subscription_id = session.session_id
+    if coupon is not None:
+        # A coupon is redeemed only after the provider successfully created a
+        # hosted checkout. Failed API calls leave the code usable.
+        redeem_coupon(coupon, provider=provider.name, session_id=session.session_id)
     db.commit()
 
     return CheckoutSessionOut(

@@ -228,9 +228,22 @@ class PlanOut(BaseModel):
 class CheckoutRequest(BaseModel):
     success_url: str | None = None
     cancel_url: str | None = None
-    # Only this server-recognised offer can select a promotional plan. The
-    # browser never submits an amount or a Razorpay plan id.
-    offer_code: Literal["india_launch_99"] | None = None
+    # The browser can submit a code, never an amount or Razorpay plan ID.
+    coupon_code: str | None = Field(default=None, min_length=6, max_length=48)
+
+
+class CouponClaimOut(BaseModel):
+    code: str
+    price_cents: int
+    currency: str
+    interval: str
+    expires_at: datetime
+
+
+class PromotionOfferOut(BaseModel):
+    price_cents: int
+    currency: str
+    interval: str
 
 
 class CheckoutSessionOut(BaseModel):
