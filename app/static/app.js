@@ -321,6 +321,47 @@
   // =====================================================================
   const R = () => $("result");
 
+  /**
+   * Follow a growing result on phones, tablets, and desktop without pulling a
+   * reader away from older text. There is deliberately no inner scroll box:
+   * mobile users keep the normal page scroll. Once they scroll upward, the
+   * next streamed delta pauses following; reaching the live end resumes it.
+   */
+  function liveResultAutoScroller() {
+    let following = true;
+    // Start unset because shell() may still be completing its initial smooth
+    // scroll; that first movement is not a reader choosing to pause.
+    let lastAutoY = null;
+    const viewportHeight = () => window.visualViewport?.height || window.innerHeight;
+
+    return () => {
+      const result = R();
+      if (!result) return;
+      const rect = result.getBoundingClientRect();
+      const currentY = window.scrollY;
+      const nearLiveEnd = rect.bottom <= viewportHeight() + 96;
+
+      // A deliberate upward scroll pauses automatic following. If the reader
+      // comes back to the live end, continue following future text.
+      if (!following && nearLiveEnd) following = true;
+      if (following && lastAutoY != null && currentY < lastAutoY - 8) {
+        following = false;
+        return;
+      }
+      if (!following) return;
+
+      const target = Math.max(0, Math.ceil(currentY + rect.bottom - viewportHeight() + 24));
+      // shell() already brings the blank card into view. After that, only
+      // move downward as new text makes the card longer.
+      if (target > currentY + 1) {
+        window.scrollTo({ top: target, behavior: "auto" });
+        lastAutoY = target;
+      } else {
+        lastAutoY = currentY;
+      }
+    };
+  }
+
   function shell(video, extraTag) {
     const tags = [];
     if (video && video.author) tags.push(`<span class="tag">${escapeAttr(video.author)}</span>`);
@@ -709,6 +750,7 @@
     let failed = null;
     let langOut = null;
     const body = $("rBody");
+    const followLatest = liveResultAutoScroller();
     // Same mistake as above: this was read from streamNotes's scope, so the
     // summary phase threw on its first delta and left the bar at 24%.
     const inPdfFlow = Boolean($("pdfFlow"));
@@ -741,7 +783,10 @@
         // The PDF card has no rBody - it is a different view entirely - so this
         // must not assume the element is there. It threw on the first delta of
         // every PDF run, which is why the summary phase never reported.
-        if (body) body.innerHTML = md2html(text) + '<span class="cursor"></span>';
+        if (body) {
+          body.innerHTML = md2html(text) + '<span class="cursor"></span>';
+          followLatest();
+        }
         if (inPdfFlow) {
           // The PDF flow runs /summarize before /notes, and progress events
           // only exist for notes - so this whole phase used to leave the bar
