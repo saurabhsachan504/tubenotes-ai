@@ -66,11 +66,11 @@ class Settings(BaseSettings):
     PAYMENT_PROVIDER: Literal["mock", "stripe", "razorpay"] = "mock"
     # Legacy default used by the old single-price Stripe/mock flow. New
     # checkout code uses the explicit India/international settings below.
-    PLAN_PRICE_CENTS: int = 500  # $5.00
+    PLAN_PRICE_CENTS: int = 1_000  # $10.00
     PLAN_CURRENCY: str = "USD"
     PLAN_INTERVAL: str = "month"
     INDIA_PLAN_PRICE_SUBUNITS: int = 29_900  # Rs 299.00, expressed in paise
-    INTERNATIONAL_PLAN_PRICE_CENTS: int = 500  # $5.00, expressed in cents
+    INTERNATIONAL_PLAN_PRICE_CENTS: int = 1_000  # $10.00, expressed in cents
     # Limited India launch offer. Razorpay subscriptions need their own Plan
     # for a different recurring amount, so its ID is configured separately.
     INDIA_LAUNCH_OFFER_ENABLED: bool = True

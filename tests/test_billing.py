@@ -14,7 +14,7 @@ def test_plans_offer_india_and_international_monthly_prices(client):
     plans = client.get(f"{API}/billing/plans").json()
     assert {(p["currency"], p["price_cents"]) for p in plans} == {
         ("INR", 29_900),
-        ("USD", 500),
+        ("USD", 1_000),
     }
     assert all(p["interval"] == "month" and p["free_trials"] == 5 for p in plans)
 
@@ -180,7 +180,7 @@ def test_subscription_status_endpoint(client, device):
     activate_subscription(client, headers)
     sub = client.get(f"{API}/billing/subscription", headers=headers).json()
     assert sub["status"] == "active"
-    assert sub["price_cents"] == 500
+    assert sub["price_cents"] == 1_000
     assert sub["current_period_end"] is not None
 
 
