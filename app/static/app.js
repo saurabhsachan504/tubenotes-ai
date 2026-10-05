@@ -15,6 +15,7 @@
   let videoChat = { context: null, history: [], busy: false };
   let busy = false;
   let offerCountdownTimer = null;
+  let activeLaunchOffer = null;
   // Empty on the primary site. A legacy domain can set this through /meta so
   // its Subscribe button takes users to the canonical checkout domain.
   let billingPrimarySiteUrl = "";
@@ -1775,9 +1776,24 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
 
   function paintOfferPrice(offer) {
     const price = formatOfferPrice(offer);
-    $("offerTitle").textContent = `Unlock Pro for ${price}`;
+    const regularPrice = Number(offer.regular_price_cents);
+    const hasDiscount = Number.isFinite(regularPrice) && regularPrice !== offer.price_cents;
+    $("offerTitle").textContent = offer.title || `Unlock Pro for ${price}`;
     $("offerNow").textContent = price;
+    $("offerWas").textContent = hasDiscount
+      ? formatOfferPrice({ ...offer, price_cents: regularPrice })
+      : "";
+    $("offerWas").classList.toggle("hidden", !hasDiscount);
     $("offerClaim").textContent = `Claim ${price}/month offer`;
+    $("offerRegular").textContent = hasDiscount
+      ? `No thanks — continue at ${formatOfferPrice({ ...offer, price_cents: regularPrice })}/month`
+      : "No thanks — continue with the regular plan";
+    $("offerKicker").textContent = offer.title && offer.title.startsWith("Your personal")
+      ? "TubeNotes Pro · Private member offer"
+      : "TubeNotes Pro · Limited launch offer";
+    $("offerCopy").textContent = offer.title && offer.title.startsWith("Your personal")
+      ? "Claim your account-only code, then apply it securely at checkout for your monthly TubeNotes Pro access."
+      : "Claim your personal launch code, then apply it securely at checkout for your monthly TubeNotes Pro access.";
   }
 
   function stopOfferCountdown() {
@@ -1810,12 +1826,14 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
 
   async function openOffer() {
     $("offerMsg").textContent = "";
+    activeLaunchOffer = null;
     $("offerClaim").disabled = false;
     $("offerClaim").classList.remove("hidden");
     $("couponPanel").classList.add("hidden");
     $("offerModal").classList.remove("hidden");
     try {
       const offer = await api("/billing/offers/launch");
+      activeLaunchOffer = offer;
       paintOfferPrice(offer);
       startOfferCountdown(offer.ends_at, offer.server_time);
       $("offerClaim").focus();
@@ -1831,7 +1849,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   }
 
   function showCoupon(coupon) {
-    paintOfferPrice(coupon);
+    paintOfferPrice(activeLaunchOffer || coupon);
     $("couponCode").textContent = coupon.code;
     $("couponInput").value = coupon.code;
     const until = new Date(coupon.expires_at);
@@ -1889,10 +1907,16 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
           return;
         }
       }
-      // The offer is only presented for the server-selected INR tier. The
-      // checkout endpoint repeats this country check before selecting Rs 99.
-      if (currentBillingPlan && currentBillingPlan.currency === "INR") await openOffer();
-      else await startCheckout(null);
+      // The server chooses the one eligible offer (India, international, or
+      // an account-only campaign). The browser never selects a price or plan.
+      try {
+        await openOffer();
+      } catch (offerError) {
+        // A disabled/expired campaign must not block the normal subscription
+        // route. Other errors are still surfaced to the account panel.
+        if (offerError && offerError.status === 422) await startCheckout(null);
+        else throw offerError;
+      }
     } catch (e) {
       $("acctMsg").textContent = e.message || "Couldn't start checkout.";
       $("acctMsg").className = "msg";

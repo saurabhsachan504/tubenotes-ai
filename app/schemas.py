@@ -242,10 +242,12 @@ class CouponClaimOut(BaseModel):
 
 class PromotionOfferOut(BaseModel):
     price_cents: int
+    regular_price_cents: int
     currency: str
     interval: str
     ends_at: datetime
     server_time: datetime
+    title: str
 
 
 class CheckoutSessionOut(BaseModel):

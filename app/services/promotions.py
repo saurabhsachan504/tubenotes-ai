@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import secrets
-from datetime import timedelta, timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Mapping
 
 from sqlalchemy import select
@@ -15,39 +16,121 @@ from app.services.pricing import (
     BillingPlan,
     country_for_headers,
     india_launch_offer_plan,
+    international_launch_offer_plan,
+    personal_india_offer_plan,
+    plan_for_country,
 )
 
-LAUNCH_OFFER_KEY = "india_launch"
+INDIA_LAUNCH_OFFER_KEY = "india_launch"
+INTERNATIONAL_LAUNCH_OFFER_KEY = "international_launch"
+PERSONAL_LAUNCH_OFFER_KEY = "personal_india_298"
+
+
+@dataclass(frozen=True, slots=True)
+class LaunchOffer:
+    """A campaign selected entirely on the server for one account."""
+
+    key: str
+    plan: BillingPlan
+    regular_price_cents: int
+    ends_at: datetime
+    coupon_ttl_hours: int
+    title: str
 
 
 def _code_for_price(price_subunits: int) -> str:
-    rupees = price_subunits // 100
-    # token_hex is deliberately much longer than a sequential code.  The code
+    amount = price_subunits // 100
+    # token_hex is deliberately much longer than a sequential code. The code
     # is additionally tied to user_id at redemption, so it is not transferable.
-    return f"TUBE{rupees}-{secrets.token_hex(5).upper()}"
+    return f"TUBE{amount}-{secrets.token_hex(5).upper()}"
 
 
-def launch_offer_for_headers(headers: Mapping[str, str]) -> BillingPlan:
-    """Return the current campaign plan only to an eligible India visitor."""
-    if not settings.INDIA_LAUNCH_OFFER_ENABLED:
+def _configured_personal_emails() -> set[str]:
+    return {
+        email.strip().casefold()
+        for email in settings.PERSONAL_LAUNCH_OFFER_EMAILS.split(",")
+        if email.strip()
+    }
+
+
+def _is_personal_offer_account(user: User) -> bool:
+    return (
+        settings.PERSONAL_LAUNCH_OFFER_ENABLED
+        and user.email.casefold() in _configured_personal_emails()
+    )
+
+
+def _india_offer() -> LaunchOffer:
+    plan = india_launch_offer_plan()
+    return LaunchOffer(
+        key=INDIA_LAUNCH_OFFER_KEY,
+        plan=plan,
+        regular_price_cents=plan_for_country(BILLING_COUNTRY_INDIA).price_cents,
+        ends_at=settings.INDIA_LAUNCH_OFFER_ENDS_AT,
+        coupon_ttl_hours=settings.INDIA_LAUNCH_COUPON_TTL_HOURS,
+        title=f"Unlock Pro for ₹{plan.price_cents // 100}",
+    )
+
+
+def _international_offer() -> LaunchOffer:
+    plan = international_launch_offer_plan()
+    return LaunchOffer(
+        key=INTERNATIONAL_LAUNCH_OFFER_KEY,
+        plan=plan,
+        regular_price_cents=plan_for_country("INTL").price_cents,
+        ends_at=settings.INTERNATIONAL_LAUNCH_OFFER_ENDS_AT,
+        coupon_ttl_hours=settings.INTERNATIONAL_LAUNCH_COUPON_TTL_HOURS,
+        title=f"Unlock Pro for ${plan.price_cents / 100:.2f}",
+    )
+
+
+def _personal_offer() -> LaunchOffer:
+    plan = personal_india_offer_plan()
+    return LaunchOffer(
+        key=PERSONAL_LAUNCH_OFFER_KEY,
+        plan=plan,
+        regular_price_cents=plan_for_country(BILLING_COUNTRY_INDIA).price_cents,
+        ends_at=settings.PERSONAL_LAUNCH_OFFER_ENDS_AT,
+        coupon_ttl_hours=settings.PERSONAL_LAUNCH_COUPON_TTL_HOURS,
+        title=f"Your personal Pro offer: ₹{plan.price_cents // 100}",
+    )
+
+
+def launch_offer_for_user(user: User, headers: Mapping[str, str]) -> LaunchOffer:
+    """Return exactly one currently eligible campaign for this signed-in user."""
+    now = utcnow()
+    if _is_personal_offer_account(user):
+        offer = _personal_offer()
+        if now < offer.ends_at:
+            return offer
+
+    if country_for_headers(headers) == BILLING_COUNTRY_INDIA:
+        if not settings.INDIA_LAUNCH_OFFER_ENABLED:
+            raise ValueError("This offer is not available right now.")
+        offer = _india_offer()
+        if now >= offer.ends_at:
+            raise ValueError("This limited-time offer has ended.")
+        return offer
+
+    if not settings.INTERNATIONAL_LAUNCH_OFFER_ENABLED:
         raise ValueError("This offer is not available right now.")
-    if country_for_headers(headers) != BILLING_COUNTRY_INDIA:
-        raise ValueError("This offer is available only for India billing accounts.")
-    if utcnow() >= settings.INDIA_LAUNCH_OFFER_ENDS_AT:
+    offer = _international_offer()
+    if now >= offer.ends_at:
         raise ValueError("This limited-time offer has ended.")
-    return india_launch_offer_plan()
+    return offer
 
 
 def claim_launch_coupon(
     db: Session, user: User, headers: Mapping[str, str]
 ) -> PromotionCoupon:
-    """Return the caller's valid personal offer or issue a fresh one."""
+    """Return the caller's valid personal code or issue a fresh one."""
     now = utcnow()
+    offer = launch_offer_for_user(user, headers)
     existing = db.execute(
         select(PromotionCoupon)
         .where(
             PromotionCoupon.user_id == user.id,
-            PromotionCoupon.offer_key == LAUNCH_OFFER_KEY,
+            PromotionCoupon.offer_key == offer.key,
             PromotionCoupon.status == "issued",
             PromotionCoupon.expires_at > now,
         )
@@ -56,20 +139,31 @@ def claim_launch_coupon(
     if existing is not None:
         return existing
 
-    plan = launch_offer_for_headers(headers)
     coupon = PromotionCoupon(
         user_id=user.id,
-        code=_code_for_price(plan.price_cents),
-        offer_key=LAUNCH_OFFER_KEY,
+        code=_code_for_price(offer.plan.price_cents),
+        offer_key=offer.key,
         status="issued",
-        price_subunits=plan.price_cents,
-        currency=plan.currency,
-        razorpay_plan_id=plan.razorpay_plan_id or None,
-        expires_at=now + timedelta(hours=max(1, settings.INDIA_LAUNCH_COUPON_TTL_HOURS)),
+        price_subunits=offer.plan.price_cents,
+        currency=offer.plan.currency,
+        razorpay_plan_id=offer.plan.razorpay_plan_id or None,
+        expires_at=now + timedelta(hours=max(1, offer.coupon_ttl_hours)),
     )
     db.add(coupon)
     db.flush()
     return coupon
+
+
+def _coupon_is_eligible(
+    coupon: PromotionCoupon, user: User, headers: Mapping[str, str]
+) -> bool:
+    if coupon.offer_key == PERSONAL_LAUNCH_OFFER_KEY:
+        return _is_personal_offer_account(user)
+    if coupon.offer_key == INDIA_LAUNCH_OFFER_KEY:
+        return country_for_headers(headers) == BILLING_COUNTRY_INDIA
+    if coupon.offer_key == INTERNATIONAL_LAUNCH_OFFER_KEY:
+        return country_for_headers(headers) != BILLING_COUNTRY_INDIA
+    return False
 
 
 def plan_for_coupon(
@@ -98,12 +192,14 @@ def plan_for_coupon(
         coupon.status = "expired"
         db.flush()
         raise ValueError("This coupon code has expired. Claim a new offer to continue.")
-    if coupon.offer_key != LAUNCH_OFFER_KEY or country_for_headers(headers) != BILLING_COUNTRY_INDIA:
-        raise ValueError("This coupon is available only for India billing accounts.")
+    if not _coupon_is_eligible(coupon, user, headers):
+        raise ValueError("This coupon is not available for this billing account.")
 
     return coupon, BillingPlan(
-        id=f"pro-monthly-india-coupon-{coupon.id}",
-        billing_country=BILLING_COUNTRY_INDIA,
+        id=f"pro-monthly-coupon-{coupon.id}",
+        billing_country=(
+            BILLING_COUNTRY_INDIA if coupon.currency == "INR" else "INTL"
+        ),
         price_cents=coupon.price_subunits,
         currency=coupon.currency,
         interval=settings.PLAN_INTERVAL,

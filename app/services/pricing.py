@@ -82,6 +82,32 @@ def india_launch_offer_plan() -> BillingPlan:
     )
 
 
+def international_launch_offer_plan() -> BillingPlan:
+    """The account-bound USD campaign plan."""
+    return BillingPlan(
+        id="pro-monthly-international-launch",
+        billing_country=BILLING_COUNTRY_INTERNATIONAL,
+        price_cents=settings.INTERNATIONAL_LAUNCH_OFFER_PRICE_CENTS,
+        currency="USD",
+        interval=settings.PLAN_INTERVAL,
+        description="Limited launch offer for monthly TubeNotes Pro.",
+        razorpay_plan_id=settings.RAZORPAY_PLAN_ID_USD_LAUNCH_OFFER,
+    )
+
+
+def personal_india_offer_plan() -> BillingPlan:
+    """The private INR campaign plan, available only to configured emails."""
+    return BillingPlan(
+        id="pro-monthly-india-personal298",
+        billing_country=BILLING_COUNTRY_INDIA,
+        price_cents=settings.PERSONAL_LAUNCH_OFFER_PRICE_SUBUNITS,
+        currency="INR",
+        interval=settings.PLAN_INTERVAL,
+        description="Private monthly TubeNotes Pro offer.",
+        razorpay_plan_id=settings.RAZORPAY_PLAN_ID_INR_PERSONAL_OFFER,
+    )
+
+
 def country_for_headers(headers: Mapping[str, str]) -> str:
     """Return the safe country tier for a request.
 

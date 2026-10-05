@@ -28,7 +28,7 @@ from app.services.payments import get_provider
 from app.services.pricing import plan_for_headers, plans
 from app.services.promotions import (
     claim_launch_coupon,
-    launch_offer_for_headers,
+    launch_offer_for_user,
     plan_for_coupon,
     redeem_coupon,
 )
@@ -81,7 +81,7 @@ def claim_launch_offer(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Issue an expiring, account-bound code for the current India campaign."""
+    """Issue an expiring, account-bound code for the caller's eligible campaign."""
     from app.services.entitlements import active_subscription
 
     if active_subscription(db, user) is not None:
@@ -112,17 +112,19 @@ def claim_launch_offer(
 def launch_offer(request: Request, user: User = Depends(get_current_user)):
     """Return display information for the server-controlled campaign price."""
     try:
-        plan = launch_offer_for_headers(request.headers)
+        offer = launch_offer_for_user(user, request.headers)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
     return PromotionOfferOut(
-        price_cents=plan.price_cents,
-        currency=plan.currency,
-        interval=plan.interval,
-        ends_at=settings.INDIA_LAUNCH_OFFER_ENDS_AT,
+        price_cents=offer.plan.price_cents,
+        regular_price_cents=offer.regular_price_cents,
+        currency=offer.plan.currency,
+        interval=offer.plan.interval,
+        ends_at=offer.ends_at,
         server_time=datetime.now(timezone.utc),
+        title=offer.title,
     )
 
 

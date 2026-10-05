@@ -61,6 +61,7 @@ def test_india_launch_offer_claim_issues_one_personal_coupon(client, device):
     )
     assert offer.status_code == 200
     assert offer.json()["price_cents"] == 9_900
+    assert offer.json()["regular_price_cents"] == 29_900
     assert offer.json()["ends_at"]
     assert offer.json()["server_time"]
     first = client.post(
@@ -119,12 +120,44 @@ def test_india_launch_offer_coupon_cannot_be_shared_or_reused(client, device):
     assert duplicate.status_code == 422
 
 
-def test_india_launch_offer_rejects_non_india_billing_accounts(client, device):
+def test_international_launch_offer_issues_a_usd_coupon(client, device, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNATIONAL_LAUNCH_OFFER_ENABLED", True)
     _, headers, _ = register(client, email="not-india@example.com", device=device)
-    res = client.post(
-        f"{API}/billing/offers/launch/claim", headers=headers
+    offer = client.get(f"{API}/billing/offers/launch", headers=headers)
+    assert offer.status_code == 200
+    assert offer.json()["currency"] == "USD"
+    assert offer.json()["price_cents"] == 500
+
+    claim = client.post(f"{API}/billing/offers/launch/claim", headers=headers)
+    assert claim.status_code == 200, claim.text
+    assert claim.json()["code"].startswith("TUBE5-")
+    checkout = client.post(
+        f"{API}/billing/checkout", json={"coupon_code": claim.json()["code"]}, headers=headers
     )
-    assert res.status_code == 422
+    assert checkout.status_code == 200, checkout.text
+
+
+def test_personal_298_offer_is_visible_only_to_configured_account(client, device, monkeypatch):
+    monkeypatch.setattr(settings, "PERSONAL_LAUNCH_OFFER_ENABLED", True)
+    monkeypatch.setattr(settings, "PERSONAL_LAUNCH_OFFER_EMAILS", "sir@example.com")
+    monkeypatch.setattr(settings, "INTERNATIONAL_LAUNCH_OFFER_ENABLED", True)
+
+    _, sir_headers, _ = register(client, email="sir@example.com", device=device)
+    offer = client.get(f"{API}/billing/offers/launch", headers=sir_headers)
+    assert offer.status_code == 200
+    assert offer.json()["currency"] == "INR"
+    assert offer.json()["price_cents"] == 29_800
+    assert offer.json()["regular_price_cents"] == 29_900
+    assert offer.json()["title"].startswith("Your personal")
+
+    claim = client.post(f"{API}/billing/offers/launch/claim", headers=sir_headers)
+    assert claim.status_code == 200, claim.text
+    assert claim.json()["code"].startswith("TUBE298-")
+
+    _, other_headers, _ = register(client, email="other@example.com")
+    other_offer = client.get(f"{API}/billing/offers/launch", headers=other_headers)
+    assert other_offer.status_code == 200
+    assert other_offer.json()["currency"] == "USD"
 
 
 def test_country_header_is_ignored_when_not_trusted(client, monkeypatch):

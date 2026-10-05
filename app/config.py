@@ -85,6 +85,25 @@ class Settings(BaseSettings):
     INDIA_LAUNCH_OFFER_ENDS_AT: datetime = datetime(
         2026, 10, 31, 18, 29, 59, tzinfo=timezone.utc
     )
+    # International campaign. Keep this as a separate plan ID even when the
+    # amount happens to equal the normal USD price: a coupon must always map
+    # to a server-selected subscription plan, never a browser amount.
+    INTERNATIONAL_LAUNCH_OFFER_ENABLED: bool = False
+    INTERNATIONAL_LAUNCH_OFFER_PRICE_CENTS: int = 500
+    INTERNATIONAL_LAUNCH_COUPON_TTL_HOURS: int = 168
+    INTERNATIONAL_LAUNCH_OFFER_ENDS_AT: datetime = datetime(
+        2026, 10, 31, 18, 29, 59, tzinfo=timezone.utc
+    )
+
+    # A private India offer for explicitly allow-listed accounts. Keep this
+    # disabled until at least one intended account email is configured.
+    PERSONAL_LAUNCH_OFFER_ENABLED: bool = False
+    PERSONAL_LAUNCH_OFFER_EMAILS: str = ""
+    PERSONAL_LAUNCH_OFFER_PRICE_SUBUNITS: int = 29_800
+    PERSONAL_LAUNCH_COUPON_TTL_HOURS: int = 168
+    PERSONAL_LAUNCH_OFFER_ENDS_AT: datetime = datetime(
+        2026, 10, 31, 18, 29, 59, tzinfo=timezone.utc
+    )
 
     # Cloudflare adds CF-IPCountry, and its visitor-location managed transform
     # can add CF-IPCity, only when it proxies the visitor request. Keep this
@@ -109,6 +128,8 @@ class Settings(BaseSettings):
     RAZORPAY_PLAN_ID_INR: str = ""
     RAZORPAY_PLAN_ID_INR_LAUNCH_OFFER: str = ""
     RAZORPAY_PLAN_ID_USD: str = ""
+    RAZORPAY_PLAN_ID_USD_LAUNCH_OFFER: str = ""
+    RAZORPAY_PLAN_ID_INR_PERSONAL_OFFER: str = ""
     RAZORPAY_WEBHOOK_SECRET: str = ""
 
     BILLING_SUCCESS_URL: str = "https://example.com/billing/success"
