@@ -628,11 +628,29 @@
           if (!currentBillingPlan) {
             try { await loadBillingPrice(); } catch (_) {}
           }
-          const price = priceForPlan(currentBillingPlan);
-          const subscribeLabel = price ? `Subscribe for ${price.label}` : "Subscribe";
+          const trialLimit = Number(ent?.trials_limit);
+          const trialLabel = Number.isInteger(trialLimit) && trialLimit > 0
+            ? `${trialLimit} free trials`
+            : "your free trials";
           note("warn",
-            `<b>${escapeAttr(e.message)}</b><br>` +
-            `Your free videos are used up. <button class="linkbtn" onclick="document.getElementById('accountBtn').click()">${escapeAttr(subscribeLabel)} →</button>`);
+            `<b>You have used all ${escapeAttr(trialLabel)}.</b><br>` +
+            `Click below to see your available offer.<br>` +
+            `<button class="linkbtn" id="trialOfferBtn" type="button">View Offers →</button>`);
+          const offerButton = $("trialOfferBtn");
+          if (offerButton) {
+            offerButton.addEventListener("click", async () => {
+              offerButton.disabled = true;
+              try {
+                // The server selects the right offer: ₹99 in India, $5
+                // internationally, or ₹298 for an approved personal email.
+                await openOffer();
+              } catch (offerError) {
+                note("err", escapeAttr(offerError.message || "Couldn't load your offer."));
+              } finally {
+                offerButton.disabled = false;
+              }
+            });
+          }
         }
       } else if (e.status === 401) {
         openAuth("login");
