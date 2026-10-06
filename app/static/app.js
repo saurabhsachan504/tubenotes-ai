@@ -622,9 +622,18 @@
       if (e.status === 402) {
         const ent = e.entitlement;
         paintChip(ent);
-        if (!pdfProgress) note("warn",
-          `<b>${escapeAttr(e.message)}</b><br>` +
-          `Your free videos are used up. <button class="linkbtn" onclick="document.getElementById('accountBtn').click()">Subscribe for $5/month →</button>`);
+        if (!pdfProgress) {
+          // The server selects INR or USD from trusted Cloudflare country
+          // information, so this trial-limit message matches checkout.
+          if (!currentBillingPlan) {
+            try { await loadBillingPrice(); } catch (_) {}
+          }
+          const price = priceForPlan(currentBillingPlan);
+          const subscribeLabel = price ? `Subscribe for ${price.label}` : "Subscribe";
+          note("warn",
+            `<b>${escapeAttr(e.message)}</b><br>` +
+            `Your free videos are used up. <button class="linkbtn" onclick="document.getElementById('accountBtn').click()">${escapeAttr(subscribeLabel)} →</button>`);
+        }
       } else if (e.status === 401) {
         openAuth("login");
       } else if (e.status === 422 && !pdfProgress) {
@@ -1525,10 +1534,16 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   let currentBillingPlan = null;
 
   function priceForPlan(plan) {
-    if (!plan) return null;
-    return plan.currency === "INR"
-      ? { label: "₹299/month", detail: "₹299/month" }
-      : { label: "$5/month", detail: "$5/month" };
+    const amount = Number(plan?.price_cents);
+    if (!plan || !Number.isFinite(amount) || !plan.currency) return null;
+    const value = amount / 100;
+    const formatted = plan.currency === "INR"
+      ? new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value)
+      : plan.currency === "USD"
+        ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
+        : `${value.toFixed(2)} ${plan.currency}`;
+    const interval = plan.interval === "year" ? "year" : "month";
+    return { label: `${formatted}/${interval}`, detail: `${formatted}/${interval}` };
   }
 
   function setHeroBillingPrice(plan) {
