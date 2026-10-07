@@ -1862,7 +1862,6 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     activeLaunchOffer = null;
     $("offerClaim").disabled = false;
     $("offerClaim").classList.remove("hidden");
-    $("couponPanel").classList.add("hidden");
     $("offerModal").classList.remove("hidden");
     try {
       const offer = await api("/billing/offers/launch");
@@ -1881,34 +1880,27 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     $("offerModal").classList.add("hidden");
   }
 
-  function showCoupon(coupon) {
-    paintOfferPrice(activeLaunchOffer || coupon);
-    $("couponCode").textContent = coupon.code;
-    const until = new Date(coupon.expires_at);
-    $("couponExpiry").textContent = `Valid until ${until.toLocaleString()}. This code works only on this account.`;
-    const offer = activeLaunchOffer || coupon;
-    $("couponContinue").textContent = `Continue with ${formatOfferPrice(offer)}/month`;
-    $("offerClaim").classList.add("hidden");
-    $("couponPanel").classList.remove("hidden");
-    $("couponContinue").focus();
-  }
-
   async function claimOfferCoupon() {
     const button = $("offerClaim");
     button.disabled = true;
+    const originalText = button.textContent;
+    button.textContent = "Opening secure checkout...";
     $("offerMsg").textContent = "";
     try {
       const coupon = await api("/billing/offers/launch/claim", { method: "POST", body: {} });
-      showCoupon(coupon);
+      // The issued code remains account-bound and is sent directly to the
+      // server. It is never exposed as an editable browser field.
+      await startCheckout(coupon.code);
     } catch (e) {
       $("offerMsg").textContent = e.message || "Couldn't claim your offer.";
     } finally {
       button.disabled = false;
+      button.textContent = originalText;
     }
   }
 
   async function startCheckout(couponCode) {
-    const buttons = [$("upgradeBtn"), $("offerClaim"), $("offerRegular"), $("couponContinue")];
+    const buttons = [$("upgradeBtn"), $("offerClaim"), $("offerRegular")];
     buttons.forEach((button) => { if (button) button.disabled = true; });
     $("offerMsg").textContent = "";
     try {
@@ -2057,17 +2049,6 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   $("upgradeBtn").onclick = beginSubscription;
   $("offerClose").onclick = closeOffer;
   $("offerClaim").onclick = claimOfferCoupon;
-  $("couponContinue").onclick = () => startCheckout($("couponCode").textContent.trim());
-  $("couponCopy").onclick = async () => {
-    const code = $("couponCode").textContent;
-    try {
-      await navigator.clipboard.writeText(code);
-      $("couponCopy").textContent = "Copied";
-      setTimeout(() => { $("couponCopy").textContent = "Copy"; }, 1600);
-    } catch (_) {
-      $("offerMsg").textContent = "Select and copy the code manually.";
-    }
-  };
   $("offerRegular").onclick = () => startCheckout(null);
   $("offerModal").addEventListener("click", (e) => { if (e.target === $("offerModal")) closeOffer(); });
 
