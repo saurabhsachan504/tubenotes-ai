@@ -85,7 +85,10 @@ def _brand_email(*, title: str, greeting: str, paragraphs: list[str], cta: str |
 <html><body style="margin:0;padding:0;background:#f5f2fb;font-family:Arial,sans-serif;color:#28213b;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:28px 12px;background:#f5f2fb;"><tr><td align="center">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border:1px solid #e8e0f7;border-radius:16px;overflow:hidden;">
-      <tr><td style="padding:22px 30px;background:linear-gradient(120deg,#7135e8,#d735b2);color:#ffffff;font-size:25px;font-weight:800;letter-spacing:-0.4px;">▶ TubeNotes</td></tr>
+      <tr><td style="padding:18px 30px 17px;background:linear-gradient(120deg,#7135e8,#d735b2);color:#ffffff;">
+        <div style="font-size:25px;font-weight:800;letter-spacing:-0.4px;line-height:1.15;">▶ TubeNotes</div>
+        <div style="margin-top:4px;font-size:13px;font-weight:600;letter-spacing:0.2px;line-height:1.2;">YouTube Summarizer</div>
+      </td></tr>
       <tr><td style="padding:32px 30px 22px;"><h1 style="margin:0 0 18px;font-size:25px;line-height:1.25;color:#2a1748;">{safe_title}</h1>
         <p style="margin:0 0 16px;font-size:16px;line-height:1.55;">{safe_greeting}</p>
         <div style="font-size:15px;line-height:1.6;color:#5d536e;">{copy}</div>{button}
