@@ -134,6 +134,21 @@ def send_trial_exhausted_email(user: User, trial_limit: int) -> bool:
     )
 
 
+def send_trial_remaining_email(user: User, trials_remaining: int) -> bool:
+    """Send a friendly one-time reminder at a configured trial milestone."""
+    plural = "trial" if trials_remaining == 1 else "trials"
+    return _send_notification(
+        user,
+        f"{trials_remaining} free TubeNotes {plural} remaining",
+        f"You have {trials_remaining} free {plural} remaining",
+        [
+            f"You still have {trials_remaining} free TubeNotes {plural} to use.",
+            "Paste a YouTube link whenever you need a quick summary or FullNotes PDF.",
+        ],
+        cta="Use your free trials",
+    )
+
+
 def send_payment_success_email(
     user: User,
     *,

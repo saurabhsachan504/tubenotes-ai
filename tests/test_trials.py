@@ -50,6 +50,35 @@ def test_trial_completion_sends_one_reminder(client, device, monkeypatch):
     assert sent == [("trial-end@example.com", 5)]
 
 
+def test_twenty_trial_milestones_send_once_each(client, device, monkeypatch):
+    """A 20-trial account emails exactly on 16->15, 11->10, 6->5 and 1->0."""
+    from app.services import email as email_service
+
+    monkeypatch.setattr(settings, "FREE_TRIAL_LIMIT", 20)
+    monkeypatch.setattr(settings, "ENFORCE_MACHINE_TRIAL_LIMIT", False)
+
+    milestones = []
+    monkeypatch.setattr(
+        email_service,
+        "send_trial_remaining_email",
+        lambda user, remaining: milestones.append((user.email, remaining)),
+    )
+    monkeypatch.setattr(
+        email_service,
+        "send_trial_exhausted_email",
+        lambda user, trial_limit: milestones.append((user.email, 0)),
+    )
+
+    email = "twenty-trials@example.com"
+    _, headers, _ = register(client, email=email, device=device)
+    for _ in range(20):
+        assert consume(client, headers, device).status_code == 200
+
+    assert milestones == [(email, 15), (email, 10), (email, 5), (email, 0)]
+    assert consume(client, headers, device).status_code == 402
+    assert milestones == [(email, 15), (email, 10), (email, 5), (email, 0)]
+
+
 def test_entitlement_check_does_not_spend_a_trial(client, device):
     _, headers, _ = register(client, device=device)
 

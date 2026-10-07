@@ -200,6 +200,10 @@ class ConsumeResponse(BaseModel):
     granted_by: str
     entitlement: EntitlementOut
     usage_event_id: str | None = None
+    # Internal signal used by the request handler after its transaction commits.
+    # It is harmless to expose to clients and lets both usage paths share the
+    # exact same one-time notification decision.
+    trial_reminder_remaining: int | None = None
 
 
 class UsageEventOut(BaseModel):

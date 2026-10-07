@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import (
     Device,
+    EmailNotification,
     ManualProGrant,
     Subscription,
     SubscriptionStatus,
@@ -25,6 +26,9 @@ from app.models import (
 )
 from app.schemas import ConsumeResponse, DeviceFingerprint, EntitlementOut
 from app.services import devices as device_service
+
+
+TRIAL_EMAIL_MILESTONES = frozenset({15, 10, 5, 0})
 
 
 def _now() -> datetime:
@@ -41,6 +45,28 @@ def trial_limit_for(user: User) -> int:
     if user.trial_limit_override is not None:
         return max(0, user.trial_limit_override)
     return settings.FREE_TRIAL_LIMIT
+
+
+def _claim_trial_email(db: Session, user_id: str, trials_remaining: int) -> bool:
+    """Reserve one milestone email inside the usage transaction.
+
+    A savepoint means a unique-constraint collision only declines this email;
+    it never rolls back the trial that was just consumed.
+    """
+    if trials_remaining not in TRIAL_EMAIL_MILESTONES:
+        return False
+    try:
+        with db.begin_nested():
+            db.add(
+                EmailNotification(
+                    user_id=user_id,
+                    kind=f"trial_remaining_{trials_remaining}",
+                )
+            )
+            db.flush()
+        return True
+    except IntegrityError:
+        return False
 
 
 def active_subscription(db: Session, user: User) -> Subscription | None:
@@ -346,6 +372,12 @@ def consume(
             usage_event_id=existing.id,
         )
 
+    trial_reminder_remaining: int | None = None
+    if counted:
+        remaining = max(0, trial_limit_for(locked_user) - locked_user.trials_used)
+        if _claim_trial_email(db, locked_user.id, remaining):
+            trial_reminder_remaining = remaining
+
     return ConsumeResponse(
         allowed=True,
         consumed=counted,
@@ -353,6 +385,7 @@ def consume(
         granted_by=granted_by,
         entitlement=build_entitlement(db, locked_user, device_hash, machine_hash),
         usage_event_id=event.id,
+        trial_reminder_remaining=trial_reminder_remaining,
     )
 
 

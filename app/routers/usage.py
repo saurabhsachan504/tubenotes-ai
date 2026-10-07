@@ -60,12 +60,15 @@ def consume_usage(
         meta=payload.meta,
     )
     db.commit()
-    if (
-        result.consumed
-        and result.granted_by == "trial"
-        and result.entitlement.trials_remaining == 0
-    ):
-        email_service.send_trial_exhausted_email(user, result.entitlement.trials_limit)
+    if result.trial_reminder_remaining is not None:
+        if result.trial_reminder_remaining == 0:
+            email_service.send_trial_exhausted_email(
+                user, result.entitlement.trials_limit
+            )
+        else:
+            email_service.send_trial_remaining_email(
+                user, result.trial_reminder_remaining
+            )
     return result
 
 

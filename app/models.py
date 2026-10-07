@@ -233,6 +233,32 @@ class UsageEvent(Base):
     user: Mapped[User] = relationship(back_populates="usage_events")
 
 
+class EmailNotification(Base):
+    """A one-time transactional notification claimed for an account.
+
+    The unique constraint is intentionally the final duplicate guard: a
+    browser retry, concurrent request, or future counter correction must not
+    send the same trial milestone email twice.
+    """
+
+    __tablename__ = "email_notifications"
+    __table_args__ = (
+        UniqueConstraint("user_id", "kind", name="uq_email_notifications_user_kind"),
+        Index("ix_email_notifications_user_kind", "user_id", "kind"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Examples: trial_remaining_15, trial_remaining_10, trial_remaining_5,
+    # trial_remaining_0.
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 # ---------------------------------------------------------------------------
 # Processing audit trail (admin dashboard)
 # ---------------------------------------------------------------------------

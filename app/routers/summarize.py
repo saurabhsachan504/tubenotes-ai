@@ -415,14 +415,15 @@ def _charge_and_lookup(db: Session, user: User, payload, video_id: str, *, actio
             meta={"video_id": video_id, "mode": mode, "surface": "web"},
         )
         db.commit()
-        if (
-            result.consumed
-            and result.granted_by == "trial"
-            and result.entitlement.trials_remaining == 0
-        ):
-            email_service.send_trial_exhausted_email(
-                user, result.entitlement.trials_limit
-            )
+        if result.trial_reminder_remaining is not None:
+            if result.trial_reminder_remaining == 0:
+                email_service.send_trial_exhausted_email(
+                    user, result.entitlement.trials_limit
+                )
+            else:
+                email_service.send_trial_remaining_email(
+                    user, result.trial_reminder_remaining
+                )
         entitlement: EntitlementOut = result.entitlement
         cached_row, cached_target, cached_model = _cache_lookup(
             db, payload, video_id, mode=mode
