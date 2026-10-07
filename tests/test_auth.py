@@ -22,6 +22,29 @@ def test_signup_returns_tokens_and_entitlement(client, device):
     assert me.json()["email"] == "user@example.com"
 
 
+def test_signup_sends_one_personalised_welcome_email(client, device, monkeypatch):
+    from app.services import email as email_service
+
+    sent = []
+    monkeypatch.setattr(
+        email_service,
+        "send_welcome_email",
+        lambda user, trial_limit: sent.append((user.email, user.full_name, trial_limit)),
+    )
+
+    res = client.post(
+        f"{API}/auth/signup",
+        json={
+            "email": "welcome@example.com",
+            "full_name": "Asha Sharma",
+            "password": "Str0ngPass1",
+            "device": device,
+        },
+    )
+    assert res.status_code == 201, res.text
+    assert sent == [("welcome@example.com", "Asha Sharma", 5)]
+
+
 def test_signup_records_trusted_country_for_admin_analytics(client, db, device):
     res = client.post(
         f"{API}/auth/signup",

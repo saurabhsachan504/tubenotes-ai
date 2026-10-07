@@ -31,6 +31,25 @@ def test_exactly_five_free_runs_then_402(client, device):
     assert "$5/month" in detail["message"]
 
 
+def test_trial_completion_sends_one_reminder(client, device, monkeypatch):
+    from app.services import email as email_service
+
+    sent = []
+    monkeypatch.setattr(
+        email_service,
+        "send_trial_exhausted_email",
+        lambda user, trial_limit: sent.append((user.email, trial_limit)),
+    )
+    _, headers, _ = register(client, email="trial-end@example.com", device=device)
+
+    for _ in range(5):
+        assert consume(client, headers, device).status_code == 200
+
+    assert sent == [("trial-end@example.com", 5)]
+    assert consume(client, headers, device).status_code == 402
+    assert sent == [("trial-end@example.com", 5)]
+
+
 def test_entitlement_check_does_not_spend_a_trial(client, device):
     _, headers, _ = register(client, device=device)
 

@@ -29,6 +29,7 @@ from app.models import ProcessingJob, User
 from app.schemas import DeviceFingerprint, EntitlementOut
 from app.services import (
     entitlements,
+    email as email_service,
     job_audit,
     output_cache,
     pdf,
@@ -414,6 +415,14 @@ def _charge_and_lookup(db: Session, user: User, payload, video_id: str, *, actio
             meta={"video_id": video_id, "mode": mode, "surface": "web"},
         )
         db.commit()
+        if (
+            result.consumed
+            and result.granted_by == "trial"
+            and result.entitlement.trials_remaining == 0
+        ):
+            email_service.send_trial_exhausted_email(
+                user, result.entitlement.trials_limit
+            )
         entitlement: EntitlementOut = result.entitlement
         cached_row, cached_target, cached_model = _cache_lookup(
             db, payload, video_id, mode=mode

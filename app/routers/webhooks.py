@@ -8,16 +8,58 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models import BillingPayment, Subscription, User
 from app.schemas import MessageOut
 from app.services import billing as billing_service
+from app.services import email as email_service
 from app.services.payments import get_provider
 from app.services.payments.base import WebhookVerificationError
 
 logger = logging.getLogger("trialguard.webhooks")
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+
+
+def _send_billing_notification(
+    db: Session, event, subscription: Subscription | None
+) -> None:
+    """Best-effort customer mail after the verified webhook is committed.
+
+    Provider retries are handled by the event ledger before this point, so an
+    identical webhook cannot create duplicate messages. An SMTP failure is
+    logged by the email service and must never make a payment webhook fail.
+    """
+    if subscription is None:
+        return
+    user = db.get(User, subscription.user_id)
+    if user is None:
+        return
+
+    if event.event_type in {"subscription.charged", "invoice.paid"}:
+        if event.payment_status not in (None, "captured", "paid", "succeeded"):
+            return
+        payment_count = db.execute(
+            select(BillingPayment.id).where(
+                BillingPayment.provider == event.provider,
+                BillingPayment.provider_subscription_id
+                == subscription.provider_subscription_id,
+                BillingPayment.status.in_(("captured", "paid", "succeeded")),
+            )
+        ).scalars().all()
+        email_service.send_payment_success_email(
+            user,
+            amount_subunits=event.amount_subunits,
+            currency=event.currency,
+            renewal=len(payment_count) > 1,
+            period_end=subscription.current_period_end,
+        )
+    elif event.event_type in {"subscription.pending", "invoice.payment_failed"}:
+        email_service.send_payment_attention_email(user)
+    elif event.event_type in {"subscription.cancelled", "customer.subscription.deleted"}:
+        email_service.send_subscription_ended_email(user)
 
 
 async def _handle(request: Request, db: Session, expected: str) -> MessageOut:
@@ -45,8 +87,9 @@ async def _handle(request: Request, db: Session, expected: str) -> MessageOut:
     if not billing_service.record_event(db, event):
         return MessageOut(detail="duplicate ignored")
 
-    billing_service.apply_event(db, event)
+    subscription = billing_service.apply_event(db, event)
     db.commit()
+    _send_billing_notification(db, event, subscription)
     return MessageOut(detail="ok")
 
 

@@ -15,6 +15,7 @@ from app.schemas import (
     EntitlementOut,
     UsageEventOut,
 )
+from app.services import email as email_service
 from app.services import entitlements
 
 router = APIRouter(tags=["entitlement"])
@@ -59,6 +60,12 @@ def consume_usage(
         meta=payload.meta,
     )
     db.commit()
+    if (
+        result.consumed
+        and result.granted_by == "trial"
+        and result.entitlement.trials_remaining == 0
+    ):
+        email_service.send_trial_exhausted_email(user, result.entitlement.trials_limit)
     return result
 
 

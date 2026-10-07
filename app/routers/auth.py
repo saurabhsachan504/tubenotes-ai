@@ -140,10 +140,14 @@ def signup(
         db, user, payload.device, ip=ip, new_account=True
     )
     tokens = _issue_tokens(db, user, device.device_hash)
-    _send_verification(db, user)
+    # Verification is optional for TubeNotes. Do not send a security-style
+    # message unless the deployment explicitly enables that requirement.
+    if settings.REQUIRE_EMAIL_VERIFICATION:
+        _send_verification(db, user)
     ent = entitlements.build_entitlement(db, user, device.device_hash, machine_hash)
 
     db.commit()
+    email_service.send_welcome_email(user, ent.trials_limit)
     db.refresh(user)
     return AuthResponse(
         user=UserOut.model_validate(user),
@@ -245,6 +249,8 @@ def google_login(
     ent = entitlements.build_entitlement(db, user, device.device_hash, machine_hash)
 
     db.commit()
+    if new_account:
+        email_service.send_welcome_email(user, ent.trials_limit)
     db.refresh(user)
     return AuthResponse(
         user=UserOut.model_validate(user),
