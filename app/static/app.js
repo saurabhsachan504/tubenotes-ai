@@ -1588,7 +1588,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   function setHeroBillingPrice(plan) {
     const price = priceForPlan(plan);
     if (price && mode === "summary") {
-      $("heroHint").textContent = `5 free videos on signup · then ${price.label} · works with Hindi, English & 40+ languages`;
+      $("heroHint").textContent = `20 free videos on signup · then ${price.label} · works with Hindi, English & 40+ languages`;
     }
   }
 
