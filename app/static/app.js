@@ -1825,8 +1825,8 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
       ? "TubeNotes Pro · Private member offer"
       : "TubeNotes Pro · Limited launch offer";
     $("offerCopy").textContent = offer.title && offer.title.startsWith("Your personal")
-      ? "Claim your account-only code, then apply it securely at checkout for your monthly TubeNotes Pro access."
-      : "Claim your personal launch code, then apply it securely at checkout for your monthly TubeNotes Pro access.";
+      ? "Claim this account-only offer, then continue securely to checkout for monthly TubeNotes Pro access."
+      : "Claim this launch offer, then continue securely to checkout for monthly TubeNotes Pro access.";
   }
 
   function stopOfferCountdown() {
@@ -1884,12 +1884,13 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   function showCoupon(coupon) {
     paintOfferPrice(activeLaunchOffer || coupon);
     $("couponCode").textContent = coupon.code;
-    $("couponInput").value = coupon.code;
     const until = new Date(coupon.expires_at);
     $("couponExpiry").textContent = `Valid until ${until.toLocaleString()}. This code works only on this account.`;
+    const offer = activeLaunchOffer || coupon;
+    $("couponContinue").textContent = `Continue with ${formatOfferPrice(offer)}/month`;
     $("offerClaim").classList.add("hidden");
     $("couponPanel").classList.remove("hidden");
-    $("couponInput").focus();
+    $("couponContinue").focus();
   }
 
   async function claimOfferCoupon() {
@@ -1907,7 +1908,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   }
 
   async function startCheckout(couponCode) {
-    const buttons = [$("upgradeBtn"), $("offerClaim"), $("offerRegular"), $("couponApply")];
+    const buttons = [$("upgradeBtn"), $("offerClaim"), $("offerRegular"), $("couponContinue")];
     buttons.forEach((button) => { if (button) button.disabled = true; });
     $("offerMsg").textContent = "";
     try {
@@ -2056,10 +2057,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   $("upgradeBtn").onclick = beginSubscription;
   $("offerClose").onclick = closeOffer;
   $("offerClaim").onclick = claimOfferCoupon;
-  $("couponApply").onclick = () => startCheckout($("couponInput").value.trim());
-  $("couponInput").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); startCheckout($("couponInput").value.trim()); }
-  });
+  $("couponContinue").onclick = () => startCheckout($("couponCode").textContent.trim());
   $("couponCopy").onclick = async () => {
     const code = $("couponCode").textContent;
     try {
