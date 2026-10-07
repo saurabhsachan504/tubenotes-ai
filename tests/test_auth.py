@@ -199,3 +199,66 @@ def test_device_list_and_revoke(client, device):
     res = client.delete(f"{API}/auth/devices/{devices[0]['id']}", headers=headers)
     assert res.status_code == 200
     assert client.get(f"{API}/auth/devices", headers=headers).json() == []
+
+
+def test_three_active_device_limit_and_slot_reuse(client, device):
+    """An account may retain three devices; removal frees a reusable slot."""
+    _, headers, _ = register(client, email="devices@example.com", device=device)
+    devices = [
+        make_device(label=f"Device {number}") for number in range(2, 5)
+    ]
+
+    for next_device in devices[:2]:
+        response = client.post(
+            f"{API}/auth/login",
+            json={
+                "email": "devices@example.com",
+                "password": "Str0ngPass1",
+                "device": next_device,
+            },
+        )
+        assert response.status_code == 200, response.text
+
+    fourth = client.post(
+        f"{API}/auth/login",
+        json={
+            "email": "devices@example.com",
+            "password": "Str0ngPass1",
+            "device": devices[2],
+        },
+    )
+    assert fourth.status_code == 409
+    assert "3 devices" in fourth.json()["detail"]
+
+    active = client.get(f"{API}/auth/devices", headers=headers).json()
+    assert len(active) == 3
+    device_two = next(item for item in active if item["label"] == "Device 2")
+    assert client.delete(
+        f"{API}/auth/devices/{device_two['id']}", headers=headers
+    ).status_code == 200
+
+    # A newly seen device can now take the freed slot.
+    assert client.post(
+        f"{API}/auth/login",
+        json={
+            "email": "devices@example.com",
+            "password": "Str0ngPass1",
+            "device": devices[2],
+        },
+    ).status_code == 200
+
+    # The removed browser can later be reactivated after another slot is free.
+    active = client.get(f"{API}/auth/devices", headers=headers).json()
+    device_four = next(item for item in active if item["label"] == "Device 4")
+    assert client.delete(
+        f"{API}/auth/devices/{device_four['id']}", headers=headers
+    ).status_code == 200
+    assert client.post(
+        f"{API}/auth/login",
+        json={
+            "email": "devices@example.com",
+            "password": "Str0ngPass1",
+            "device": devices[0],
+        },
+    ).status_code == 200
+    assert len(client.get(f"{API}/auth/devices", headers=headers).json()) == 3

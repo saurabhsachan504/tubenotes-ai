@@ -56,9 +56,9 @@ class Settings(BaseSettings):
     # hardware could share a row - hence a deliberately looser cap.
     ENFORCE_MACHINE_TRIAL_LIMIT: bool = True
     MACHINE_TRIAL_LIMIT: int = 15
-    # Max distinct devices a single free account may register.
-    MAX_DEVICES_PER_FREE_USER: int = 2
-    MAX_DEVICES_PER_PAID_USER: int = 5
+    # Every account, including Pro accounts, may keep at most this many active
+    # devices. A removed device frees a slot and can be registered again later.
+    MAX_ACTIVE_DEVICES_PER_USER: int = 3
     # Require a verified email address before trials can be consumed.
     REQUIRE_EMAIL_VERIFICATION: bool = False
 

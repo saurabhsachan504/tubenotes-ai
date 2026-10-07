@@ -1668,7 +1668,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
       name.textContent = deviceName(item, index);
       const meta = document.createElement("small");
       const platform = item.platform || "Browser device";
-      meta.textContent = `${platform} · Last used ${accountDate(item.last_seen_at)}`;
+      meta.textContent = `${platform} · Last active: ${accountDate(item.last_seen_at)}`;
       detail.append(name, meta);
       const remove = document.createElement("button");
       remove.type = "button";

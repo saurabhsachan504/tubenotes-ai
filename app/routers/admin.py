@@ -345,8 +345,7 @@ async def settings_status(db: Session = Depends(get_db)):
             "device_limit_enabled": settings.ENFORCE_DEVICE_TRIAL_LIMIT,
             "machine_limit_enabled": settings.ENFORCE_MACHINE_TRIAL_LIMIT,
             "machine_limit": settings.MACHINE_TRIAL_LIMIT,
-            "max_free_devices": settings.MAX_DEVICES_PER_FREE_USER,
-            "max_paid_devices": settings.MAX_DEVICES_PER_PAID_USER,
+            "max_active_devices": settings.MAX_ACTIVE_DEVICES_PER_USER,
         },
         "billing": {
             "provider": settings.PAYMENT_PROVIDER,

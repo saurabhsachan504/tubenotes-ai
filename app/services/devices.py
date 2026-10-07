@@ -124,50 +124,36 @@ def register_device(
         )
     ).scalar_one_or_none()
 
-    if device is None:
+    if device is None or device.revoked:
         existing = db.execute(
             select(func.count())
             .select_from(Device)
             .where(Device.user_id == user.id, Device.revoked.is_(False))
         ).scalar_one()
-        subscribed = (
-            user.active_subscription() is not None
-            or user.active_manual_pro() is not None
-        )
-        # Owner/team accounts are exempt: they have to be able to test from the
-        # extension, the web app and a second browser without hitting a cap
-        # meant for ordinary free users.
-        owner = user.email.lower() in settings.unlimited_emails
-        max_devices = (
-            settings.MAX_DEVICES_PER_PAID_USER
-            if subscribed
-            else settings.MAX_DEVICES_PER_FREE_USER
-        )
-        if not owner and existing >= max_devices:
+        max_devices = settings.MAX_ACTIVE_DEVICES_PER_USER
+        if existing >= max_devices:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
                     f"This account is already active on {max_devices} devices. "
-                    "Remove one from your account settings"
-                    + ("" if subscribed else " or subscribe for more.")
+                    "Remove one from your account settings to use another device."
                 ),
             )
-        device = Device(
-            user_id=user.id,
-            device_hash=device_hash,
-            label=fp.label,
-            platform=fp.platform,
-            extension_version=fp.extension_version,
-            mac_address_hash=hash_mac_address(fp.mac_address) if fp.mac_address else None,
-        )
-        db.add(device)
-        ledger.account_count += 1
-
-    if device.revoked:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This device has been removed from your account.",
-        )
+        if device is None:
+            device = Device(
+                user_id=user.id,
+                device_hash=device_hash,
+                label=fp.label,
+                platform=fp.platform,
+                extension_version=fp.extension_version,
+                mac_address_hash=hash_mac_address(fp.mac_address) if fp.mac_address else None,
+            )
+            db.add(device)
+            ledger.account_count += 1
+        else:
+            # The user deliberately removed this device earlier. If a slot is
+            # free, activating it again is expected—not a permanent ban.
+            device.revoked = False
 
     device.last_seen_at = _now()
     device.last_ip = ip

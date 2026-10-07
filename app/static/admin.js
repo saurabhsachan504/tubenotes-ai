@@ -426,7 +426,7 @@
       configLine("Default account trials", trials.default_limit),
       configLine("Per-device protection", trials.device_limit_enabled ? "Enabled" : "Disabled", trials.device_limit_enabled ? "good" : "warn"),
       configLine("Machine protection", trials.machine_limit_enabled ? "Enabled · " + trials.machine_limit + " limit" : "Disabled", trials.machine_limit_enabled ? "good" : "warn"),
-      configLine("Devices (free / paid)", trials.max_free_devices + " / " + trials.max_paid_devices),
+      configLine("Active devices per account", trials.max_active_devices),
     ].join("");
     $("grantTrialsLimit").value = trials.default_limit == null ? 5 : trials.default_limit;
     $("billingConfig").innerHTML = [

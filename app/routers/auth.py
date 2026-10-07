@@ -13,6 +13,7 @@ from app.config import settings
 from app.database import get_db
 from app.deps import get_client_ip, get_current_user
 from app.models import (
+    Device,
     OneTimeToken,
     RefreshToken,
     TokenPurpose,
@@ -387,8 +388,16 @@ def me(user: User = Depends(get_current_user)):
 
 
 @router.get("/devices", response_model=list[DeviceOut])
-def list_devices(user: User = Depends(get_current_user)):
-    return [DeviceOut.model_validate(d) for d in user.devices if not d.revoked]
+def list_devices(
+    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """Show active devices with the most recently active one first."""
+    rows = db.execute(
+        select(Device)
+        .where(Device.user_id == user.id, Device.revoked.is_(False))
+        .order_by(Device.last_seen_at.desc(), Device.created_at.desc())
+    ).scalars().all()
+    return [DeviceOut.model_validate(device) for device in rows]
 
 
 @router.delete("/devices/{device_id}", response_model=MessageOut)
@@ -397,10 +406,18 @@ def revoke_device(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    device = next((d for d in user.devices if d.id == device_id), None)
+    device = db.execute(
+        select(Device).where(Device.id == device_id, Device.user_id == user.id)
+    ).scalar_one_or_none()
     if device is None:
         raise HTTPException(status_code=404, detail="Device not found.")
     device.revoked = True
+    # Stop the removed device from silently refreshing its session again.
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == user.id,
+        RefreshToken.device_hash == device.device_hash,
+        RefreshToken.revoked_at.is_(None),
+    ).update({"revoked_at": _now()}, synchronize_session=False)
     db.commit()
     return MessageOut(detail="Device removed.")
 
