@@ -268,6 +268,15 @@
   [data-theme="dark"] .note.err{color:#ff9d95}
   [data-theme="dark"] .note.warn{color:#fbbf24}
 
+  /* ---------------- trial-limit subscription card ---------------- */
+  .note.trial-subscribe{margin-bottom:18px;padding:0;overflow:hidden;border:1px solid #e4d6ff;background:linear-gradient(135deg,#fff 0%,#fcfaff 52%,#f6efff 100%);color:#251843;box-shadow:0 13px 30px rgba(106,56,184,.13)}
+  .trial-subscribe-card{position:relative;isolation:isolate;padding:23px 24px 21px;overflow:hidden}
+  .trial-subscribe-card::before,.trial-subscribe-card::after{content:"";position:absolute;z-index:-1;border-radius:50%;pointer-events:none}.trial-subscribe-card::before{width:210px;height:210px;right:-107px;top:-126px;background:radial-gradient(circle,rgba(239,90,184,.24),rgba(157,91,255,.08) 50%,transparent 71%)}.trial-subscribe-card::after{width:150px;height:150px;left:-85px;bottom:-108px;background:radial-gradient(circle,rgba(120,74,255,.16),transparent 70%)}
+  .trial-subscribe-top{display:flex;align-items:flex-start;gap:14px}.trial-subscribe-icon{display:grid;place-items:center;width:46px;height:46px;flex:0 0 46px;border-radius:14px;color:#fff;background:linear-gradient(135deg,#6837db,#e842a0);box-shadow:0 9px 18px rgba(134,55,211,.27)}.trial-subscribe-icon svg{width:25px;height:25px}.trial-subscribe-kicker{margin:0 0 2px;color:#8e43d7;font-size:10.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.trial-subscribe-title{margin:0;color:#251843;font-size:20px;line-height:1.16;letter-spacing:-.025em}.trial-subscribe-copy{margin:7px 0 0;color:#67587b;font-size:13px;line-height:1.5}
+  .trial-subscribe-perks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:18px 0 16px}.trial-subscribe-perks span{display:flex;align-items:center;gap:6px;min-width:0;padding:8px 9px;border:1px solid #e5daf9;border-radius:10px;background:rgba(255,255,255,.76);color:#55456a;font-size:11px;font-weight:650;line-height:1.3}.trial-subscribe-perks svg{width:14px;height:14px;flex:0 0 14px;color:#963ee0}
+  .trial-subscribe-bottom{display:flex;align-items:center;justify-content:space-between;gap:14px}.trial-subscribe-price{color:#6c2bc5;font-size:25px;font-weight:850;letter-spacing:-.045em;white-space:nowrap}.trial-subscribe-price small{margin-left:4px;color:#7d708e;font-size:11px;font-weight:650;letter-spacing:0}.trial-subscribe-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:45px;padding:11px 18px;border:0;border-radius:11px;color:#fff;background:linear-gradient(135deg,#6935dc,#a33de4 54%,#e842a0);box-shadow:0 9px 21px rgba(143,54,204,.28);font-size:13.5px;font-weight:800;white-space:nowrap;transition:transform .16s ease,filter .16s ease,box-shadow .16s ease}.trial-subscribe-btn:hover{filter:brightness(1.06);transform:translateY(-1px);box-shadow:0 12px 25px rgba(143,54,204,.34)}.trial-subscribe-btn:disabled{opacity:.62;cursor:wait;transform:none}.trial-subscribe-btn svg{width:16px;height:16px}.trial-subscribe-assurance{margin:11px 0 0;text-align:right;color:#82758f;font-size:10.5px}.trial-subscribe-error{min-height:0;margin-top:8px;color:#cc3c68;font-size:11.5px;text-align:center}.trial-subscribe-error:not(:empty){min-height:17px}
+  [data-theme="dark"] .note.trial-subscribe{border-color:#473565;background:linear-gradient(135deg,#1c1630,#251b3d);color:#f0eaff}.dark .trial-subscribe-title,[data-theme="dark"] .trial-subscribe-title{color:#f0eaff}[data-theme="dark"] .trial-subscribe-copy,[data-theme="dark"] .trial-subscribe-perks span{color:#c8bdd9}[data-theme="dark"] .trial-subscribe-perks span{border-color:#4e3a70;background:rgba(255,255,255,.04)}[data-theme="dark"] .trial-subscribe-price{color:#d6a7ff}
+
   /* ---------------- follow-up video chat ---------------- */
   /* The chat lives inside the result card, directly below the summary. */
   .video-chat{margin-top:18px;background:transparent}
@@ -523,6 +532,10 @@
     .pdf-steps{gap:4px}
     .pdf-step{font-size:9.5px}
     .pdf-step:not(:last-child)::after{left:calc(50% + 13px);width:calc(100% - 19px)}
+    .trial-subscribe-card{padding:19px 16px 16px}
+    .trial-subscribe-top{gap:11px}.trial-subscribe-icon{width:42px;height:42px;flex-basis:42px;border-radius:13px}.trial-subscribe-title{font-size:19px}.trial-subscribe-copy{font-size:12.5px}
+    .trial-subscribe-perks{grid-template-columns:1fr;gap:6px;margin:15px 0}.trial-subscribe-perks span{padding:7px 9px}
+    .trial-subscribe-bottom{align-items:stretch;flex-direction:column;gap:11px}.trial-subscribe-price{text-align:center;font-size:26px}.trial-subscribe-btn{width:100%;min-height:48px;font-size:14px}.trial-subscribe-assurance{text-align:center;margin-top:9px}
     .steps{grid-template-columns:1fr;gap:12px}
     h2.sec{font-size:19px;margin-top:28px}
     .step{padding:16px}
@@ -756,6 +769,6 @@
 </div>
 
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="/static/app.js?v=24"></script>
+<script src="/static/app.js?v=25"></script>
 </body>
 </html>

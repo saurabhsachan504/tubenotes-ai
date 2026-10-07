@@ -632,22 +632,43 @@
           const trialLabel = Number.isInteger(trialLimit) && trialLimit > 0
             ? `${trialLimit} free trials`
             : "your free trials";
-          note("warn",
-            `<b>You have used all ${escapeAttr(trialLabel)}.</b><br>` +
-            `Click below to see your available offer.<br>` +
-            `<button class="linkbtn" id="trialOfferBtn" type="button">View Offers →</button>`);
-          const offerButton = $("trialOfferBtn");
-          if (offerButton) {
-            offerButton.addEventListener("click", async () => {
-              offerButton.disabled = true;
-              try {
-                // The server selects the right offer: ₹99 in India, $5
-                // internationally, or ₹298 for an approved personal email.
-                await openOffer();
-              } catch (offerError) {
-                note("err", escapeAttr(offerError.message || "Couldn't load your offer."));
-              } finally {
-                offerButton.disabled = false;
+          const price = priceForPlan(currentBillingPlan);
+          note("trial-subscribe",
+            `<section class="trial-subscribe-card" aria-label="TubeNotes Pro subscription">` +
+              `<div class="trial-subscribe-top">` +
+                `<div class="trial-subscribe-icon" aria-hidden="true">` +
+                  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18l-2 7a6 6 0 0 1-14 0L3 7Z"/><path d="M7 7 5 3m12 4 2-4M12 7V3"/><path d="M9 19h6"/></svg>` +
+                `</div>` +
+                `<div><p class="trial-subscribe-kicker">TubeNotes Pro</p>` +
+                `<h3 class="trial-subscribe-title">Your free trials are over</h3>` +
+                `<p class="trial-subscribe-copy">You have used all ${escapeAttr(trialLabel)}. Keep learning with unlimited summaries, FullNotes PDFs and 40+ languages.</p></div>` +
+              `</div>` +
+              `<div class="trial-subscribe-perks">` +
+                `<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m5 12 4 4L19 6"/></svg>Unlimited summaries</span>` +
+                `<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m5 12 4 4L19 6"/></svg>Full PDF notes</span>` +
+                `<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m5 12 4 4L19 6"/></svg>40+ languages</span>` +
+              `</div>` +
+              `<div class="trial-subscribe-bottom">` +
+                `<div class="trial-subscribe-price">${escapeAttr(price?.label || "Monthly Pro")}<small>cancel anytime</small></div>` +
+                `<button class="trial-subscribe-btn" id="trialSubscribeBtn" type="button">Subscribe Now <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>` +
+              `</div>` +
+              `<p class="trial-subscribe-assurance">Secure monthly subscription</p>` +
+              `<div class="trial-subscribe-error" id="trialSubscribeError" aria-live="polite"></div>` +
+            `</section>`);
+          const subscribeButton = $("trialSubscribeBtn");
+          if (subscribeButton) {
+            subscribeButton.addEventListener("click", async () => {
+              const originalText = subscribeButton.innerHTML;
+              subscribeButton.disabled = true;
+              subscribeButton.textContent = "Opening secure checkout...";
+              await startCheckout(null, {
+                trigger: subscribeButton,
+                errorTarget: $("trialSubscribeError"),
+                sameTab: true,
+              });
+              if (document.contains(subscribeButton)) {
+                subscribeButton.disabled = false;
+                subscribeButton.innerHTML = originalText;
               }
             });
           }
@@ -1899,16 +1920,19 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     }
   }
 
-  async function startCheckout(couponCode) {
-    const buttons = [$("upgradeBtn"), $("offerClaim"), $("offerRegular")];
+  async function startCheckout(couponCode, { trigger = null, errorTarget = null, sameTab = false } = {}) {
+    const buttons = [$("upgradeBtn"), $("offerClaim"), $("offerRegular"), trigger]
+      .filter((button, index, list) => button && list.indexOf(button) === index);
     buttons.forEach((button) => { if (button) button.disabled = true; });
     $("offerMsg").textContent = "";
+    if (errorTarget) errorTarget.textContent = "";
     try {
       const s = await api("/billing/checkout", {
         method: "POST", body: couponCode ? { coupon_code: couponCode } : {},
       });
       closeOffer();
-      window.open(s.checkout_url, "_blank", "noopener");
+      if (sameTab) window.location.assign(s.checkout_url);
+      else window.open(s.checkout_url, "_blank", "noopener");
       $("acctMsg").textContent = "Finish the payment in the new tab, then reopen this panel.";
       $("acctMsg").className = "msg ok";
     } catch (e) {
@@ -1918,6 +1942,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
       $("acctMsg").textContent = message;
       $("acctMsg").className = "msg";
       if (!$("offerModal").classList.contains("hidden")) $("offerMsg").textContent = message;
+      if (errorTarget) errorTarget.textContent = message;
     } finally {
       buttons.forEach((button) => { if (button) button.disabled = false; });
     }
@@ -1933,16 +1958,9 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
           return;
         }
       }
-      // The server chooses the one eligible offer (India, international, or
-      // an account-only campaign). The browser never selects a price or plan.
-      try {
-        await openOffer();
-      } catch (offerError) {
-        // A disabled/expired campaign must not block the normal subscription
-        // route. Other errors are still surfaced to the account panel.
-        if (offerError && offerError.status === 422) await startCheckout(null);
-        else throw offerError;
-      }
+      // The server chooses the trusted country-specific regular plan.
+      // Launch campaigns are intentionally disabled for this checkout path.
+      await startCheckout(null);
     } catch (e) {
       $("acctMsg").textContent = e.message || "Couldn't start checkout.";
       $("acctMsg").className = "msg";
