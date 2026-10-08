@@ -38,6 +38,7 @@ from app.services import (
     ratelimit,
     summarizer,
     translate,
+    web_push as web_push_service,
     youtube,
 )
 
@@ -426,6 +427,13 @@ def _charge_and_lookup(db: Session, user: User, payload, video_id: str, *, actio
                     user, result.trial_reminder_remaining
                 )
             ntfy_service.trial_milestone(user, result.trial_reminder_remaining)
+            # The web app consumes trials through this streaming route (not
+            # /usage/consume), so browser notifications must be emitted here
+            # too. Without this call, email and ntfy worked but the customer
+            # never received the 15/10/5/0 native Web Push alert.
+            web_push_service.trial_milestone(
+                db, user, result.trial_reminder_remaining
+            )
         entitlement: EntitlementOut = result.entitlement
         cached_row, cached_target, cached_model = _cache_lookup(
             db, payload, video_id, mode=mode

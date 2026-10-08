@@ -204,6 +204,39 @@ def test_summarize_streams_and_charges_one_trial(client, device, stub_youtube, s
     assert "".join(e["text"] for e in events if e["type"] == "delta") == done["text"]
 
 
+def test_web_summary_sends_each_trial_milestone_push(
+    client, device, stub_youtube, stub_model, monkeypatch
+):
+    """The website's streaming path must notify at 15, 10, 5 and 0 too."""
+    from app.services import web_push as web_push_service
+
+    monkeypatch.setattr(settings, "FREE_TRIAL_LIMIT", 20)
+    monkeypatch.setattr(settings, "ENFORCE_MACHINE_TRIAL_LIMIT", False)
+    sent = []
+    monkeypatch.setattr(
+        web_push_service,
+        "trial_milestone",
+        lambda db, user, remaining: sent.append((user.email, remaining)),
+    )
+    email = "web-trial-push@example.com"
+    _, headers, _ = register(client, email=email, device=device)
+
+    for number in range(20):
+        video_id = f"webtrial{number:03d}"
+        result = client.post(
+            f"{API}/summarize",
+            json={
+                "url": f"https://youtu.be/{video_id}",
+                "device": device,
+                "mode": "summary",
+            },
+            headers=headers,
+        )
+        assert result.status_code == 200, result.text
+
+    assert sent == [(email, 15), (email, 10), (email, 5), (email, 0)]
+
+
 def test_video_chat_is_authenticated_and_does_not_consume_a_trial(client, device, monkeypatch):
     _, headers, _ = register(client, device=device)
 
