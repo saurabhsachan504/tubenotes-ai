@@ -1690,6 +1690,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     $("authPane").classList.remove("hidden");
     $("acctPane").classList.add("hidden");
     setAuthMode(which === "signup" ? "signup" : "login");
+    clearDeviceRecovery();
     if (lead) $("authLead").textContent = lead;
   }
 
@@ -1706,6 +1707,35 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     $("authSubmit").textContent = up ? "Create account" : "Sign in";
     $("password").setAttribute("autocomplete", up ? "new-password" : "current-password");
     $("authMsg").textContent = "";
+    clearDeviceRecovery();
+  }
+
+  let deviceRecoveryMethod = null;
+  let lastGoogleCredential = "";
+
+  function isDeviceLimitError(error) {
+    return error && error.status === 409 && /active on \d+ devices/i.test(error.message || "");
+  }
+
+  function clearDeviceRecovery() {
+    deviceRecoveryMethod = null;
+    $("deviceRecovery").classList.add("hidden");
+    $("deviceRecoveryMsg").textContent = "";
+  }
+
+  function showDeviceRecovery(method) {
+    deviceRecoveryMethod = method;
+    $("deviceRecoveryMsg").textContent = "This account has reached its device limit. After you confirm your sign-in, all old devices and sessions will be signed out and this device will continue.";
+    $("deviceRecovery").classList.remove("hidden");
+  }
+
+  async function finishAuthenticatedLogin(data) {
+    tokens.set(data.tokens);
+    prepareWebPush({ welcome: Boolean(data.new_account) });
+    paintChip(data.entitlement);
+    setHeroBillingPrice(currentBillingPlan);
+    closeModal();
+    if ($("url").value.trim()) run(mode);
   }
 
   function accountDate(value) {
@@ -2112,18 +2142,46 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
       }
       const data = await api(authMode === "signup" ? "/auth/signup" : "/auth/login",
         { auth: false, method: "POST", body });
-      tokens.set(data.tokens);
-      prepareWebPush({ welcome: Boolean(data.new_account) });
-      paintChip(data.entitlement);
-      setHeroBillingPrice(currentBillingPlan);
-      closeModal();
-      if ($("url").value.trim()) run(mode);
+      await finishAuthenticatedLogin(data);
     } catch (e2) {
       msg.textContent = e2.status === 429
         ? "Too many attempts. Please wait a few minutes."
         : (e2.message || "Something went wrong.");
+      if (authMode === "login" && isDeviceLimitError(e2)) showDeviceRecovery("password");
     } finally { btn.disabled = false; }
   });
+
+  $("removeOldDevicesBtn").onclick = async () => {
+    const btn = $("removeOldDevicesBtn"), msg = $("deviceRecoveryMsg");
+    if (!deviceRecoveryMethod) return;
+    const body = { method: deviceRecoveryMethod, device: device() };
+    if (deviceRecoveryMethod === "google") {
+      if (!lastGoogleCredential) {
+        msg.textContent = "Please choose your Google account again, then try this button.";
+        return;
+      }
+      body.credential = lastGoogleCredential;
+    } else {
+      body.email = $("email").value.trim();
+      body.password = $("password").value;
+      if (!body.email || !body.password) {
+        msg.textContent = "Enter your email and password first.";
+        return;
+      }
+    }
+    btn.disabled = true;
+    msg.textContent = "Confirming your identity and signing out old devices…";
+    try {
+      const data = await api("/auth/recover-device-access", {
+        auth: false, method: "POST", body,
+      });
+      await finishAuthenticatedLogin(data);
+    } catch (error) {
+      msg.textContent = error.status === 429
+        ? "Too many attempts. Please wait a few minutes."
+        : (error.message || "Could not remove old devices.");
+    } finally { btn.disabled = false; }
+  };
 
   const forgotBtn = $("forgotBtn");
   if (forgotBtn) forgotBtn.onclick = async () => {
@@ -2185,6 +2243,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
 
   async function onGoogleCredential(resp) {
     const msg = $("googleMsg");
+    lastGoogleCredential = resp.credential || "";
     msg.textContent = "Signing you in\u2026";
     msg.className = "msg";
     try {
@@ -2196,17 +2255,13 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
           device: device(),
         },
       });
-      tokens.set(data.tokens);
-      prepareWebPush({ welcome: Boolean(data.new_account) });
-      paintChip(data.entitlement);
-      setHeroBillingPrice(currentBillingPlan);
-      closeModal();
-      if ($("url").value.trim()) run(mode);
+      await finishAuthenticatedLogin(data);
     } catch (e) {
       msg.textContent = e.status === 429
         ? "Too many attempts. Please wait a few minutes."
         : (e.message || "Google sign-in failed.");
       msg.className = "msg";
+      if (isDeviceLimitError(e)) showDeviceRecovery("google");
     }
   }
 

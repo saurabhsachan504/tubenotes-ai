@@ -391,6 +391,10 @@
   .google-auth{display:grid;justify-items:center}
   .google-panel{width:100%;padding:15px 12px 12px;border:1px solid color-mix(in srgb,var(--brand2) 24%,var(--line));border-radius:15px;background:linear-gradient(135deg,color-mix(in srgb,var(--brand1) 8%,var(--panel)),var(--field));box-shadow:inset 0 1px rgba(255,255,255,.56)}
   .google-panel-label{margin:0 0 9px;text-align:center;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+  .device-recovery{margin-top:14px;padding:13px;border:1px solid rgba(239,68,68,.3);border-radius:12px;background:rgba(254,242,242,.72)}
+  .device-recovery p{margin:0 0 10px;color:#b91c1c;font-size:12.5px;line-height:1.5}
+  .device-recovery button{width:100%;border-color:rgba(220,38,38,.45);color:#b91c1c;background:transparent}
+  .device-recovery button:hover{border-color:#dc2626;background:rgba(254,226,226,.8)}
   #gsiButton{display:flex;justify-content:center;min-height:40px}
   .auth-divider{display:flex;align-items:center;gap:10px;width:100%;margin:16px 0 3px;color:var(--muted);font-size:11.5px}
   .auth-divider::before,.auth-divider::after{content:"";height:1px;flex:1;background:var(--line)}
@@ -398,6 +402,7 @@
   .auth-email-switch:hover{background:var(--chip)}
   .auth-footer{display:flex;justify-content:space-between;align-items:center;margin-top:5px}
   [data-theme="dark"] .google-panel{background:linear-gradient(135deg,rgba(124,58,237,.14),rgba(24,19,48,.78));box-shadow:inset 0 1px rgba(255,255,255,.04)}
+  [data-theme="dark"] .device-recovery{background:rgba(127,29,29,.18)}
   .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px}
   .tabs button{
     flex:1;background:none;border:none;border-bottom:2px solid transparent;
@@ -718,6 +723,10 @@
         <div class="msg" id="authMsg"></div>
         <button class="btn-full" id="authSubmit" type="submit">Sign in</button>
       </form>
+      </div>
+      <div class="device-recovery hidden" id="deviceRecovery" aria-live="polite">
+        <p id="deviceRecoveryMsg"></p>
+        <button class="linkbtn" id="removeOldDevicesBtn" type="button">Remove old devices &amp; continue</button>
       </div>
       <div class="auth-footer">
         <button class="linkbtn" id="closeAuth">Close</button>

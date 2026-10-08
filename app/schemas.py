@@ -82,6 +82,21 @@ class LoginRequest(BaseModel):
         return v.strip().lower()
 
 
+class DeviceRecoveryRequest(BaseModel):
+    """Re-authenticate before replacing every active device session."""
+
+    method: Literal["password", "google"]
+    email: EmailStr | None = None
+    password: str | None = Field(default=None, max_length=200)
+    credential: str | None = Field(default=None, max_length=8192)
+    device: DeviceFingerprint
+
+    @field_validator("email")
+    @classmethod
+    def _lower(cls, v: str | None) -> str | None:
+        return v.strip().lower() if v else v
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=10, max_length=256)
 

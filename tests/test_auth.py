@@ -262,3 +262,68 @@ def test_three_active_device_limit_and_slot_reuse(client, device):
         },
     ).status_code == 200
     assert len(client.get(f"{API}/auth/devices", headers=headers).json()) == 3
+
+
+def test_device_recovery_replaces_all_old_devices_sessions_and_pushes(client, db, device):
+    """A verified owner can make the current browser the sole active device."""
+    from app.models import Device, RefreshToken, User, WebPushSubscription
+
+    body, _, first = register(client, email="recover@example.com", device=device)
+    old_refresh = body["tokens"]["refresh_token"]
+    second, third, current = [
+        make_device(label=f"Device {number}") for number in range(2, 5)
+    ]
+    for old_device in (second, third):
+        assert client.post(
+            f"{API}/auth/login",
+            json={"email": "recover@example.com", "password": "Str0ngPass1", "device": old_device},
+        ).status_code == 200
+
+    user = db.query(User).filter_by(email="recover@example.com").one()
+    db.add(WebPushSubscription(
+        user_id=user.id,
+        endpoint="https://push.example.test/old-browser-endpoint",
+        p256dh="x" * 24,
+        auth="y" * 16,
+    ))
+    db.commit()
+
+    blocked = client.post(
+        f"{API}/auth/login",
+        json={"email": "recover@example.com", "password": "Str0ngPass1", "device": current},
+    )
+    assert blocked.status_code == 409
+
+    recovered = client.post(
+        f"{API}/auth/recover-device-access",
+        json={
+            "method": "password",
+            "email": "recover@example.com",
+            "password": "Str0ngPass1",
+            "device": current,
+        },
+    )
+    assert recovered.status_code == 200, recovered.text
+    recovered_body = recovered.json()
+    assert recovered_body["new_account"] is False
+    headers = {"Authorization": f"Bearer {recovered_body['tokens']['access_token']}"}
+    active = client.get(f"{API}/auth/devices", headers=headers).json()
+    assert [row["label"] for row in active] == ["Device 4"]
+    assert db.query(Device).filter_by(user_id=user.id, revoked=False).count() == 1
+    assert db.query(WebPushSubscription).filter_by(user_id=user.id).count() == 0
+    assert db.query(RefreshToken).filter_by(user_id=user.id, revoked_at=None).count() == 1
+    assert client.post(f"{API}/auth/refresh", json={"refresh_token": old_refresh}).status_code == 401
+
+
+def test_device_recovery_requires_valid_owner_password(client, device):
+    register(client, email="recover-denied@example.com", device=device)
+    denied = client.post(
+        f"{API}/auth/recover-device-access",
+        json={
+            "method": "password",
+            "email": "recover-denied@example.com",
+            "password": "WrongPass1",
+            "device": make_device(),
+        },
+    )
+    assert denied.status_code == 401

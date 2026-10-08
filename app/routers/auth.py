@@ -18,9 +18,11 @@ from app.models import (
     RefreshToken,
     TokenPurpose,
     User,
+    WebPushSubscription,
 )
 from app.schemas import (
     AuthResponse,
+    DeviceRecoveryRequest,
     DeviceOut,
     EmailRequest,
     GoogleLoginRequest,
@@ -322,6 +324,122 @@ def login(
         tokens=tokens,
         device_id=device_id or "",
         entitlement=ent,
+    )
+
+
+@router.post("/recover-device-access", response_model=AuthResponse)
+def recover_device_access(
+    payload: DeviceRecoveryRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    ip: str = Depends(get_client_ip),
+):
+    """Replace all active devices only after the owner proves their identity.
+
+    This is intentionally unauthenticated because it is used precisely when a
+    person cannot sign in due to the device cap. A password or verified Google
+    identity is required; a submitted email address alone can never remove a
+    device or session.
+    """
+    ratelimit.hit(
+        db,
+        f"device-recovery:ip:{ip}",
+        limit=settings.LOGIN_RATE_LIMIT * 3,
+        window_seconds=settings.LOGIN_RATE_WINDOW_SECONDS,
+    )
+
+    user: User | None = None
+    if payload.method == "password":
+        if not payload.email or not payload.password:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Email and password are required.",
+            )
+        ratelimit.hit(
+            db,
+            f"device-recovery:{payload.email}",
+            limit=settings.LOGIN_RATE_LIMIT,
+            window_seconds=settings.LOGIN_RATE_WINDOW_SECONDS,
+        )
+        user = db.execute(
+            select(User).where(User.email == payload.email)
+        ).scalar_one_or_none()
+        if user is None or not verify_password(payload.password, user.password_hash):
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password.",
+            )
+    else:
+        if not settings.GOOGLE_LOGIN_ENABLED or not payload.credential:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="A Google sign-in is required.",
+            )
+        try:
+            identity = google_auth.verify_id_token(payload.credential)
+        except google_auth.GoogleAuthError as exc:
+            db.commit()
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc))
+        if not identity.email_verified:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your Google account's email is not verified.",
+            )
+        user = db.execute(
+            select(User).where(User.google_sub == identity.sub)
+        ).scalar_one_or_none()
+        if user is None:
+            # Match the normal Google-login behaviour: a verified Google email
+            # can securely connect an existing password account to Google.
+            user = db.execute(
+                select(User).where(User.email == identity.email)
+            ).scalar_one_or_none()
+            if user is not None:
+                user.google_sub = identity.sub
+                user.auth_provider = "google+password"
+                user.email_verified = True
+
+        if user is None:
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unable to verify this account.",
+            )
+
+    if not user.is_active:
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="This account is disabled."
+        )
+
+    # The new device becomes the sole active device. Old sessions and browser
+    # push endpoints are also revoked, so no other browser can keep access or
+    # receive this user's private notifications after the recovery.
+    db.query(Device).filter(
+        Device.user_id == user.id, Device.revoked.is_(False)
+    ).update({"revoked": True}, synchronize_session=False)
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None)
+    ).update({"revoked_at": _now()}, synchronize_session=False)
+    db.query(WebPushSubscription).filter(
+        WebPushSubscription.user_id == user.id
+    ).delete(synchronize_session=False)
+    db.flush()
+
+    device = device_service.register_device(db, user, payload.device, ip=ip)
+    machine_hash = device_service.fingerprint_to_machine_hash(payload.device)
+    user.last_login_at = _now()
+    tokens = _issue_tokens(db, user, device.device_hash)
+    ent = entitlements.build_entitlement(db, user, device.device_hash, machine_hash)
+    db.commit()
+    db.refresh(user)
+    return AuthResponse(
+        user=UserOut.model_validate(user),
+        tokens=tokens,
+        device_id=device.id,
+        entitlement=ent,
+        new_account=False,
     )
 
 
