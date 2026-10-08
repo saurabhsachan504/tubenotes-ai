@@ -263,9 +263,9 @@
   // =====================================================================
   // Customer browser Web Push
   // =====================================================================
-  // The browser owns Allow/Block. We intentionally make the native request
-  // as soon as a supported visitor opens TubeNotes, as requested. Browsers
-  // may still apply their own anti-spam/quiet-prompt policy.
+  // The browser owns Allow/Block. We request native permission only after a
+  // successful account authentication, never when an anonymous visitor first
+  // lands on the page. Browsers may still apply anti-spam/quiet-prompt rules.
   let webPushConfig = null;
   let webPushConfigPromise = null;
 
@@ -297,18 +297,20 @@
     return navigator.serviceWorker.ready || registration;
   }
 
-  async function prepareWebPush({ welcome = false } = {}) {
+  async function prepareWebPush({ welcome = false, requestPermission = false } = {}) {
     if (!browserSupportsPush()) return false;
+    if (!signedIn()) return false;
     const config = await loadWebPushConfig();
     if (!config) return false;
 
-    let registration;
-    try { registration = await registerWebPushWorker(); } catch (_) { return false; }
-
     if (Notification.permission === "default") {
+      if (!requestPermission) return false;
       try { await Notification.requestPermission(); } catch (_) { return false; }
     }
-    if (Notification.permission !== "granted" || !signedIn()) return false;
+    if (Notification.permission !== "granted") return false;
+
+    let registration;
+    try { registration = await registerWebPushWorker(); } catch (_) { return false; }
 
     try {
       let subscription = await registration.pushManager.getSubscription();
@@ -1731,7 +1733,9 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
 
   async function finishAuthenticatedLogin(data) {
     tokens.set(data.tokens);
-    prepareWebPush({ welcome: Boolean(data.new_account) });
+    // First successful signup/sign-in is the only point where a browser with
+    // default permission is asked to show the native Allow/Block prompt.
+    prepareWebPush({ welcome: Boolean(data.new_account), requestPermission: true });
     paintChip(data.entitlement);
     setHeroBillingPrice(currentBillingPlan);
     closeModal();
@@ -2279,8 +2283,8 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   if ($("outLang")) fillLangSelect($("outLang"), { includeAuto: true });
   initGoogle();
   loadBillingPrice().catch(() => {});
-  // Direct first-visit permission attempt. If the visitor signs in after
-  // allowing it, the auth callbacks above securely attach this browser.
+  // Returning signed-in users with an already granted permission are attached
+  // silently. Anonymous visitors are never shown a native permission prompt.
   prepareWebPush();
   try {
     const t = localStorage.getItem("tn_theme");
