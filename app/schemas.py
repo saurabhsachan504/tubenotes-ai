@@ -116,6 +116,7 @@ class AuthResponse(BaseModel):
     tokens: TokenPair
     device_id: str
     entitlement: "EntitlementOut"
+    new_account: bool = False
 
 
 class EmailRequest(BaseModel):
@@ -143,6 +144,31 @@ class VerifyEmailRequest(BaseModel):
 
 class MessageOut(BaseModel):
     detail: str
+
+
+# ---------------------------------------------------------------------------
+# Browser Web Push
+# ---------------------------------------------------------------------------
+class WebPushConfigOut(BaseModel):
+    enabled: bool
+    public_key: str = ""
+
+
+class WebPushSubscriptionRequest(BaseModel):
+    endpoint: str = Field(min_length=12, max_length=4096)
+    p256dh: str = Field(min_length=16, max_length=255)
+    auth: str = Field(min_length=8, max_length=255)
+    # True only immediately after account creation. Its welcome event happens
+    # before a browser endpoint exists, so it is delivered after association.
+    send_welcome: bool = False
+
+    @field_validator("endpoint")
+    @classmethod
+    def _https_endpoint(cls, value: str) -> str:
+        value = value.strip()
+        if not value.startswith("https://"):
+            raise ValueError("Push endpoint must use HTTPS.")
+        return value
 
 
 class ContactRequest(BaseModel):

@@ -157,6 +157,7 @@ def signup(
         tokens=tokens,
         device_id=device.id,
         entitlement=ent,
+        new_account=True,
     )
 
 
@@ -261,6 +262,7 @@ def google_login(
         tokens=tokens,
         device_id=device.id,
         entitlement=ent,
+        new_account=new_account,
     )
 
 

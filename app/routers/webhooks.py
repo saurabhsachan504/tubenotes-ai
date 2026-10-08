@@ -17,6 +17,7 @@ from app.schemas import MessageOut
 from app.services import billing as billing_service
 from app.services import email as email_service
 from app.services import ntfy as ntfy_service
+from app.services import web_push as web_push_service
 from app.services.payments import get_provider
 from app.services.payments.base import WebhookVerificationError
 
@@ -63,12 +64,20 @@ def _send_billing_notification(
             currency=event.currency,
             renewal=len(payment_count) > 1,
         )
+        web_push_service.payment_received(
+            db, user,
+            amount_subunits=event.amount_subunits,
+            currency=event.currency,
+            renewal=len(payment_count) > 1,
+        )
     elif event.event_type in {"subscription.pending", "invoice.payment_failed"}:
         email_service.send_payment_attention_email(user)
         ntfy_service.payment_attention(user)
+        web_push_service.payment_attention(db, user)
     elif event.event_type in {"subscription.cancelled", "customer.subscription.deleted"}:
         email_service.send_subscription_ended_email(user)
         ntfy_service.subscription_ended(user)
+        web_push_service.subscription_ended(db, user)
 
 
 async def _handle(request: Request, db: Session, expected: str) -> MessageOut:

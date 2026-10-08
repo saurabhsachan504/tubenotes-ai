@@ -26,6 +26,7 @@ from app.security import constant_time_equals
 from app.services import billing as billing_service
 from app.services import email as email_service
 from app.services import ntfy as ntfy_service
+from app.services import web_push as web_push_service
 from app.services.payments import get_provider
 from app.services.pricing import plan_for_headers, plans
 from app.services.promotions import (
@@ -282,6 +283,7 @@ def cancel_subscription(
     db.commit()
     email_service.send_cancellation_scheduled_email(user, sub.current_period_end)
     ntfy_service.cancellation_scheduled(user, sub.current_period_end)
+    web_push_service.cancellation_scheduled(db, user, sub.current_period_end)
     return MessageOut(
         detail="Subscription will end at the close of the current billing period."
     )

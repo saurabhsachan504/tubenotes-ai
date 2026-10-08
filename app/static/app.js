@@ -261,6 +261,83 @@
   }
 
   // =====================================================================
+  // Customer browser Web Push
+  // =====================================================================
+  // The browser owns Allow/Block. We intentionally make the native request
+  // as soon as a supported visitor opens TubeNotes, as requested. Browsers
+  // may still apply their own anti-spam/quiet-prompt policy.
+  let webPushConfig = null;
+  let webPushConfigPromise = null;
+
+  function browserSupportsPush() {
+    return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  }
+
+  function vapidKeyBytes(value) {
+    const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - value.length % 4) % 4);
+    const raw = atob(padded);
+    return Uint8Array.from(raw, (char) => char.charCodeAt(0));
+  }
+
+  async function loadWebPushConfig() {
+    if (webPushConfig) return webPushConfig;
+    if (!webPushConfigPromise) {
+      webPushConfigPromise = api("/push/config", { auth: false, cache: "no-store" })
+        .then((config) => {
+          webPushConfig = config && config.enabled && config.public_key ? config : null;
+          return webPushConfig;
+        })
+        .catch(() => null);
+    }
+    return webPushConfigPromise;
+  }
+
+  async function registerWebPushWorker() {
+    const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    return navigator.serviceWorker.ready || registration;
+  }
+
+  async function prepareWebPush({ welcome = false } = {}) {
+    if (!browserSupportsPush()) return false;
+    const config = await loadWebPushConfig();
+    if (!config) return false;
+
+    let registration;
+    try { registration = await registerWebPushWorker(); } catch (_) { return false; }
+
+    if (Notification.permission === "default") {
+      try { await Notification.requestPermission(); } catch (_) { return false; }
+    }
+    if (Notification.permission !== "granted" || !signedIn()) return false;
+
+    try {
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: vapidKeyBytes(config.public_key),
+        });
+      }
+      const json = subscription.toJSON();
+      if (!json.endpoint || !json.keys || !json.keys.p256dh || !json.keys.auth) return false;
+      await api("/push/subscribe", {
+        method: "POST",
+        body: {
+          endpoint: json.endpoint,
+          p256dh: json.keys.p256dh,
+          auth: json.keys.auth,
+          send_welcome: Boolean(welcome),
+        },
+      });
+      return true;
+    } catch (_) {
+      // A denied prompt, unsupported browser, or a transient push-service
+      // error must never interrupt login, signup, or summarisation.
+      return false;
+    }
+  }
+
+  // =====================================================================
   // Trials chip
   // =====================================================================
   function paintChip(ent) {
@@ -2036,6 +2113,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
       const data = await api(authMode === "signup" ? "/auth/signup" : "/auth/login",
         { auth: false, method: "POST", body });
       tokens.set(data.tokens);
+      prepareWebPush({ welcome: Boolean(data.new_account) });
       paintChip(data.entitlement);
       setHeroBillingPrice(currentBillingPlan);
       closeModal();
@@ -2119,6 +2197,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
         },
       });
       tokens.set(data.tokens);
+      prepareWebPush({ welcome: Boolean(data.new_account) });
       paintChip(data.entitlement);
       setHeroBillingPrice(currentBillingPlan);
       closeModal();
@@ -2145,6 +2224,9 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   if ($("outLang")) fillLangSelect($("outLang"), { includeAuto: true });
   initGoogle();
   loadBillingPrice().catch(() => {});
+  // Direct first-visit permission attempt. If the visitor signs in after
+  // allowing it, the auth callbacks above securely attach this browser.
+  prepareWebPush();
   try {
     const t = localStorage.getItem("tn_theme");
     if (t) { document.documentElement.dataset.theme = t; $("themeBtn").textContent = t === "dark" ? "☀️" : "🌙"; }

@@ -148,6 +148,24 @@ class Settings(BaseSettings):
     NTFY_TOKEN: str = ""
     NTFY_TIMEOUT_SECONDS: float = 3.0
 
+    # ---- customer browser Web Push -------------------------------------
+    # VAPID authenticates this site to Chrome/Firefox/Safari push services.
+    # The private key is a server secret: keep it in .env and never in Git.
+    WEB_PUSH_ENABLED: bool = False
+    WEB_PUSH_VAPID_PUBLIC_KEY: str = ""
+    WEB_PUSH_VAPID_PRIVATE_KEY: str = ""
+    WEB_PUSH_VAPID_CONTACT: str = "mailto:support@tubenotes.ai"
+    WEB_PUSH_TTL_SECONDS: int = 86_400
+    WEB_PUSH_TIMEOUT_SECONDS: float = 5.0
+
+    @property
+    def web_push_configured(self) -> bool:
+        return bool(
+            self.WEB_PUSH_ENABLED
+            and self.WEB_PUSH_VAPID_PUBLIC_KEY.strip()
+            and self.WEB_PUSH_VAPID_PRIVATE_KEY.strip()
+        )
+
     # ---- web app / summarisation ---------------------------------------
     # Serve the browser UI from this same service at "/".
     WEB_APP_ENABLED: bool = True

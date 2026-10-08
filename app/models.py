@@ -122,6 +122,9 @@ class User(TimestampMixin, Base):
     usage_events: Mapped[list["UsageEvent"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    web_push_subscriptions: Mapped[list["WebPushSubscription"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
     def active_subscription(self) -> "Subscription | None":
         for sub in self.subscriptions:
@@ -257,6 +260,33 @@ class EmailNotification(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class WebPushSubscription(Base):
+    """One browser/device endpoint opted into customer Web Push."""
+
+    __tablename__ = "web_push_subscriptions"
+    __table_args__ = (
+        UniqueConstraint("endpoint", name="uq_web_push_subscriptions_endpoint"),
+        Index("ix_web_push_subscriptions_user_id", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    p256dh: Mapped[str] = mapped_column(String(255), nullable=False)
+    auth: Mapped[str] = mapped_column(String(255), nullable=False)
+    user_agent: Mapped[str | None] = mapped_column(String(512))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="web_push_subscriptions")
 
 
 # ---------------------------------------------------------------------------
