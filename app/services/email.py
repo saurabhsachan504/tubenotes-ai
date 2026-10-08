@@ -9,6 +9,7 @@ from email.message import EmailMessage
 
 from app.config import settings
 from app.models import User
+from app.services import ntfy
 
 logger = logging.getLogger("trialguard.email")
 
@@ -46,6 +47,7 @@ def send_email(
         return True
     except Exception:  # pragma: no cover - network
         logger.exception("Failed to send email to %s", to)
+        ntfy.email_delivery_failed(to, subject)
         return False
 
 

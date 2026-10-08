@@ -47,6 +47,7 @@ from app.security import (
 from app.services import devices as device_service
 from app.services import google_auth
 from app.services import email as email_service
+from app.services import ntfy as ntfy_service
 from app.services import entitlements, pricing, ratelimit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -149,6 +150,7 @@ def signup(
 
     db.commit()
     email_service.send_welcome_email(user, ent.trials_limit)
+    ntfy_service.signup(user, ent.trials_limit)
     db.refresh(user)
     return AuthResponse(
         user=UserOut.model_validate(user),
@@ -252,6 +254,7 @@ def google_login(
     db.commit()
     if new_account:
         email_service.send_welcome_email(user, ent.trials_limit)
+        ntfy_service.signup(user, ent.trials_limit)
     db.refresh(user)
     return AuthResponse(
         user=UserOut.model_validate(user),

@@ -31,6 +31,7 @@ from app.services import (
     entitlements,
     email as email_service,
     job_audit,
+    ntfy as ntfy_service,
     output_cache,
     pdf,
     pricing,
@@ -424,6 +425,7 @@ def _charge_and_lookup(db: Session, user: User, payload, video_id: str, *, actio
                 email_service.send_trial_remaining_email(
                     user, result.trial_reminder_remaining
                 )
+            ntfy_service.trial_milestone(user, result.trial_reminder_remaining)
         entitlement: EntitlementOut = result.entitlement
         cached_row, cached_target, cached_model = _cache_lookup(
             db, payload, video_id, mode=mode

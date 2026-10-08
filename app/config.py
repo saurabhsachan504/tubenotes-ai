@@ -139,6 +139,15 @@ class Settings(BaseSettings):
     # for new payments. Leave blank on the primary domain itself.
     BILLING_PRIMARY_SITE_URL: str = ""
 
+    # ---- private ntfy operations alerts --------------------------------
+    # These values belong only in the server .env. Alerts are best-effort:
+    # an unavailable ntfy server must never interrupt a customer request.
+    NTFY_ENABLED: bool = False
+    NTFY_BASE_URL: str = ""
+    NTFY_TOPIC: str = ""
+    NTFY_TOKEN: str = ""
+    NTFY_TIMEOUT_SECONDS: float = 3.0
+
     # ---- web app / summarisation ---------------------------------------
     # Serve the browser UI from this same service at "/".
     WEB_APP_ENABLED: bool = True

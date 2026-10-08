@@ -17,6 +17,7 @@ from app.schemas import (
 )
 from app.services import email as email_service
 from app.services import entitlements
+from app.services import ntfy as ntfy_service
 
 router = APIRouter(tags=["entitlement"])
 
@@ -69,6 +70,7 @@ def consume_usage(
             email_service.send_trial_remaining_email(
                 user, result.trial_reminder_remaining
             )
+        ntfy_service.trial_milestone(user, result.trial_reminder_remaining)
     return result
 
 
