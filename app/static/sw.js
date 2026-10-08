@@ -6,13 +6,18 @@ self.addEventListener("push", (event) => {
     body: String(payload.body || "You have a new TubeNotes update."),
     tag: String(payload.tag || "tubenotes-update"),
     renotify: true,
+    icon: String(payload.icon || "/static/push-icon-v1.png"),
+    badge: String(payload.badge || "/static/push-icon-v1.png"),
+    image: String(payload.image || "/static/push-banner-v1.png"),
+    actions: Array.isArray(payload.actions) ? payload.actions.slice(0, 2) : [],
     data: { url: String(payload.url || "/") },
   }));
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = new URL((event.notification.data && event.notification.data.url) || "/", self.location.origin).href;
+  const url = event.action === "subscribe" ? "/?account=1" : ((event.notification.data && event.notification.data.url) || "/");
+  const target = new URL(url, self.location.origin).href;
   event.waitUntil((async () => {
     const windows = await clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const client of windows) {

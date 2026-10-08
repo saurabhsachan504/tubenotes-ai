@@ -14,6 +14,11 @@ from app.models import User, WebPushSubscription
 
 logger = logging.getLogger("trialguard.web_push")
 
+# These first-party static assets make the compact and expanded Android views
+# feel like a TubeNotes notification instead of a generic browser message.
+_ICON_URL = "/static/push-icon-v1.png"
+_BANNER_URL = "/static/push-banner-v1.png"
+
 
 def configured() -> bool:
     return settings.web_push_configured
@@ -46,7 +51,14 @@ def _send(subscription: WebPushSubscription, payload: dict) -> bool:
 
 
 def notify_user(
-    db: Session, user: User, *, title: str, body: str, tag: str, url: str = "/"
+    db: Session,
+    user: User,
+    *,
+    title: str,
+    body: str,
+    tag: str,
+    url: str = "/",
+    actions: list[dict[str, str]] | None = None,
 ) -> int:
     """Deliver an account event to all browser endpoints that user allowed."""
     if not configured():
@@ -54,7 +66,16 @@ def notify_user(
     rows = db.execute(
         select(WebPushSubscription).where(WebPushSubscription.user_id == user.id)
     ).scalars().all()
-    payload = {"title": title[:120], "body": body[:500], "tag": tag[:80], "url": url}
+    payload = {
+        "title": title[:120],
+        "body": body[:500],
+        "tag": tag[:80],
+        "url": url,
+        "icon": _ICON_URL,
+        "badge": _ICON_URL,
+        "image": _BANNER_URL,
+        "actions": actions or [{"action": "open", "title": "Open TubeNotes"}],
+    }
     delivered, stale = 0, []
     for row in rows:
         if _send(row, payload):
@@ -75,7 +96,15 @@ def welcome(db: Session, user: User, trial_limit: int) -> int:
 
 def trial_milestone(db: Session, user: User, trials_remaining: int) -> int:
     if trials_remaining == 0:
-        return notify_user(db, user, title="Your free trial is complete", body="You've used all free videos. Subscribe to continue summarizing.", tag="trial-0")
+        return notify_user(
+            db, user, title="Your free trial is complete",
+            body="You've used all free videos. Subscribe to continue summarizing.",
+            tag="trial-0", url="/?account=1",
+            actions=[
+                {"action": "subscribe", "title": "Subscribe now"},
+                {"action": "open", "title": "Open TubeNotes"},
+            ],
+        )
     return notify_user(db, user, title=f"{trials_remaining} free videos left", body="Keep exploring TubeNotes before your free trial ends.", tag=f"trial-{trials_remaining}")
 
 
@@ -85,7 +114,15 @@ def payment_received(db: Session, user: User, *, amount_subunits: int | None, cu
 
 
 def payment_attention(db: Session, user: User) -> int:
-    return notify_user(db, user, title="Payment needs attention", body="We couldn't complete your subscription payment. Please check your payment method.", tag="payment-attention", url="/?account=1")
+    return notify_user(
+        db, user, title="Payment needs attention",
+        body="We couldn't complete your subscription payment. Please check your payment method.",
+        tag="payment-attention", url="/?account=1",
+        actions=[
+            {"action": "subscribe", "title": "Update payment"},
+            {"action": "open", "title": "Open TubeNotes"},
+        ],
+    )
 
 
 def cancellation_scheduled(db: Session, user: User, period_end: datetime | None) -> int:
@@ -94,4 +131,12 @@ def cancellation_scheduled(db: Session, user: User, period_end: datetime | None)
 
 
 def subscription_ended(db: Session, user: User) -> int:
-    return notify_user(db, user, title="Your subscription has ended", body="Your account is now on the free plan. Subscribe anytime to continue.", tag="subscription-ended", url="/?account=1")
+    return notify_user(
+        db, user, title="Your subscription has ended",
+        body="Your account is now on the free plan. Subscribe anytime to continue.",
+        tag="subscription-ended", url="/?account=1",
+        actions=[
+            {"action": "subscribe", "title": "Subscribe now"},
+            {"action": "open", "title": "Open TubeNotes"},
+        ],
+    )

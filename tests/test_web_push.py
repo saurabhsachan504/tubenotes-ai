@@ -55,5 +55,8 @@ def test_trial_push_is_encrypted_for_the_users_registered_browser(client, db, mo
     assert web_push.trial_milestone(db, user, 5) == 1
     payload = json.loads(sent["data"])
     assert payload["title"] == "5 free videos left"
+    assert payload["icon"] == "/static/push-icon-v1.png"
+    assert payload["image"] == "/static/push-banner-v1.png"
+    assert payload["actions"] == [{"action": "open", "title": "Open TubeNotes"}]
     assert sent["subscription_info"]["endpoint"] == _subscription()["endpoint"]
     assert sent["vapid_private_key"] == "test-private-key"
