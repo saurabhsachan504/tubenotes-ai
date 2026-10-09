@@ -151,6 +151,32 @@ def subscription_ended(user: User) -> bool:
     )
 
 
+def campaign_completed(
+    kind: str,
+    *,
+    target_users: int,
+    target_endpoints: int,
+    sent_endpoints: int,
+    failed_endpoints: int,
+    stale_endpoints: int,
+) -> bool:
+    """Private summary only; customer endpoints are never published to ntfy."""
+    return publish(
+        f"TubeNotes {kind} push campaign completed",
+        "\n".join(
+            (
+                f"Eligible users: {target_users}",
+                f"Browser endpoints: {target_endpoints}",
+                f"Sent: {sent_endpoints}",
+                f"Failed: {failed_endpoints}",
+                f"Expired removed: {stale_endpoints}",
+            )
+        ),
+        tags=("bell", "chart_with_upwards_trend"),
+        priority="default",
+    )
+
+
 def email_delivery_failed(to: str, subject: str) -> bool:
     local, _, domain = to.partition("@")
     reference = f"{local[:2] or 'user'}***@{domain or 'unknown'}"

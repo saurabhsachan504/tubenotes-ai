@@ -290,6 +290,84 @@ class WebPushSubscription(Base):
 
 
 # ---------------------------------------------------------------------------
+# Admin browser-push campaigns
+# ---------------------------------------------------------------------------
+class PushCampaign(TimestampMixin, Base):
+    """One operator-configured recurring campaign for free users."""
+
+    __tablename__ = "push_campaigns"
+    __table_args__ = (UniqueConstraint("kind", name="uq_push_campaign_kind"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    # "daily" or "weekly".  Kept as text so a future campaign type needs no
+    # database enum migration.
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    body: Mapped[str] = mapped_column(String(500), nullable=False)
+    url: Mapped[str] = mapped_column(String(500), default="/?account=1", nullable=False)
+    # Scheduled in Asia/Kolkata. ``daily_time`` uses HH:MM; weekly_day follows
+    # Python's weekday numbering (0=Monday, 6=Sunday).
+    daily_time: Mapped[str] = mapped_column(String(5), default="10:00", nullable=False)
+    weekly_day: Mapped[int] = mapped_column(Integer, default=6, nullable=False)
+    cooldown_hours: Mapped[int] = mapped_column(Integer, default=24, nullable=False)
+
+
+class PushCampaignRun(Base):
+    """Immutable audit row for a queued, manual, or scheduled campaign run."""
+
+    __tablename__ = "push_campaign_runs"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "trigger_key", name="uq_push_campaign_run_key"),
+        Index("ix_push_campaign_runs_campaign_started", "campaign_id", "started_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("push_campaigns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    trigger: Mapped[str] = mapped_column(String(16), nullable=False)  # manual|scheduled
+    # Makes the cron command idempotent: the same daily/weekly schedule date
+    # cannot produce two runs, even if cron fires twice.
+    trigger_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="queued", nullable=False)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    body: Mapped[str] = mapped_column(String(500), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    target_users: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    target_endpoints: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    sent_endpoints: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_endpoints: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    stale_endpoints: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(String(500))
+
+
+class PushCampaignDelivery(Base):
+    """The latest successful campaign delivery to one account.
+
+    This is the frequency cap: browser subscriptions are per device but a
+    campaign must not spam one person merely because they have two devices.
+    """
+
+    __tablename__ = "push_campaign_deliveries"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "user_id", name="uq_push_campaign_delivery_user"),
+        Index("ix_push_campaign_deliveries_campaign_sent", "campaign_id", "last_sent_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("push_campaigns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    last_sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    endpoints_sent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+# ---------------------------------------------------------------------------
 # Processing audit trail (admin dashboard)
 # ---------------------------------------------------------------------------
 class ProcessingJob(Base):

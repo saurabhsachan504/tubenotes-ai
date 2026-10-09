@@ -157,6 +157,10 @@ class Settings(BaseSettings):
     WEB_PUSH_VAPID_CONTACT: str = "mailto:support@tubenotes.ai"
     WEB_PUSH_TTL_SECONDS: int = 86_400
     WEB_PUSH_TIMEOUT_SECONDS: float = 5.0
+    # Campaign delivery is deliberately batched so a large free-user audience
+    # does not monopolise API workers or create an outbound connection spike.
+    WEB_PUSH_CAMPAIGN_BATCH_SIZE: int = 100
+    WEB_PUSH_CAMPAIGN_MAX_WORKERS: int = 10
 
     @property
     def web_push_configured(self) -> bool:

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime
 
 from pywebpush import WebPushException, webpush
@@ -24,8 +26,8 @@ def configured() -> bool:
     return settings.web_push_configured
 
 
-def _send(subscription: WebPushSubscription, payload: dict) -> bool:
-    """Send one encrypted payload. False means the endpoint has expired."""
+def _send_status(subscription: WebPushSubscription, payload: dict) -> str:
+    """Return ``sent``, ``stale`` or ``failed`` for one encrypted payload."""
     try:
         webpush(
             subscription_info={
@@ -38,16 +40,75 @@ def _send(subscription: WebPushSubscription, payload: dict) -> bool:
             ttl=max(0, settings.WEB_PUSH_TTL_SECONDS),
             timeout=max(1.0, settings.WEB_PUSH_TIMEOUT_SECONDS),
         )
-        return True
+        return "sent"
     except WebPushException as exc:
         response = getattr(exc, "response", None)
         if getattr(response, "status_code", None) in {404, 410}:
             logger.info("removing expired Web Push endpoint for user %s", subscription.user_id)
-            return False
+            return "stale"
         logger.warning("Web Push delivery failed for user %s: %s", subscription.user_id, exc)
     except Exception:
         logger.warning("Web Push delivery failed for user %s", subscription.user_id, exc_info=True)
-    return True
+    return "failed"
+
+
+def _send(subscription: WebPushSubscription, payload: dict) -> bool:
+    """Compatibility helper for event notifications.
+
+    Existing callers use a bool where ``False`` means a definitely-expired
+    endpoint. A transient delivery failure is retained for a later account
+    event, while campaigns receive the full three-state result below.
+    """
+    return _send_status(subscription, payload) != "stale"
+
+
+def _payload(
+    *, title: str, body: str, tag: str, url: str = "/", actions: list[dict[str, str]] | None = None,
+) -> dict:
+    return {
+        "title": title[:120],
+        "body": body[:500],
+        "tag": tag[:80],
+        "url": url,
+        "icon": _ICON_URL,
+        "badge": _ICON_URL,
+        "image": _BANNER_URL,
+        "actions": actions or [{"action": "open", "title": "Open TubeNotes"}],
+    }
+
+
+@dataclass(frozen=True)
+class BulkDeliveryResult:
+    sent_ids: frozenset[str]
+    stale_ids: frozenset[str]
+    failed_ids: frozenset[str]
+
+
+def deliver_campaign_batch(
+    db: Session,
+    subscriptions: list[WebPushSubscription],
+    *,
+    title: str,
+    body: str,
+    tag: str,
+    url: str,
+) -> BulkDeliveryResult:
+    """Send a campaign batch concurrently and remove only confirmed stale rows."""
+    if not configured() or not subscriptions:
+        return BulkDeliveryResult(frozenset(), frozenset(), frozenset())
+    payload = _payload(title=title, body=body, tag=tag, url=url)
+    workers = max(1, min(settings.WEB_PUSH_CAMPAIGN_MAX_WORKERS, len(subscriptions)))
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="web-push") as pool:
+        outcomes = list(pool.map(lambda row: (row.id, _send_status(row, payload)), subscriptions))
+    sent = frozenset(row_id for row_id, state in outcomes if state == "sent")
+    stale = frozenset(row_id for row_id, state in outcomes if state == "stale")
+    failed = frozenset(row_id for row_id, state in outcomes if state == "failed")
+    if stale:
+        db.query(WebPushSubscription).filter(WebPushSubscription.id.in_(stale)).delete(
+            synchronize_session=False
+        )
+        db.commit()
+    return BulkDeliveryResult(sent, stale, failed)
 
 
 def notify_user(
@@ -66,16 +127,7 @@ def notify_user(
     rows = db.execute(
         select(WebPushSubscription).where(WebPushSubscription.user_id == user.id)
     ).scalars().all()
-    payload = {
-        "title": title[:120],
-        "body": body[:500],
-        "tag": tag[:80],
-        "url": url,
-        "icon": _ICON_URL,
-        "badge": _ICON_URL,
-        "image": _BANNER_URL,
-        "actions": actions or [{"action": "open", "title": "Open TubeNotes"}],
-    }
+    payload = _payload(title=title, body=body, tag=tag, url=url, actions=actions)
     delivered, stale = 0, []
     for row in rows:
         if _send(row, payload):

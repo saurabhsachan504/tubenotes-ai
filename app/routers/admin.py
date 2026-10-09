@@ -13,7 +13,7 @@ import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -28,6 +28,8 @@ from app.models import (
     CachedOutput,
     ManualProGrant,
     ProcessingJob,
+    PushCampaign,
+    PushCampaignRun,
     Subscription,
     SubscriptionStatus,
     UsageEvent,
@@ -37,6 +39,7 @@ from app.models import (
 from app.schemas import MessageOut, UserOut
 from app.services import devices as device_service
 from app.services import output_cache
+from app.services import push_campaigns
 from app.services.payments import get_provider
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(get_admin_user)])
@@ -58,6 +61,16 @@ class ManualProRequest(BaseModel):
     duration_days: int = Field(default=30, ge=1, le=3650)
     lifetime: bool = False
     note: str | None = Field(default=None, max_length=500)
+
+
+class PushCampaignUpdate(BaseModel):
+    enabled: bool
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(min_length=1, max_length=500)
+    url: str = Field(min_length=1, max_length=500)
+    daily_time: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    weekly_day: int = Field(ge=0, le=6)
+    cooldown_hours: int = Field(ge=1, le=24 * 30)
 
 
 @router.get("/stats")
@@ -1102,6 +1115,82 @@ def revoke_manual_pro(
     active.revoked_by_email = admin.email if admin else "Server administrator"
     db.commit()
     return MessageOut(detail="Complimentary Pro access revoked")
+
+
+# ---------------------------------------------------------------------------
+# Browser push campaigns
+# ---------------------------------------------------------------------------
+def _campaign_or_404(db: Session, kind: str) -> PushCampaign:
+    if kind not in push_campaigns.KINDS:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    campaigns = push_campaigns.ensure_campaigns(db)
+    db.commit()
+    return campaigns[kind]
+
+
+@router.get("/push-campaigns")
+def list_push_campaigns(db: Session = Depends(get_db)):
+    """Daily/weekly free-user campaign configuration plus a live audience preview."""
+    campaigns = push_campaigns.ensure_campaigns(db)
+    db.commit()
+    runs = db.execute(
+        select(PushCampaignRun)
+        .order_by(PushCampaignRun.started_at.desc(), PushCampaignRun.id.desc())
+        .limit(30)
+    ).scalars().all()
+    return {
+        "campaigns": [
+            {**push_campaigns.campaign_dict(campaign), "preview": push_campaigns.preview(db, campaign)}
+            for campaign in (campaigns["daily"], campaigns["weekly"])
+        ],
+        "runs": [push_campaigns.run_dict(run) for run in runs],
+        "timezone": "Asia/Kolkata",
+    }
+
+
+@router.patch("/push-campaigns/{kind}")
+def update_push_campaign(
+    kind: str, payload: PushCampaignUpdate, db: Session = Depends(get_db)
+):
+    campaign = _campaign_or_404(db, kind)
+    url = payload.url.strip()
+    # Campaign clicks must remain on TubeNotes.  This prevents an admin UI
+    # typo from turning a trusted notification into an external redirect.
+    if not url.startswith("/") or url.startswith("//"):
+        raise HTTPException(status_code=422, detail="Campaign URL must be a TubeNotes path starting with '/'.")
+    campaign.enabled = payload.enabled
+    campaign.title = payload.title.strip()
+    campaign.body = payload.body.strip()
+    campaign.url = url
+    campaign.daily_time = payload.daily_time
+    campaign.weekly_day = payload.weekly_day
+    campaign.cooldown_hours = payload.cooldown_hours
+    db.commit()
+    db.refresh(campaign)
+    return {**push_campaigns.campaign_dict(campaign), "preview": push_campaigns.preview(db, campaign)}
+
+
+@router.post("/push-campaigns/{kind}/preview")
+def preview_push_campaign(kind: str, db: Session = Depends(get_db)):
+    campaign = _campaign_or_404(db, kind)
+    return push_campaigns.preview(db, campaign)
+
+
+@router.post("/push-campaigns/{kind}/run")
+def run_push_campaign(
+    kind: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Queue a manual send; the browser polls campaign history for its result."""
+    campaign = _campaign_or_404(db, kind)
+    if not campaign.enabled:
+        raise HTTPException(status_code=409, detail="Enable this campaign before running it.")
+    run = push_campaigns.queue_run(db, campaign, trigger="manual")
+    if run is None:  # defensive; manual keys are random and never collide
+        raise HTTPException(status_code=409, detail="Campaign is already queued.")
+    background_tasks.add_task(push_campaigns.execute_run, run.id)
+    return {"detail": "Campaign queued", "run": push_campaigns.run_dict(run)}
 
 
 @router.post("/block-device", response_model=MessageOut)

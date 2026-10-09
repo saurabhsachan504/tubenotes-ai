@@ -7,7 +7,7 @@
   <title>TubeNotes — Admin Panel</title>
   <link rel="stylesheet" href="/static/admin.css?v=1">
   <script>try { if (localStorage.getItem("tn_admin_theme") === "light") document.documentElement.dataset.adminTheme = "light"; } catch (_) {}</script>
-  <link rel="stylesheet" href="/static/admin-extra.css?v=18">
+  <link rel="stylesheet" href="/static/admin-extra.css?v=19">
 </head>
 <body>
   <div class="app-shell">
@@ -148,6 +148,7 @@
           <article class="panel settings-card"><div class="panel-head"><h2>vLLM, GPU &amp; queue</h2><span class="pill">Read only</span></div><div id="modelConfig" class="settings-status">Loading...</div><p class="settings-note">Change production model or queue configuration only through the server environment and restart process.</p></article>
           <article class="panel settings-card"><div class="panel-head"><h2>Cache cleanup</h2><span class="pill">Confirmation required</span></div><div id="cacheConfig" class="settings-status">Loading...</div><div class="settings-inline"><label>Remove cache entries older than <input id="purgeDays" type="number" min="0" max="3650" value="90"> days</label><button id="purgeCache" class="danger-button" type="button">Purge cache</button></div><p id="cacheActionResult" class="action-result"></p></article>
           <article class="panel settings-card"><div class="panel-head"><h2>Maintenance &amp; error logs</h2><span class="pill">Safe tools</span></div><div id="maintenanceConfig" class="settings-status">Loading...</div><div class="settings-actions"><button id="settingsOpenErrors" class="action-button" type="button">Open Error Logs</button><button id="exportErrors" class="secondary-button" type="button">Download errors CSV</button></div><p id="maintenanceActionResult" class="action-result"></p></article>
+          <article class="panel settings-card push-campaign-card"><div class="panel-head"><div><h2>Browser Push Campaigns</h2><p class="settings-note">Daily and weekly reminders target live free-user audiences only. Paid and Pro accounts are excluded automatically.</p></div><button id="pushCampaignRefresh" class="action-button" type="button">Refresh campaigns</button></div><div id="pushCampaignCards" class="push-campaign-cards"><p class="settings-status">Loading campaigns...</p></div><div class="detail-table-wrap push-campaign-history"><h3>Recent campaign runs</h3><table><thead><tr><th>Campaign</th><th>Trigger</th><th>Status</th><th>Audience</th><th>Sent</th><th>Finished</th></tr></thead><tbody id="pushCampaignRunRows"></tbody></table></div><p id="pushCampaignActionResult" class="action-result"></p></article>
         </div>
       </section>
     </main>

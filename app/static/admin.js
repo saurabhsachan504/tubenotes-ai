@@ -9,6 +9,7 @@
   let errorData = null;
   let billingData = null;
   let settingsData = null;
+  let pushCampaignData = null;
   let dashboardLoading = false;
   let usersLoading = false;
   let operationsLoading = false;
@@ -457,13 +458,46 @@
       configLine("Error-log action", "View or export only"),
     ].join("");
   }
+  function weekdayOptions(selected) {
+    return ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+      .map((label, value) => `<option value="${value}"${Number(selected) === value ? " selected" : ""}>${label}</option>`).join("");
+  }
+  function renderPushCampaigns(payload) {
+    pushCampaignData = payload;
+    const cards = $("pushCampaignCards");
+    const campaigns = payload.campaigns || [];
+    cards.innerHTML = campaigns.map(campaign => {
+      const weekly = campaign.kind === "weekly";
+      const preview = campaign.preview || {};
+      return `<form class="settings-form push-campaign-form" data-campaign-kind="${esc(campaign.kind)}">
+        <div class="panel-head"><h3>${esc(campaign.kind === "daily" ? "Daily campaign" : "Weekly campaign")}</h3><label class="campaign-enabled"><input name="enabled" type="checkbox"${campaign.enabled ? " checked" : ""}> Enabled</label></div>
+        <div class="push-campaign-preview"><b>${number(preview.eligible_users)} eligible users</b><span>${number(preview.eligible_endpoints)} active browser endpoints${preview.web_push_configured ? "" : " · Web Push is not configured"}</span></div>
+        <label>Notification title<input name="title" maxlength="120" required value="${esc(campaign.title)}"></label>
+        <label>Notification message<textarea name="body" maxlength="500" required rows="3">${esc(campaign.body)}</textarea></label>
+        <div class="settings-inline"><label>Click path<input name="url" maxlength="500" required value="${esc(campaign.url)}"></label><label>IST time<input name="daily_time" type="time" required value="${esc(campaign.daily_time)}"></label>${weekly ? `<label>Weekday<select name="weekly_day">${weekdayOptions(campaign.weekly_day)}</select></label>` : ""}<label>Repeat after (hours)<input name="cooldown_hours" type="number" min="1" max="720" required value="${Number(campaign.cooldown_hours)}"></label></div>
+        <div class="settings-actions"><button class="action-button" type="submit">Save ${esc(campaign.kind)}</button><button class="secondary-button" type="button" data-campaign-preview="${esc(campaign.kind)}">Refresh audience</button><button class="danger-button" type="button" data-campaign-run="${esc(campaign.kind)}">Run now</button></div>
+      </form>`;
+    }).join("") || `<p class="settings-status">No campaigns available.</p>`;
+    const runs = payload.runs || [];
+    $("pushCampaignRunRows").innerHTML = runs.length ? runs.map(run => `<tr><td title="${esc(run.title)}">${esc(run.title)}</td><td>${esc(run.trigger)}</td><td><span class="status ${esc(String(run.status || "").toLowerCase())}">${esc(run.status)}</span></td><td>${number(run.target_users)} users<br><small>${number(run.target_endpoints)} endpoints</small></td><td>${number(run.sent_endpoints)}<br><small>${number(run.failed_endpoints)} failed · ${number(run.stale_endpoints)} expired</small></td><td>${esc(dateTime(run.completed_at || run.started_at))}</td></tr>`).join("") : tableEmpty(6, "No campaign run has been recorded yet.");
+  }
+  async function loadPushCampaigns() {
+    try { renderPushCampaigns(await api("/push-campaigns")); }
+    catch (e) {
+      $("pushCampaignCards").textContent = e.status === 403 ? "Admin access required." : "Could not load campaigns.";
+      $("pushCampaignRunRows").innerHTML = tableEmpty(6, "Campaign history unavailable.");
+    }
+  }
   async function loadSettings() {
     if (settingsLoading) return;
     settingsLoading = true;
     const button = $("settingsRefresh");
     button.disabled = true;
-    try { renderSettings(await api("/settings/status")); }
-    catch (e) { ["trialConfig", "billingConfig", "modelConfig", "cacheConfig", "maintenanceConfig"].forEach(id => $(id).textContent = e.status === 403 ? "Admin access required." : "Could not load current status."); }
+    try {
+      const [status, campaigns] = await Promise.all([api("/settings/status"), api("/push-campaigns")]);
+      renderSettings(status);
+      renderPushCampaigns(campaigns);
+    } catch (e) { ["trialConfig", "billingConfig", "modelConfig", "cacheConfig", "maintenanceConfig", "pushCampaignCards"].forEach(id => $(id).textContent = e.status === 403 ? "Admin access required." : "Could not load current status."); }
     finally { button.disabled = false; settingsLoading = false; }
   }
   function showSettings() {
@@ -610,6 +644,48 @@
   $("errorsRefresh").onclick = loadErrorLogs;
   $("errorSearch").oninput = () => { if (errorData) renderErrorRows(errorData.errors || []); };
   $("settingsRefresh").onclick = loadSettings;
+  $("pushCampaignRefresh").onclick = loadPushCampaigns;
+  $("pushCampaignCards").onsubmit = async event => {
+    const form = event.target.closest(".push-campaign-form");
+    if (!form) return;
+    event.preventDefault();
+    const kind = form.dataset.campaignKind;
+    const formData = new FormData(form);
+    const payload = {
+      enabled: formData.get("enabled") === "on",
+      title: String(formData.get("title") || "").trim(),
+      body: String(formData.get("body") || "").trim(),
+      url: String(formData.get("url") || "").trim(),
+      daily_time: String(formData.get("daily_time") || ""),
+      weekly_day: Number(formData.get("weekly_day") || 6),
+      cooldown_hours: Number(formData.get("cooldown_hours") || 0),
+    };
+    try {
+      await api("/push-campaigns/" + encodeURIComponent(kind), {method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)});
+      setActionResult("pushCampaignActionResult", kind + " campaign saved.", "success");
+      await loadPushCampaigns();
+    } catch (_) { setActionResult("pushCampaignActionResult", "Could not save campaign. Check each field and retry.", "failed"); }
+  };
+  $("pushCampaignCards").onclick = async event => {
+    const previewButton = event.target.closest("[data-campaign-preview]");
+    const runButton = event.target.closest("[data-campaign-run]");
+    const kind = previewButton ? previewButton.dataset.campaignPreview : (runButton ? runButton.dataset.campaignRun : null);
+    if (!kind) return;
+    try {
+      if (previewButton) {
+        const preview = await api("/push-campaigns/" + encodeURIComponent(kind) + "/preview", {method: "POST"});
+        setActionResult("pushCampaignActionResult", `${kind}: ${number(preview.eligible_users)} eligible users and ${number(preview.eligible_endpoints)} browser endpoints right now.`, "success");
+        await loadPushCampaigns();
+        return;
+      }
+      const campaign = (pushCampaignData && pushCampaignData.campaigns || []).find(row => row.kind === kind);
+      const preview = campaign && campaign.preview || {};
+      if (!window.confirm(`Run the ${kind} campaign now for ${number(preview.eligible_users)} eligible users?`)) return;
+      await api("/push-campaigns/" + encodeURIComponent(kind) + "/run", {method: "POST"});
+      setActionResult("pushCampaignActionResult", `${kind} campaign queued. Refresh in a moment to see its delivery result.`, "success");
+      window.setTimeout(loadPushCampaigns, 1200);
+    } catch (_) { setActionResult("pushCampaignActionResult", "Could not run campaign. Confirm it is enabled and Web Push is configured.", "failed"); }
+  };
   $("healthRefresh").onclick = load;
   $("settingsOpenUsers").onclick = () => showUsers("all");
   $("settingsOpenErrors").onclick = showErrorLogs;
