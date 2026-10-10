@@ -13,3 +13,10 @@ def test_meta_exposes_only_an_approved_chrome_web_store_link(client, monkeypatch
 
     monkeypatch.setattr(settings, "CHROME_WEB_STORE_URL", "https://example.test/not-a-store")
     assert client.get(f"{settings.API_PREFIX}/meta").json()["chrome_web_store_url"] == ""
+
+
+def test_extension_button_marks_the_store_listing_as_coming_soon(client):
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'class="extension-soon">Coming Soon</span>' in response.text
