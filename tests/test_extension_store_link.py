@@ -20,3 +20,4 @@ def test_extension_button_marks_the_store_listing_as_coming_soon(client):
 
     assert response.status_code == 200
     assert 'class="extension-soon">Coming Soon</span>' in response.text
+    assert ".extension-btn{display:inline-flex" in response.text
