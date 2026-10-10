@@ -2218,6 +2218,18 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     try { meta = await fetch(API + "/meta").then((r) => r.json()); }
     catch (_) { return; }
     billingPrimarySiteUrl = String(meta.billing_primary_site_url || "").trim();
+    const extensionLink = $("extensionStoreLink");
+    const extensionUrl = String(meta.chrome_web_store_url || "").trim();
+    if (extensionLink && extensionUrl) {
+      extensionLink.href = extensionUrl;
+      extensionLink.target = "_blank";
+      extensionLink.rel = "noopener noreferrer";
+      extensionLink.removeAttribute("aria-disabled");
+      extensionLink.title = "Install TubeNotes from the Chrome Web Store";
+      extensionLink.querySelector("small").textContent = "";
+    } else if (extensionLink) {
+      extensionLink.onclick = (event) => event.preventDefault();
+    }
     if (!meta.google_login || !meta.google_client_id) return;
 
     // Google ka script async load hota hai - taiyaar hone ka intezaar.

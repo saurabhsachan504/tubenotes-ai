@@ -50,6 +50,11 @@
     padding:7px 12px;border-radius:9px;font-size:14px;
   }
   .nav-btn:hover{background:var(--chip);color:var(--ink)}
+  .extension-btn{display:inline-flex;align-items:center;gap:6px;border-color:rgba(124,58,237,.27);background:rgba(124,58,237,.06);color:#6d28d9;font-weight:700;text-decoration:none}
+  .extension-btn:hover{background:rgba(124,58,237,.13);color:#5b21b6}
+  .extension-btn[aria-disabled="true"]{cursor:default;opacity:.66}
+  .extension-btn[aria-disabled="true"]:hover{background:rgba(124,58,237,.06);color:#6d28d9}
+  .extension-btn small{font-size:10px;font-weight:700;letter-spacing:.02em;opacity:.8}
   .legal-menu{position:relative}
   .legal-trigger{display:inline-flex;align-items:center;gap:5px}
   .legal-trigger::after{content:"⌄";font-size:13px;line-height:1;transition:transform .18s ease}
@@ -497,6 +502,7 @@
     .toolbar{padding:12px}
     .tool{min-height:42px}
     .video-chat{margin-top:16px}
+    .extension-btn{display:none}
   }
 
   @media(max-width:620px){
@@ -608,6 +614,7 @@
     <div class="legal-menu"><button class="nav-btn legal-trigger" id="legalMenuBtn" type="button" aria-expanded="false" aria-controls="legalMenu">Legal</button><nav class="legal-popover hidden" id="legalMenu" aria-label="Legal pages"><a href="/about">About Us</a><a href="/terms">Terms &amp; Conditions</a><a href="/privacy">Privacy Policy</a><a href="/refund-policy">Refund Policy</a><a href="/contact">Contact Us</a></nav></div>
     <button class="nav-btn" onclick="document.getElementById('faq').scrollIntoView({behavior:'smooth'})">FAQ</button>
     <button class="nav-btn" id="themeBtn" title="Toggle theme">🌙</button>
+    <a class="nav-btn extension-btn" id="extensionStoreLink" aria-disabled="true" title="TubeNotes Chrome extension is coming soon"><span aria-hidden="true">&#129513;</span><span>Add Extension</span><small>Soon</small></a>
     <button class="nav-btn" id="accountBtn">Sign in</button>
   </div>
 </div></nav>

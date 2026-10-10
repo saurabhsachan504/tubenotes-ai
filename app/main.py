@@ -192,6 +192,7 @@ def meta():
         # A secondary site can be kept online while all new payments happen
         # on the primary site. This is a public URL, not a secret.
         "billing_primary_site_url": settings.BILLING_PRIMARY_SITE_URL.rstrip("/"),
+        "chrome_web_store_url": settings.chrome_web_store_url,
     }
 
 

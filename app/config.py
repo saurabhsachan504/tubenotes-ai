@@ -416,6 +416,9 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = "*"
     # Optional: only accept requests from these extension ids (comma separated).
     ALLOWED_EXTENSION_IDS: str = ""
+    # Public Chrome Web Store listing URL. Leave blank until the listing is
+    # approved; the web UI will then display a non-clickable Coming soon state.
+    CHROME_WEB_STORE_URL: str = ""
     # Only honour X-Forwarded-For when the app really sits behind a proxy you
     # control. Otherwise any client could spoof its IP past the rate limiter.
     TRUST_PROXY_HEADERS: bool = False
@@ -479,6 +482,16 @@ class Settings(BaseSettings):
     @property
     def allowed_extension_ids(self) -> list[str]:
         return [e.strip() for e in self.ALLOWED_EXTENSION_IDS.split(",") if e.strip()]
+
+    @property
+    def chrome_web_store_url(self) -> str:
+        """Return only a real Chrome Web Store listing URL for public UI use."""
+        url = self.CHROME_WEB_STORE_URL.strip()
+        allowed = (
+            "https://chromewebstore.google.com/",
+            "https://chrome.google.com/webstore/",
+        )
+        return url if url.startswith(allowed) else ""
 
     @property
     def admin_emails(self) -> set[str]:
