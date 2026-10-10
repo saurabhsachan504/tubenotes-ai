@@ -3,6 +3,13 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#7c3aed" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="TubeNotes" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="apple-touch-icon" href="/static/push-icon-v1.png" />
 <title>YouTube Summarizer — summarize any video in its own language</title>
 <meta name="description" content="Paste a YouTube link and get an AI summary, key points and downloadable PDF notes — in the video's own language." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%237c3aed'/><path d='M13 10l9 6-9 6z' fill='white'/></svg>" />
@@ -55,6 +62,10 @@
   .extension-btn[aria-disabled="true"]{cursor:default;opacity:.66}
   .extension-btn[aria-disabled="true"]:hover{background:rgba(124,58,237,.06);color:#6d28d9}
   .extension-btn small{font-size:10px;font-weight:700;letter-spacing:.02em;opacity:.8}
+  .a2hs-fab{position:fixed;z-index:70;right:max(16px,env(safe-area-inset-right));bottom:max(18px,env(safe-area-inset-bottom));display:none;align-items:center;gap:8px;padding:11px 14px;border:0;border-radius:999px;background:linear-gradient(120deg,var(--brand1),var(--brand3));box-shadow:0 12px 28px rgba(91,33,182,.34);color:#fff;font-weight:800;font-size:13px}
+  .a2hs-fab:not(.hidden){display:inline-flex}.a2hs-fab svg{width:18px;height:18px;flex:none}.a2hs-fab:hover{filter:brightness(1.06)}
+  .a2hs-sheet{position:fixed;z-index:80;left:14px;right:14px;bottom:max(14px,env(safe-area-inset-bottom));max-width:390px;margin:auto;padding:18px 17px 16px;border:1px solid var(--line);border-radius:18px;background:var(--panel);box-shadow:var(--shadow)}
+  .a2hs-sheet h2{margin:0 28px 6px 0;font-size:18px;line-height:1.25}.a2hs-sheet p{margin:0;color:var(--muted);font-size:13px;line-height:1.5}.a2hs-sheet .close{position:absolute;right:10px;top:9px;width:32px;height:32px;padding:0;border:0;border-radius:50%;background:var(--chip);color:var(--ink);font-size:21px}.a2hs-steps{display:grid;gap:7px;margin:13px 0}.a2hs-steps span{display:flex;gap:8px;align-items:flex-start;font-size:12.5px}.a2hs-steps b{display:grid;place-items:center;flex:0 0 20px;height:20px;border-radius:50%;background:rgba(124,58,237,.12);color:var(--brand1);font-size:11px}.a2hs-done{width:100%;border:0;border-radius:10px;padding:10px 12px;background:var(--brand1);color:#fff;font-weight:800}
   .legal-menu{position:relative}
   .legal-trigger{display:inline-flex;align-items:center;gap:5px}
   .legal-trigger::after{content:"⌄";font-size:13px;line-height:1;transition:transform .18s ease}
@@ -784,7 +795,19 @@
   </div>
 </div>
 
+<button class="a2hs-fab hidden" id="addToHomeScreen" type="button" aria-label="Add TubeNotes to your home screen">
+  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V3m0 0 4 4m-4-4L8 7"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>
+  <span id="addToHomeScreenLabel">Add to Home Screen</span>
+</button>
+<section class="a2hs-sheet hidden" id="addToHomeScreenHelp" role="dialog" aria-modal="true" aria-labelledby="a2hsTitle">
+  <button class="close" id="addToHomeScreenClose" type="button" aria-label="Close">&times;</button>
+  <h2 id="a2hsTitle">Add TubeNotes to your Home Screen</h2>
+  <p id="a2hsIntro">Open TubeNotes like an app, straight from your phone.</p>
+  <div class="a2hs-steps" id="addToHomeScreenSteps"></div>
+  <button class="a2hs-done" id="addToHomeScreenDone" type="button">I added it</button>
+</section>
+
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="/static/app.js?v=25"></script>
+<script src="/static/app.js?v=26"></script>
 </body>
 </html>

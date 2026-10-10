@@ -340,6 +340,125 @@
   }
 
   // =====================================================================
+  // Mobile "Add to Home Screen"
+  // =====================================================================
+  // This is deliberately separate from Web Push: installing the PWA never
+  // asks for notification permission. Android browsers can show a native
+  // install prompt, while iPhone/iPad Safari requires the Share-sheet steps.
+  const PWA_INSTALL_DONE = "tn_pwa_install_done";
+  let deferredPwaInstallPrompt = null;
+
+  function isMobileDevice() {
+    return /Android/i.test(navigator.userAgent || "") || isAppleMobileDevice();
+  }
+
+  function isAppleMobileDevice() {
+    return /iPhone|iPad|iPod/i.test(navigator.userAgent || "")
+      || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  }
+
+  function isPwaStandalone() {
+    return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  }
+
+  function setPwaFabVisible(visible, label) {
+    const fab = $("addToHomeScreen");
+    if (!fab) return;
+    if (label) $("addToHomeScreenLabel").textContent = label;
+    fab.classList.toggle("hidden", !visible);
+  }
+
+  function closePwaHelp() {
+    $("addToHomeScreenHelp")?.classList.add("hidden");
+  }
+
+  function showPwaHelp() {
+    const steps = $("addToHomeScreenSteps");
+    const intro = $("a2hsIntro");
+    if (!steps || !intro) return;
+    const apple = isAppleMobileDevice();
+    intro.textContent = apple
+      ? "In Safari, add TubeNotes once and open it from your Home Screen."
+      : "If the install prompt did not open, use these browser steps.";
+    const labels = apple
+      ? ["Tap the Share button in Safari.", "Choose Add to Home Screen.", "Tap Add to finish."]
+      : ["Open your browser menu (usually the three dots).", "Choose Install app or Add to Home screen.", "Tap Install or Add to finish."];
+    steps.replaceChildren(...labels.map((label, index) => {
+      const row = document.createElement("span");
+      const number = document.createElement("b");
+      number.textContent = String(index + 1);
+      const text = document.createElement("span");
+      text.textContent = label;
+      row.append(number, text);
+      return row;
+    }));
+    $("addToHomeScreenHelp")?.classList.remove("hidden");
+  }
+
+  function initAddToHomeScreen() {
+    const fab = $("addToHomeScreen");
+    if (!fab) return;
+
+    // PWA registration is safe for every visitor and lets the native install
+    // criteria be evaluated even when Web Push is disabled or the visitor is
+    // not signed in.
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+    }
+
+    const hidePwaInstall = () => {
+      setPwaFabVisible(false);
+      closePwaHelp();
+    };
+    const markPwaInstalled = () => {
+      try { localStorage.setItem(PWA_INSTALL_DONE, "1"); } catch (_) {}
+      hidePwaInstall();
+    };
+    const eligible = () => {
+      try { return localStorage.getItem(PWA_INSTALL_DONE) !== "1"; } catch (_) { return true; }
+    };
+
+    if (!isMobileDevice() || isPwaStandalone() || !eligible()) {
+      hidePwaInstall();
+      return;
+    }
+
+    // iOS has no beforeinstallprompt event, so show its concise Safari guide.
+    // Android gets a visible fallback too; the label changes when its native
+    // prompt becomes available.
+    setPwaFabVisible(true, isAppleMobileDevice() ? "Add to Home Screen" : "Install TubeNotes");
+
+    window.addEventListener("beforeinstallprompt", (event) => {
+      event.preventDefault();
+      deferredPwaInstallPrompt = event;
+      setPwaFabVisible(true, "Install TubeNotes");
+    });
+    window.addEventListener("appinstalled", () => {
+      deferredPwaInstallPrompt = null;
+      markPwaInstalled();
+    });
+
+    fab.addEventListener("click", async () => {
+      if (deferredPwaInstallPrompt) {
+        const prompt = deferredPwaInstallPrompt;
+        deferredPwaInstallPrompt = null;
+        try {
+          await prompt.prompt();
+          const choice = await prompt.userChoice;
+          if (choice.outcome === "accepted") markPwaInstalled();
+        } catch (_) {
+          showPwaHelp();
+        }
+        return;
+      }
+      showPwaHelp();
+    });
+
+    $("addToHomeScreenClose")?.addEventListener("click", closePwaHelp);
+    $("addToHomeScreenDone")?.addEventListener("click", markPwaInstalled);
+  }
+
+  // =====================================================================
   // Trials chip
   // =====================================================================
   function paintChip(ent) {
@@ -2293,6 +2412,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
 
   // ---- boot ----
   if ($("outLang")) fillLangSelect($("outLang"), { includeAuto: true });
+  initAddToHomeScreen();
   initGoogle();
   loadBillingPrice().catch(() => {});
   // Returning signed-in users with an already granted permission are attached

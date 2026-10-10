@@ -211,6 +211,15 @@ if settings.WEB_APP_ENABLED and STATIC_DIR.is_dir():
             },
         )
 
+    @app.get("/manifest.webmanifest", include_in_schema=False)
+    def web_app_manifest():
+        """PWA metadata served from the origin root for browser install UX."""
+        return FileResponse(
+            STATIC_DIR / "manifest.webmanifest",
+            media_type="application/manifest+json",
+            headers={"Cache-Control": "no-cache"},
+        )
+
     @app.get("/admin", include_in_schema=False)
     def admin_dashboard():
         """The shell is public; every dashboard API call requires an admin JWT."""

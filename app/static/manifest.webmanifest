@@ -1,0 +1,25 @@
+{
+  "id": "/",
+  "name": "TubeNotes — YouTube Summarizer",
+  "short_name": "TubeNotes",
+  "description": "Summarize YouTube videos and create FullNotes PDFs with TubeNotes.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#7c3aed",
+  "theme_color": "#7c3aed",
+  "icons": [
+    {
+      "src": "/static/push-icon-v1.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/pwa-icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
