@@ -57,10 +57,11 @@
     padding:7px 12px;border-radius:9px;font-size:14px;
   }
   .nav-btn:hover{background:var(--chip);color:var(--ink)}
-  .extension-btn{display:inline-flex;align-items:center;gap:6px;border-color:rgba(124,58,237,.27);background:rgba(124,58,237,.06);color:#6d28d9;font-weight:700;text-decoration:none}
-  .extension-btn:hover{background:rgba(124,58,237,.13);color:#5b21b6}
+  .extension-btn{display:inline-flex;align-items:center;gap:7px;margin-left:5px;border-color:rgba(124,58,237,.31);background:linear-gradient(135deg,rgba(124,58,237,.08),rgba(236,72,153,.07));color:#6d28d9;font-weight:800;text-decoration:none;white-space:nowrap}
+  .extension-btn:hover{background:linear-gradient(135deg,rgba(124,58,237,.16),rgba(236,72,153,.13));color:#5b21b6}
   .extension-btn[aria-disabled="true"]{cursor:default;opacity:.66}
-  .extension-btn[aria-disabled="true"]:hover{background:rgba(124,58,237,.06);color:#6d28d9}
+  .extension-btn[aria-disabled="true"]:hover{background:linear-gradient(135deg,rgba(124,58,237,.08),rgba(236,72,153,.07));color:#6d28d9}
+  .extension-btn .extension-icon{width:16px;height:16px;flex:none}
   .extension-btn small{font-size:10px;font-weight:700;letter-spacing:.02em;opacity:.8}
   .a2hs-fab{position:fixed;z-index:70;right:max(16px,env(safe-area-inset-right));bottom:max(18px,env(safe-area-inset-bottom));display:none;align-items:center;gap:8px;padding:11px 14px;border:0;border-radius:999px;background:linear-gradient(120deg,var(--brand1),var(--brand3));box-shadow:0 12px 28px rgba(91,33,182,.34);color:#fff;font-weight:800;font-size:13px}
   .a2hs-fab:not(.hidden){display:inline-flex}.a2hs-fab svg{width:18px;height:18px;flex:none}.a2hs-fab:hover{filter:brightness(1.06)}
@@ -626,7 +627,10 @@
     <button class="nav-btn" onclick="document.getElementById('faq').scrollIntoView({behavior:'smooth'})">FAQ</button>
     <button class="nav-btn" id="themeBtn" title="Toggle theme">🌙</button>
     <button class="nav-btn" id="accountBtn">Sign in</button>
-    <a class="nav-btn extension-btn" id="extensionStoreLink" aria-disabled="true" title="TubeNotes Chrome extension is coming soon"><span aria-hidden="true">&#129513;</span><span>Add Extension</span><small>Soon</small></a>
+    <a class="nav-btn extension-btn" id="extensionStoreLink" aria-disabled="true" title="TubeNotes Chrome extension is coming soon">
+      <svg class="extension-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 13h-2.2a2.3 2.3 0 1 0-4.6 0H10V9.8a2.3 2.3 0 1 0 0-4.6V3H6.5A2.5 2.5 0 0 0 4 5.5V9h2.2a2.3 2.3 0 1 1 0 4.6H4v4.9A2.5 2.5 0 0 0 6.5 21H10v-2.2a2.3 2.3 0 1 1 4.6 0V21h2.9a2.5 2.5 0 0 0 2.5-2.5V16"/></svg>
+      <span>Add Extension</span><small>Soon</small>
+    </a>
   </div>
 </div></nav>
 
