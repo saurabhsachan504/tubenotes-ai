@@ -426,12 +426,12 @@
     // iOS has no beforeinstallprompt event, so show its concise Safari guide.
     // Android gets a visible fallback too; the label changes when its native
     // prompt becomes available.
-    setPwaFabVisible(true, isAppleMobileDevice() ? "Add to Home Screen" : "Install TubeNotes");
+    setPwaFabVisible(true, "Add To Homescreen");
 
     window.addEventListener("beforeinstallprompt", (event) => {
       event.preventDefault();
       deferredPwaInstallPrompt = event;
-      setPwaFabVisible(true, "Install TubeNotes");
+      setPwaFabVisible(true, "Add To Homescreen");
     });
     window.addEventListener("appinstalled", () => {
       deferredPwaInstallPrompt = null;
