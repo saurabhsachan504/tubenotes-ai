@@ -37,6 +37,20 @@ from app.services import youtube
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+# A Google Analytics measurement ID is public by design: browsers receive it
+# with the tracking tag. Keep the tag in one server-side constant so every
+# public TubeNotes page gets the same page-view measurement without tracking
+# the authenticated admin dashboard.
+_GOOGLE_ANALYTICS_TAG = """<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-QYGNEG3KYG"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-QYGNEG3KYG');
+</script>
+"""
+
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -249,6 +263,7 @@ if settings.WEB_APP_ENABLED and STATIC_DIR.is_dir():
     def home():
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         html = re.sub(r"app\.js\?v=[^\"\']*", f"app.js?v={_ASSET_VERSION}", html)
+        html = html.replace("</head>", _GOOGLE_ANALYTICS_TAG + "</head>", 1)
         # The shell must always revalidate; the assets it points at are
         # content-addressed, so they can be cached hard.
         return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
@@ -265,7 +280,10 @@ html[data-theme="light"] body{position:relative;isolation:isolate;overflow-x:hid
         page = page.replace("{{SUPPORT_EMAIL}}", escape(settings.SUPPORT_EMAIL))
         page = page.replace(
             "</head>",
-            """<script>try{document.documentElement.dataset.theme=localStorage.getItem('tn_theme')||'light'}catch(_){document.documentElement.dataset.theme='light'}</script>""" + _LEGAL_PAGE_POLISH + "</head>",
+            _GOOGLE_ANALYTICS_TAG
+            + """<script>try{document.documentElement.dataset.theme=localStorage.getItem('tn_theme')||'light'}catch(_){document.documentElement.dataset.theme='light'}</script>"""
+            + _LEGAL_PAGE_POLISH
+            + "</head>",
             1,
         )
         page = page.replace(
