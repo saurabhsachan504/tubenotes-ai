@@ -51,6 +51,44 @@ _GOOGLE_ANALYTICS_TAG = """<!-- Google tag (gtag.js) -->
 </script>
 """
 
+# The supplied Meta Pixel ID is likewise public browser configuration. The
+# JavaScript records normal page views, while the image fallback covers users
+# whose browser has JavaScript disabled. No customer email, payment, or other
+# account information is sent from this base tag.
+_META_PIXEL_HEAD = """<!-- Meta Pixel Code -->
+<script>
+!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window, document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '969832678881906');
+fbq('track', 'PageView');
+</script>
+<!-- End Meta Pixel Code -->
+"""
+_META_PIXEL_NOSCRIPT = """<!-- Meta Pixel Code (noscript) -->
+<noscript><img height="1" width="1" style="display:none"
+src="https://www.facebook.com/tr?id=969832678881906&amp;ev=PageView&amp;noscript=1"
+/></noscript>
+<!-- End Meta Pixel Code (noscript) -->
+"""
+
+
+def _with_public_tracking(page: str) -> str:
+    """Attach browser analytics only to public, customer-facing HTML pages."""
+    page = page.replace("</head>", _GOOGLE_ANALYTICS_TAG + _META_PIXEL_HEAD + "</head>", 1)
+    return re.sub(
+        r"(<body\b[^>]*>)",
+        lambda match: match.group(1) + _META_PIXEL_NOSCRIPT,
+        page,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -263,7 +301,7 @@ if settings.WEB_APP_ENABLED and STATIC_DIR.is_dir():
     def home():
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         html = re.sub(r"app\.js\?v=[^\"\']*", f"app.js?v={_ASSET_VERSION}", html)
-        html = html.replace("</head>", _GOOGLE_ANALYTICS_TAG + "</head>", 1)
+        html = _with_public_tracking(html)
         # The shell must always revalidate; the assets it points at are
         # content-addressed, so they can be cached hard.
         return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
@@ -278,10 +316,10 @@ html[data-theme="light"] body{position:relative;isolation:isolate;overflow-x:hid
         """Serve legal pages with the same saved light/dark preference as TubeNotes."""
         page = (STATIC_DIR / filename).read_text(encoding="utf-8")
         page = page.replace("{{SUPPORT_EMAIL}}", escape(settings.SUPPORT_EMAIL))
+        page = _with_public_tracking(page)
         page = page.replace(
             "</head>",
-            _GOOGLE_ANALYTICS_TAG
-            + """<script>try{document.documentElement.dataset.theme=localStorage.getItem('tn_theme')||'light'}catch(_){document.documentElement.dataset.theme='light'}</script>"""
+            """<script>try{document.documentElement.dataset.theme=localStorage.getItem('tn_theme')||'light'}catch(_){document.documentElement.dataset.theme='light'}</script>"""
             + _LEGAL_PAGE_POLISH
             + "</head>",
             1,
