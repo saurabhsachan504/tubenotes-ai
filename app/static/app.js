@@ -2345,7 +2345,6 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
       extensionLink.rel = "noopener noreferrer";
       extensionLink.removeAttribute("aria-disabled");
       extensionLink.title = "Install TubeNotes from the Chrome Web Store";
-      extensionLink.querySelector("small").textContent = "";
     } else if (extensionLink) {
       extensionLink.onclick = (event) => event.preventDefault();
     }
