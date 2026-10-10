@@ -47,7 +47,7 @@
     background:var(--panel); border-bottom:1px solid var(--line);
     position:sticky; top:0; z-index:40;
   }
-  .nav-in{display:flex;align-items:center;justify-content:space-between;height:60px}
+  .nav-in{--extension-button-space:300px;display:flex;align-items:center;justify-content:space-between;height:60px;padding-right:var(--extension-button-space)}
   .logo{display:flex;align-items:center;gap:9px;color:var(--ink);font-weight:800;font-size:19px;letter-spacing:-.02em;text-decoration:none}
   .logo svg{flex-shrink:0}
   .logo:hover{color:var(--brand1)}.logo:focus-visible{border-radius:8px;outline:3px solid rgba(168,85,247,.28);outline-offset:4px}
@@ -57,7 +57,7 @@
     padding:7px 12px;border-radius:9px;font-size:14px;
   }
   .nav-btn:hover{background:var(--chip);color:var(--ink)}
-  .extension-btn{display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border-color:#c4b5fd;background:var(--panel);color:#6d28d9;font-weight:800;text-decoration:none;white-space:nowrap}
+  .extension-btn{position:absolute;top:10px;right:18px;display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border-color:#c4b5fd;background:var(--panel);color:#6d28d9;font-weight:800;text-decoration:none;white-space:nowrap}
   .extension-btn:hover{border-color:#a78bfa;background:#faf7ff;color:#5b21b6}
   .extension-btn[aria-disabled="true"]{cursor:default}
   .extension-btn[aria-disabled="true"]:hover{border-color:#c4b5fd;background:var(--panel);color:#6d28d9}
@@ -498,12 +498,13 @@
   /* ---------------- responsive layout ---------------- */
   @media(max-width:900px){
     .wrap{padding-left:18px;padding-right:18px}
+    .nav-in{padding-right:var(--extension-button-space)}
     .hero{padding-bottom:58px}
     main{padding-top:28px}
   }
 
   @media(max-width:700px){
-    .nav-in{height:58px}
+    .nav-in{height:58px;padding-right:18px}
     .hero{padding-top:22px;padding-bottom:46px}
     .pills{margin-bottom:22px}
     .hero p.sub{font-size:14px;margin-bottom:22px}
@@ -520,7 +521,7 @@
 
   @media(max-width:620px){
     .wrap{padding-left:14px;padding-right:14px}
-    .nav-in{gap:8px}
+    .nav-in{gap:8px;padding-right:14px}
     .logo{font-size:18px;gap:7px}
     .nav-right{gap:2px}
     .nav-btn{padding:7px 8px;font-size:13px}
