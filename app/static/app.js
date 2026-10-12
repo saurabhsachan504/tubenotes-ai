@@ -763,7 +763,7 @@
     const url = $("url").value.trim();
     if (!url) { $("url").focus(); return; }
 
-    if (!signedIn()) { openAuth("signup", "Create a free account to summarize — 5 videos free."); return; }
+    if (!signedIn()) { openAuth("signup", "Create a free account to summarize — 20 videos free."); return; }
 
     const wantNotes = requestedMode === "notes";
     const target = targetOverride === undefined ? outLang() : targetOverride;
