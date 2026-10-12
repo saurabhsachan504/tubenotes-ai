@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>TubeNotes</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+  <link rel="stylesheet" href="trialguard-gate.css" />
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="header-text">
+        <div class="tn-brand" aria-label="TubeNotes">
+          <svg width="27" height="27" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="url(#extensionLogoGradient)"/><path d="M13 10l9 6-9 6z" fill="#fff"/><defs><linearGradient id="extensionLogoGradient" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#ec4899"/></linearGradient></defs></svg>
+          <span id="productBrand">TubeNotes</span>
+        </div>
+        <span class="subtitle" id="pageTitle">—</span>
+      </div>
+      <div class="header-actions">
+        <button id="themeToggle" class="theme-toggle" type="button" data-theme-toggle aria-label="Switch theme" title="Switch theme"><svg class="theme-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="theme-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3 6.6 6.6 0 0 0 21 12.8Z"/></svg></button>
+        <button id="exportBtn" class="pdf-btn" title="Download PDF (choose language)"><svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true" style="display:block;flex-shrink:0;"><path d="M10 3h20l12 12v27a3 3 0 0 1-3 3H10a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3z" fill="#e5322d"/><path d="M30 3l12 12H33a3 3 0 0 1-3-3V3z" fill="#ff9d97"/><text x="24" y="35" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#fff" text-anchor="middle">PDF</text></svg><span>Download PDF</span></button>
+        <button id="accountBtn" title="Account &amp; free videos" aria-label="Account and free videos"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg></button>
+        <button id="settingsBtn" title="Settings" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V20.3h-3v-.09A1.7 1.7 0 0 0 10.68 18.7a1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 15.04a1.7 1.7 0 0 0-1.55-1.03h-.09v-3h.09A1.7 1.7 0 0 0 7 9.98a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34 1.7 1.7 0 0 0 1.03-1.55v-.09h3v.09a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.55 1.03h.09v3h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg></button>
+      </div>
+    </header>
+
+    <div id="notConfigured" class="state hidden">
+      <p class="muted">Setup needed first — pick your notebook and summarizer.</p>
+      <button id="openOptions" class="primary">Open Settings</button>
+    </div>
+
+    <div id="notPage" class="state hidden">
+      <p class="muted">Open a webpage or YouTube video to ask about it.</p>
+    </div>
+
+    <!-- TrialGuard: shown when the user must sign in or subscribe -->
+    <div id="tgGate" class="state hidden">
+      <div class="tg-gate">
+        <div class="tg-gate-icon">✨</div>
+        <h2 class="tg-gate-title" id="tgGateTitle">Sign in to summarize</h2>
+        <p class="tg-gate-msg" id="tgGateMsg"></p>
+        <div class="tg-meter" id="tgMeter"><span id="tgMeterFill"></span></div>
+        <button id="tgGateBtn" class="primary">Sign in / Create account</button>
+        <button id="tgGateAlt" class="tg-link hidden">Already subscribed? Refresh</button>
+        <div class="tg-foot" id="tgGateFoot">
+          One credit = one video. Re-opening a video you already summarized is free.
+        </div>
+      </div>
+    </div>
+
+    <div id="chatState" class="state hidden chat-layout">
+      <div id="credCard" class="cred-card hidden"></div>
+      <section id="pdfProgressPanel" class="pdf-progress-panel hidden" aria-live="polite">
+        <div class="pdf-progress-top">
+          <div class="pdf-video-card">
+            <img id="pdfVideoThumb" class="pdf-video-thumb" alt="Video thumbnail">
+            <div class="pdf-video-meta">
+              <div id="pdfVideoTitle" class="pdf-video-title">YouTube video</div>
+              <div class="pdf-video-tags"><span>TubeNotes</span><span id="pdfLangTag">PDF</span></div>
+            </div>
+          </div>
+          <div class="pdf-progress-video">
+            <div class="pdf-progress-icon">↓</div>
+            <div class="pdf-progress-copy">
+              <div id="pdfProgressTitle" class="pdf-progress-title">Writing detailed notes…</div>
+              <div id="pdfProgressSub" class="pdf-progress-sub">Preparing your full-video notes.</div>
+              <div class="pdf-percent-track"><div id="pdfPercentFill" class="pdf-percent-fill"></div></div>
+            </div>
+            <b id="pdfPercentText" class="pdf-percent-text">0%</b>
+          </div>
+          <div class="pdf-steps">
+            <div class="pdf-step" data-step="1"><span>1</span><small>Reading<br>Video</small></div>
+            <div class="pdf-step" data-step="2"><span>2</span><small>Analyzing<br>Content</small></div>
+            <div class="pdf-step" data-step="3"><span>3</span><small>Writing<br>Notes</small></div>
+            <div class="pdf-step" data-step="4"><span>4</span><small>Preparing<br>PDF</small></div>
+          </div>
+        </div>
+        <div class="pdf-preview"><div id="pdfPreviewText" class="pdf-preview-text">Your detailed notes will appear here while they are being generated.</div></div>
+        <div class="pdf-progress-bottom">
+          <span id="pdfServerLabel">Server load</span><span id="pdfCountLabel">Starting…</span>
+        </div>
+        <div class="pdf-main-track"><div id="pdfMainFill" class="pdf-main-fill"></div></div>
+      </section>
+      <div class="messages" id="messages"></div>
+      <div class="suggestions" id="suggestions"></div>
+      <div class="composer">
+        <textarea id="chatInput" placeholder="Ask a question…" rows="1"></textarea>
+        <button id="sendBtn" title="Send"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style="display:block;"><path d="M3 11.5 21 3l-8.5 18-2.2-7.3L3 11.5z" fill="currentColor"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Order matters: the polyfill gives Chrome the promise-based `browser`
+       API that Firefox has natively, and TrialGuard must exist before
+       sidepanel.js runs. -->
+  <script src="browser-polyfill.js"></script>
+  <script src="trialguard.js"></script>
+  <script src="extension-theme.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

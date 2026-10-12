@@ -1,0 +1,63 @@
+.ons-btn,
+.ons-btn-inline {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  background: #d97757 !important;
+  border: none !important;
+  border-radius: 14px !important;
+  cursor: pointer !important;
+  vertical-align: middle !important;
+  line-height: 1.3 !important;
+  box-sizing: content-box !important;
+  white-space: nowrap !important;
+}
+.ons-btn {
+  padding: 8px 14px !important;
+  margin: 0 8px !important;
+  font-size: 13px !important;
+  z-index: 10;
+}
+.ons-btn:hover,
+.ons-btn-inline:hover {
+  background: #e68868 !important;
+}
+.ons-icon {
+  font-size: 13px !important;
+  line-height: 1 !important;
+  color: #1c1712 !important;
+  opacity: 1 !important;
+}
+.ons-label {
+  font-family: "Roboto", Arial, sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #1c1712 !important;
+  line-height: 1.3 !important;
+  opacity: 1 !important;
+  display: inline !important;
+}
+.ons-btn-inline {
+  padding: 2px 7px !important;
+  margin-left: 6px !important;
+  flex-shrink: 0 !important;
+}
+.ons-btn-inline .ons-icon,
+.ons-btn-inline .ons-label {
+  font-size: 10px !important;
+}
+.ons-btn-compact-fallback {
+  width: 24px !important;
+  height: 24px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  justify-content: center !important;
+}
+.ons-btn-compact-fallback .ons-label {
+  display: none !important;
+}
+.ons-btn-overlay {
+  position: absolute !important;
+  top: 6px !important;
+  right: 6px !important;
+}

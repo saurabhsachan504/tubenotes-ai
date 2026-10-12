@@ -1,0 +1,78 @@
+/* trialguard-gate.css — the sign-in / upgrade screen shown inside the side
+   panel. Colours follow the existing deep-navy HUD theme. */
+
+#tgGate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tg-gate {
+  width: 100%;
+  text-align: center;
+  padding: 18px 12px;
+}
+.tg-gate-icon {
+  font-size: 30px;
+  line-height: 1;
+  margin-bottom: 10px;
+  filter: drop-shadow(0 0 14px rgba(150, 90, 240, 0.55));
+}
+.tg-gate-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f0ecff;
+  margin: 0 0 8px;
+}
+.tg-gate-msg {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #a99fd0;
+  margin: 0 auto 14px;
+  max-width: 260px;
+}
+.tg-meter {
+  height: 6px;
+  background: #241f47;
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 0 auto 16px;
+  max-width: 220px;
+}
+.tg-meter > span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #7c3aed, #c084fc);
+}
+.tg-gate .primary {
+  max-width: 250px;
+  margin: 0 auto;
+}
+.tg-link {
+  display: block;
+  margin: 10px auto 0;
+  background: none;
+  border: none;
+  color: #b79cff;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.tg-link:hover { color: #d8caff; }
+.tg-foot {
+  margin-top: 16px;
+  font-size: 10.5px;
+  color: #6f8bab;
+  line-height: 1.5;
+}
+
+/* Keep the sign-in gate aligned with the TubeNotes web app palette. */
+.tg-gate { padding:24px 14px; border:1px solid #312858; border-radius:16px; background:linear-gradient(145deg,rgba(29,22,61,.96),rgba(16,12,37,.96)); box-shadow:0 14px 34px rgba(3,1,14,.28); }
+.tg-gate-icon { width:44px; height:44px; display:grid; place-items:center; margin:0 auto 12px; border-radius:14px; background:linear-gradient(135deg,#7c3aed,#ec4899); filter:none; box-shadow:0 8px 20px rgba(124,58,237,.35); }
+.tg-gate .primary { background:linear-gradient(135deg,#7c3aed,#ec4899); box-shadow:0 6px 18px rgba(124,58,237,.32); }
+.tg-meter > span { background:linear-gradient(90deg,#7c3aed,#ec4899); }
+
+html[data-theme="light"] .tg-gate { background:#fff; border-color:#e7e4f0; box-shadow:0 10px 26px rgba(60,30,120,.10); }
+html[data-theme="light"] .tg-gate-title { color:#171229; }
+html[data-theme="light"] .tg-gate-msg,html[data-theme="light"] .tg-foot { color:#6b6880; }
+html[data-theme="light"] .tg-meter { background:#ede9f7; }
+html[data-theme="light"] .tg-link { color:#7c3aed; }

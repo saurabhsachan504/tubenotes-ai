@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Account</title>
+    <style>
+      /* Matches the side panel's deep-navy HUD theme. */
+      * { box-sizing: border-box; }
+      body {
+        width: 320px;
+        margin: 0;
+        padding: 16px;
+        font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: radial-gradient(130% 90% at 50% 0%, #1a1440 0%, #0e0b20 45%, #070510 100%);
+        color: #e7eefb;
+      }
+      h1 { font-size: 15px; margin: 0 0 12px; color: #f0ecff; }
+      .tn-brand { display:flex; align-items:center; gap:8px; margin-bottom:16px; color:#fff; font-size:17px; font-weight:800; letter-spacing:-.02em; }
+      .tn-brand svg { flex:none; filter:drop-shadow(0 4px 9px rgba(168,85,247,.34)); }
+      .tn-brand { display:none; }
+      .google-only-auth { padding:8px 0 4px; text-align:center; }
+      .auth-logo { display:grid; place-items:center; width:38px; height:38px; margin:0 auto 12px; border-radius:12px; color:#fff; background:linear-gradient(135deg,#7c3aed,#ec4899); box-shadow:0 7px 18px rgba(124,58,237,.30); }
+      .google-only-auth h1 { margin:0 0 4px; font-size:18px; }
+      .google-only-auth .muted { margin:0 0 14px; }
+      .google-panel { padding:12px; border:1px solid rgba(168,85,247,.38); border-radius:13px; background:rgba(124,58,237,.06); }
+      .google-panel-label { margin:0 0 8px; color:#8f85ab; font-size:9px; font-weight:800; letter-spacing:.11em; text-transform:uppercase; }
+      .google-panel #googleSignIn { margin:0; }
+      .auth-actions { display:flex; align-items:center; min-height:25px; margin-top:5px; }
+      .google-only-auth #authErr { margin:7px 0 0; text-align:center; }
+      .muted { color: #a99fd0; font-size: 11.5px; line-height: 1.5; }
+      label { display: block; font-size: 11px; color: #a99fd0; margin: 10px 0 4px; }
+      input {
+        width: 100%;
+        padding: 9px 11px;
+        background: #120e28;
+        border: 1px solid #34305f;
+        border-radius: 8px;
+        color: #e7eefb;
+        font-size: 13px;
+        outline: none;
+      }
+      input:focus { border-color: #8a5cf0; }
+      button.primary {
+        width: 100%;
+        margin-top: 14px;
+        padding: 10px 12px;
+        border: none;
+        border-radius: 9px;
+        background: linear-gradient(145deg, #7c3aed, #a855f7);
+        color: #fff;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button.primary:hover { filter: brightness(1.07); }
+      #googleSignIn {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        width: 100%;
+        margin: 10px 0 8px;
+        padding: 10px 12px;
+        border: 1px solid rgba(168, 85, 247, .72);
+        border-radius: 10px;
+        background: linear-gradient(135deg, rgba(124,58,237,.24), rgba(168,85,247,.18) 52%, rgba(236,72,153,.18));
+        color: #f7f3ff;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,.035), 0 0 16px rgba(139,92,246,.16);
+        font-weight: 700;
+        letter-spacing: .05px;
+        cursor: pointer;
+        overflow: hidden;
+        transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease, filter .16s ease;
+      }
+      #googleSignIn::before {
+        content: "G";
+        display: grid;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        flex: 0 0 22px;
+        border-radius: 50%;
+        background: #fff;
+        color: #4285f4;
+        font: 800 14px/1 Arial, sans-serif;
+        box-shadow: 0 2px 8px rgba(0,0,0,.22);
+      }
+      #googleSignIn::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(110deg, transparent 25%, rgba(255,255,255,.13) 45%, transparent 65%);
+        transform: translateX(-120%);
+        transition: transform .5s ease;
+        pointer-events: none;
+      }
+      #googleSignIn:hover {
+        transform: translateY(-1px);
+        border-color: #c084fc;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,.05), 0 0 22px rgba(168,85,247,.28);
+        filter: brightness(1.08);
+      }
+      #googleSignIn:hover::after { transform: translateX(120%); }
+      #googleSignIn:active { transform: translateY(0); }
+      #googleSignIn:disabled {
+        transform: none;
+        cursor: default;
+        opacity: .72;
+        filter: none;
+      }
+      #googleSignIn:disabled::after { display: none; }
+      button.primary:disabled { background: #2a2547; color: #6b6390; cursor: default; }
+      button.ghost {
+        background: none;
+        border: none;
+        color: #b79cff;
+        font-size: 11.5px;
+        cursor: pointer;
+        padding: 6px 0;
+      }
+      button.ghost:hover { color: #d8caff; }
+      .tabs { display: flex; gap: 4px; margin-bottom: 6px; border-bottom: 1px solid #2c2652; }
+      .tabs button {
+        flex: 1;
+        background: none;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: #8a80b5;
+        font-size: 12.5px;
+        padding: 8px;
+        cursor: pointer;
+      }
+      .tabs button.active { color: #b79cff; border-bottom-color: #8a5cf0; font-weight: 600; }
+      .err { color: #ff8a80; font-size: 11.5px; margin-top: 8px; min-height: 15px; }
+      .ok { color: #86e5b8; }
+      .hidden { display: none !important; }
+      .card {
+        background: linear-gradient(180deg, #1b1640 0%, #14102e 100%);
+        border: 1px solid #332c5e;
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+      .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .badge {
+        font-size: 10.5px;
+        padding: 3px 9px;
+        border-radius: 999px;
+        background: rgba(38, 30, 74, 0.7);
+        border: 1px solid #2c2652;
+        color: #cfc4f0;
+      }
+      .badge.pro { background: rgba(30, 60, 48, 0.5); border-color: #2c5a44; color: #6ee7a8; }
+      .big { font-size: 17px; font-weight: 800; margin: 8px 0 2px; }
+      .meter { height: 6px; background: #241f47; border-radius: 3px; overflow: hidden; margin: 9px 0 6px; }
+      .meter > span { display: block; height: 100%; background: linear-gradient(90deg, #7c3aed, #c084fc); }
+      .split { display: flex; gap: 8px; }
+      .split button { flex: 1; }
+      .offer-card { margin-top:12px; padding:13px; border:1px solid rgba(240,184,70,.46); border-radius:13px; background:linear-gradient(145deg,#2b1d0d,#171021 58%,#291437); box-shadow:0 10px 24px rgba(0,0,0,.22); }
+      .offer-kicker { margin:0 0 4px; color:#ffd975; font-size:9px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+      .offer-card h2 { margin:0; color:#ffe08a; font-size:19px; line-height:1.15; letter-spacing:-.03em; }
+      .offer-copy { margin:7px 0 10px; color:#ddd0b5; font-size:11.5px; line-height:1.45; }
+      .offer-price-row { display:flex; align-items:baseline; gap:6px; margin:8px 0; }
+      .offer-old { color:#bcae9f; text-decoration:line-through; font-size:12px; }
+      .offer-now { color:#ffe08a; font-size:27px; font-weight:850; line-height:1; }
+      .offer-period { color:#d5c5ac; font-size:11px; }
+      .offer-timer { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 9px; margin:10px 0; border:1px solid rgba(255,221,138,.23); border-radius:9px; background:rgba(255,255,255,.055); color:#eee1c4; font-size:10.5px; }
+      .offer-timer b { color:#ffe08a; font:700 10px/1 ui-monospace,SFMono-Regular,Consolas,monospace; white-space:nowrap; }
+      .offer-benefits { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:10px 0; }
+      .offer-benefits span { padding:6px 7px; border:1px solid rgba(255,221,138,.18); border-radius:8px; color:#e6d7bc; font-size:10px; background:rgba(255,255,255,.035); }
+      .offer-benefits span::before { content:"✓"; color:#ffe08a; font-weight:800; margin-right:4px; }
+      .offer-close { float:right; border:0; padding:1px 4px; background:transparent; color:#d4c1b6; font-size:17px; line-height:1; cursor:pointer; }
+      .coupon-panel { padding:9px; border:1px solid rgba(255,221,138,.27); border-radius:9px; background:rgba(255,255,255,.055); }
+      .coupon-label { margin:0 0 5px; color:#f4e7c8; font-size:10px; font-weight:700; }
+      .coupon-row { display:flex; gap:6px; }
+      .coupon-code { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:8px; border:1px dashed rgba(255,221,138,.52); border-radius:7px; color:#ffe08a; font:700 11px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace; }
+      .coupon-copy { border:1px solid rgba(255,221,138,.4); border-radius:7px; background:rgba(255,221,138,.1); color:#ffe08a; font-weight:700; cursor:pointer; }
+      .coupon-expiry { margin:6px 0 7px; color:#d7c9b4; font-size:9.5px; line-height:1.35; }
+      .coupon-panel input { margin-bottom:7px; }
+      .offer-regular { display:block; width:100%; margin-top:9px; border:0; background:transparent; color:#d4c1b6; font-size:10.5px; cursor:pointer; }
+      .offer-regular:hover { color:#fff0c5; }
+      html[data-theme="light"] body { background:radial-gradient(110% 70% at 50% -12%,rgba(168,85,247,.16),transparent 48%),#faf9ff; color:#171229; }
+      html[data-theme="light"] .tn-brand,html[data-theme="light"] h1 { color:#171229; }
+      html[data-theme="light"] .muted,html[data-theme="light"] label { color:#6b6880; }
+      html[data-theme="light"] input { background:#fff; border-color:#e7e4f0; color:#171229; }
+      html[data-theme="light"] .tabs { border-color:#e7e4f0; }.tabs button { color:#6b6880; }
+      html[data-theme="light"] .tabs button.active { color:#7c3aed; border-color:#7c3aed; }
+      html[data-theme="light"] .card { background:#fff; border-color:#e7e4f0; box-shadow:0 8px 21px rgba(60,30,120,.08); }
+      html[data-theme="light"] .badge { background:#f7f4ff; border-color:#e7e4f0; color:#564a72; }
+      html[data-theme="light"] .meter { background:#eeeaf7; }
+      /* Polished light popup, with a visible Google sign-in control. */
+      html[data-theme="light"] body { background:radial-gradient(112% 64% at 50% -14%,rgba(196,181,253,.30),transparent 47%),linear-gradient(180deg,#fbfaff,#f6f3fc); }
+      html[data-theme="light"] .tn-brand { margin-bottom:19px; }
+      html[data-theme="light"] #googleSignIn { color:#38275b; border-color:#cdb4fb; background:linear-gradient(135deg,#fff 0%,#faf6ff 100%); box-shadow:0 6px 16px rgba(124,58,237,.12); }
+      html[data-theme="light"] #googleSignIn::before { color:#4285f4; box-shadow:0 2px 7px rgba(76,43,136,.14); }
+      html[data-theme="light"] #googleSignIn:hover { border-color:#9d65f1; background:#f8f2ff; box-shadow:0 8px 19px rgba(124,58,237,.18); filter:none; }
+      html[data-theme="light"] button.primary { box-shadow:0 6px 16px rgba(124,58,237,.27); }
+      html[data-theme="light"] button.ghost { color:#7c3aed; }
+      html[data-theme="light"] input:focus { border-color:#a855f7; box-shadow:0 0 0 3px rgba(168,85,247,.13); }
+      html[data-theme="light"] .google-panel { background:#fbf9ff; border-color:#d8bfff; }
+      html[data-theme="light"] .google-panel-label { color:#74688f; }
+      html[data-theme="light"] .offer-card { border-color:#e9c56a; background:radial-gradient(95% 75% at 100% 0%,rgba(247,193,255,.65),transparent 50%),linear-gradient(145deg,#fffdf5,#fff 62%,#fbf4ff); box-shadow:0 11px 25px rgba(83,47,143,.13); }
+      html[data-theme="light"] .offer-kicker,html[data-theme="light"] .offer-now,html[data-theme="light"] .offer-card h2 { color:#7a33c7; }
+      html[data-theme="light"] .offer-copy,html[data-theme="light"] .offer-period,html[data-theme="light"] .offer-old,html[data-theme="light"] .coupon-expiry { color:#6f6680; }
+      html[data-theme="light"] .offer-timer,html[data-theme="light"] .coupon-panel { border-color:#eadcf8; background:rgba(255,255,255,.72); color:#625779; }
+      html[data-theme="light"] .offer-timer b,html[data-theme="light"] .coupon-code,html[data-theme="light"] .coupon-label { color:#793bc4; }
+      html[data-theme="light"] .offer-benefits span { border-color:#eadff6; color:#625779; background:#fff; }
+      html[data-theme="light"] .offer-benefits span::before { color:#a04bea; }
+      html[data-theme="light"] .coupon-code { border-color:#d7b9f2; background:#fff; }
+      html[data-theme="light"] .coupon-copy { border-color:#d8b9f4; background:#f8f1ff; color:#7c3aed; }
+      html[data-theme="light"] .offer-close,html[data-theme="light"] .offer-regular { color:#766b83; }
+    </style>
+  </head>
+  <body>
+    <div class="tn-brand"><svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="url(#accountLogoGradient)"/><path d="M13 10l9 6-9 6z" fill="#fff"/><defs><linearGradient id="accountLogoGradient" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#ec4899"/></linearGradient></defs></svg><span>TubeNotes</span></div>
+    <!-- ---------- signed out ---------- -->
+    <section id="authView">
+      <div class="google-only-auth">
+        <div class="auth-logo" aria-hidden="true"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m10 8 5 4-5 4z"/></svg></div>
+        <h1 id="welcomeTitle">Welcome back</h1>
+        <p class="muted" id="welcomeCopy">Sign in to keep your credits and history.</p>
+        <div class="google-panel">
+          <p class="google-panel-label">Fast &amp; secure sign-in</p>
+          <button class="primary" id="googleSignIn" type="button">Continue with Google</button>
+        </div>
+        <div class="err" id="authErr" aria-live="polite"></div>
+        <div class="auth-actions"><button class="ghost" id="closeAuth" type="button">Cancel</button></div>
+      </div>
+      <div class="legacy-auth hidden" aria-hidden="true">
+      <h1>Welcome back</h1>
+      <div class="tabs">
+        <button id="tabLogin" class="active">Sign in</button>
+        <button id="tabSignup">Create account</button>
+      </div>
+
+      <button class="primary" id="legacyGoogleSignIn" type="button">Continue with Google</button>
+      <div class="muted" style="text-align:center; margin:2px 0 10px;">or use email and password</div>
+
+      <form id="authForm">
+        <div id="nameField" class="hidden">
+          <label for="fullName">Name</label>
+          <input id="fullName" type="text" autocomplete="name" />
+        </div>
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" required />
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required minlength="8" />
+        <div class="err" id="legacyAuthErr"></div>
+        <button class="primary" id="authSubmit" type="submit">Sign in</button>
+      </form>
+
+      <p class="muted" id="signupHint">
+        New accounts get <strong>20 free videos</strong> on this device — the extension and the website share them.
+        After that it's $5/month.
+      </p>
+      <button class="ghost" id="forgot">Forgot password?</button>
+      <button class="ghost" id="testConn">Test server connection</button>
+      </div>
+    </section>
+
+    <!-- ---------- signed in ---------- -->
+    <section id="accountView" class="hidden">
+      <div class="row">
+        <h1 style="margin:0">Your account</h1>
+        <span class="badge" id="planBadge">Free</span>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="muted" id="emailLine"></div>
+        <div class="big" id="statusLine">—</div>
+        <div class="meter"><span id="meterFill" style="width:0%"></span></div>
+        <div class="muted" id="detailLine"></div>
+      </div>
+
+      <button class="primary" id="upgrade">Subscribe — $5/month</button>
+      <section id="offerCard" class="offer-card hidden" aria-live="polite">
+        <button id="offerClose" class="offer-close" type="button" aria-label="Close offer">×</button>
+        <p class="offer-kicker">✦ TubeNotes Pro · limited launch offer</p>
+        <h2 id="offerTitle">Unlock Pro for ₹99</h2>
+        <p class="offer-copy">Claim your personal launch code, then apply it securely at checkout for monthly TubeNotes Pro access.</p>
+        <div class="offer-price-row"><span class="offer-old" id="offerOld">₹299</span><span class="offer-now" id="offerNow">₹99</span><span class="offer-period">/ month</span></div>
+        <div class="offer-timer"><span>Limited offer ends in</span><b id="offerCountdown">Loading…</b></div>
+        <div class="offer-benefits"><span>Unlimited summaries</span><span>Full PDF notes</span><span>40+ languages</span><span>Cancel anytime</span></div>
+        <button class="primary" id="offerClaim" type="button">Claim ₹99/month offer</button>
+        <div id="couponPanel" class="coupon-panel hidden">
+          <p class="coupon-label">Your personal coupon code</p>
+          <div class="coupon-row"><div class="coupon-code" id="couponCode">—</div><button class="coupon-copy" id="couponCopy" type="button">Copy</button></div>
+          <p class="coupon-expiry" id="couponExpiry"></p>
+          <label for="couponInput">Apply coupon code</label>
+          <input id="couponInput" autocomplete="off" spellcheck="false" placeholder="Paste your coupon code" />
+          <button class="primary" id="couponApply" type="button">Apply code &amp; continue</button>
+        </div>
+        <button class="offer-regular" id="offerRegular" type="button">No thanks — continue at ₹299/month</button>
+        <div class="err" id="offerErr"></div>
+      </section>
+      <div class="err" id="accountErr"></div>
+      <div class="split">
+        <button class="ghost" id="manage">Manage billing</button>
+        <button class="ghost" id="signout">Sign out</button>
+      </div>
+    </section>
+
+    <script src="browser-polyfill.js"></script>
+    <script src="trialguard.js"></script>
+    <script src="extension-theme.js"></script>
+    <script src="account.js"></script>
+  </body>
+</html>

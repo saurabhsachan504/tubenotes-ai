@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "TubeNotes - Youtube summarizer and PDF generator",
+  "version": "2.3.19",
+  "description": "AI based Youtube summarizer and PDF generator",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "tabs",
+    "downloads",
+    "alarms",
+    "sidePanel",
+    "identity"
+  ],
+  "host_permissions": [
+    "https://tubenotes.trueworks.in/*",
+    "https://tubenotes.ai/*",
+    "https://dgxopennotebook-api.trueworks.in/*",
+    "*://*.youtube.com/*",
+    "https://translate.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "browser-polyfill.js",
+        "content.js",
+        "transcript.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    },
+    "default_title": "TubeNotes \u2014 account & free videos",
+    "default_popup": "account.html"
+  },
+  "options_page": "options.html"
+}

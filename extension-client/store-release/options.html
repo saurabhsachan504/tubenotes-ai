@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>TubeNotes — Extension Settings</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 480px;
+      margin: 40px auto;
+      padding: 0 16px;
+      color: #222;
+    }
+    h1 { font-size: 20px; }
+    label { display: block; margin-top: 16px; font-weight: 600; font-size: 13px; }
+    input, select {
+      width: 100%;
+      padding: 8px;
+      margin-top: 6px;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+    textarea {
+      width: 100%;
+      padding: 8px;
+      margin-top: 6px;
+      box-sizing: border-box;
+      font-size: 13px;
+      font-family: inherit;
+      line-height: 1.4;
+      resize: vertical;
+    }
+    button {
+      margin-top: 20px;
+      padding: 10px 16px;
+      background: #cc0000;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    #loadBtn { background: #444; margin-right: 8px; }
+    .msg { margin-top: 12px; font-size: 13px; }
+    .ok { color: green; }
+    .err { color: #c00; }
+    .hint { color: #666; font-size: 12px; margin-top: 4px; }
+
+    /* TubeNotes web-app visual system */
+    :root { --brand1:#7c3aed; --brand2:#a855f7; --brand3:#ec4899; --panel:#17122f; --field:#110d27; --line:#312858; --ink:#f8f7ff; --muted:#aba3c8; }
+    body { max-width:760px; min-height:100vh; margin:0 auto; padding:34px 24px 48px; color:var(--ink); background:radial-gradient(90% 58% at 50% -12%,rgba(124,58,237,.30),transparent 48%),linear-gradient(180deg,#110d27,#0b0819); }
+    .tn-brand { display:flex; align-items:center; gap:9px; margin-bottom:17px; color:#fff; font-size:20px; font-weight:800; letter-spacing:-.025em; }
+    .tn-brand svg { filter:drop-shadow(0 5px 11px rgba(168,85,247,.35)); }
+    h1 { margin:0 0 24px; font-size:24px; letter-spacing:-.03em; }
+    label { margin-top:21px; color:#e7e1fb; font-size:13px; }
+    input,select,textarea { padding:11px 12px; margin-top:7px; border:1px solid var(--line); border-radius:10px; background:var(--field); color:var(--ink); outline:none; }
+    input[type="checkbox"] { padding:0; accent-color:var(--brand2); }
+    input:focus,select:focus,textarea:focus { border-color:var(--brand2); box-shadow:0 0 0 3px rgba(168,85,247,.16); }
+    .hint { color:var(--muted); font-size:12px; line-height:1.5; margin-top:6px; }
+    button { margin-top:18px; padding:11px 15px; border:0; border-radius:10px; background:linear-gradient(135deg,var(--brand1),var(--brand3)); color:#fff; font-weight:700; box-shadow:0 6px 17px rgba(124,58,237,.30); }
+    button:hover { filter:brightness(1.08); }
+    #loadBtn { margin-right:8px; background:rgba(124,58,237,.16); border:1px solid rgba(192,132,252,.48); color:#eee8ff; box-shadow:none; }
+    .msg { min-height:18px; color:#fda4af; }.ok { color:#86efac; }.err { color:#fda4af; }
+    @media(max-width:560px){ body { padding:24px 16px 36px; } }
+    html[data-theme="light"] body { background:radial-gradient(90% 58% at 50% -12%,rgba(168,85,247,.14),transparent 48%),#faf9ff; color:#171229; }
+    html[data-theme="light"] .tn-brand,html[data-theme="light"] h1 { color:#171229; }
+    html[data-theme="light"] label { color:#312b4c; }
+    html[data-theme="light"] input,html[data-theme="light"] select,html[data-theme="light"] textarea { background:#fff; border-color:#e7e4f0; color:#171229; }
+    html[data-theme="light"] .hint { color:#6b6880; }
+    html[data-theme="light"] #loadBtn { color:#5d3da8; background:#f4edff; border-color:#dfc9ff; }
+    html[data-theme="light"] body { background:radial-gradient(90% 58% at 50% -12%,rgba(196,181,253,.28),transparent 48%),linear-gradient(180deg,#fbfaff,#f6f3fc); }
+    html[data-theme="light"] input:focus,html[data-theme="light"] select:focus,html[data-theme="light"] textarea:focus { box-shadow:0 0 0 3px rgba(168,85,247,.13); }
+  </style>
+</head>
+<body>
+  <div class="tn-brand"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="url(#optionsLogoGradient)"/><path d="M13 10l9 6-9 6z" fill="#fff"/><defs><linearGradient id="optionsLogoGradient" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#ec4899"/></linearGradient></defs></svg><span>TubeNotes</span></div>
+  <h1>Extension settings</h1>
+
+  <label for="apiUrl">TubeNotes API URL</label>
+  <input id="apiUrl" placeholder="https://dgxopennotebook-api.trueworks.in" />
+  <div class="hint">The public URL of your TubeNotes API (no trailing slash).</div>
+
+  <button id="loadBtn" type="button">Load notebooks &amp; transformations</button>
+
+  <label for="notebook">Notebook</label>
+  <select id="notebook"><option>Click "Load" above first</option></select>
+
+  <label for="transformation">Detailed export summarizer (transformation)</label>
+  <select id="transformation"><option>Click "Load" above first</option></select>
+
+  <label for="quickTransformation">Quick summary transformation (used for instant on-the-spot summaries)</label>
+  <select id="quickTransformation"><option value="">Not set — falls back to slower chat-based summary</option></select>
+  <div class="hint">Pick your "Quick Summary" transformation here. This skips the
+  chat/retrieval step entirely and generates the on-the-spot summary directly
+  from the transcript with a fast model — much quicker.</div>
+
+  <label for="chatModel">Fast model (used for quick summaries and chat)</label>
+  <select id="chatModel"><option value="">System default</option></select>
+  <div class="hint">Pick a smaller/faster model here (e.g. a 7B model) so answers come back quickly. Leave as System default if unsure. Tip: if you add a hosted fast model (Gemini Flash, Claude Haiku, etc.) to Open Notebook, it will show up here and you can select it for more consistent low latency.</div>
+
+  <label style="display:flex; align-items:center; gap:8px; margin-top:20px;">
+    <input type="checkbox" id="fastMode" style="width:auto; margin:0;" />
+    <span>Fast mode (recommended)</span>
+  </label>
+  <div class="hint">Skips the embedding step and polls aggressively so the on-the-spot
+  summary comes back much faster. Summaries don't need embeddings, so this is safe.
+  Turn it OFF only if you rely heavily on RAG-based chat follow-up questions, which
+  work better with embeddings.</div>
+
+  <label style="display:flex; align-items:center; gap:8px; margin-top:20px;">
+    <input type="checkbox" id="streamSummary" style="width:auto; margin:0;" />
+    <span>Stream summary live (recommended)</span>
+  </label>
+  <div class="hint">Shows the summary token-by-token as it's generated (first text in
+  ~2-3s) instead of waiting for the whole thing. Total time is the same, but it
+  <em>feels</em> much faster. If OFF, the summary arrives all at once via the
+  quick-summary transformation.</div>
+
+  <label style="display:flex; align-items:center; gap:8px; margin-top:20px;">
+    <input type="checkbox" id="twoStageSummary" style="width:auto; margin:0;" />
+    <span>Two-stage summary — quick first, detailed after (recommended)</span>
+  </label>
+  <div class="hint">Shows a short summary in a few seconds so you can start reading,
+  then quietly generates the full detailed summary and swaps it in when ready. If
+  OFF, only the single "detailed" summary below is generated.</div>
+
+  <label for="summaryInstructionShort">Quick summary instruction (stage 1 — keep it short & fast)</label>
+  <textarea id="summaryInstructionShort" rows="5" placeholder="Leave blank to use the built-in default"></textarea>
+  <div class="hint">Drives the fast first-pass summary. Keep it small (few short
+  bullets) so it returns in a few seconds. Leave blank for the built-in default.</div>
+
+  <label for="summaryInstruction">Detailed summary instruction (stage 2 — the full version)</label>
+  <textarea id="summaryInstruction" rows="8" placeholder="Leave blank to use the built-in default"></textarea>
+  <div class="hint">Drives the full detailed summary. Put your longer, structured
+  prompt here. Leave blank to reset to the built-in default.</div>
+
+  <label style="margin-top:20px; display:block;">Full-notes PDF — chunks at a time</label>
+  <input id="notesConcurrency" type="number" min="1" max="8" step="1" placeholder="4" />
+  <div class="hint">How many parts of the transcript are written at the same time.
+  This can't beat your server: Ollama runs <code>OLLAMA_NUM_PARALLEL</code> requests
+  at once and queues the rest, so setting this higher than that number buys nothing.
+  Default <strong>4</strong>. While a PDF builds it uses these slots, so a chat
+  message started at the same moment waits behind it — drop this to 3 to keep one
+  slot free for chat.</div>
+
+  <button id="saveBtn" type="button">Save</button>
+  <div id="msg" class="msg"></div>
+
+  <script src="browser-polyfill.js"></script>
+  <script src="extension-theme.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
