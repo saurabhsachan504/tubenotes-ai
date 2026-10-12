@@ -2,15 +2,18 @@
 .ons-btn-inline {
   display: inline-flex !important;
   align-items: center !important;
-  gap: 4px !important;
-  background: #d97757 !important;
-  border: none !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  background: linear-gradient(135deg, #7c3aed 0%, #a855f7 52%, #ec4899 100%) !important;
+  border: 1px solid rgba(255, 255, 255, .38) !important;
   border-radius: 14px !important;
   cursor: pointer !important;
   vertical-align: middle !important;
   line-height: 1.3 !important;
   box-sizing: content-box !important;
   white-space: nowrap !important;
+  box-shadow: 0 3px 10px rgba(124, 58, 237, .38) !important;
+  transition: transform .16s ease, filter .16s ease, box-shadow .16s ease !important;
 }
 .ons-btn {
   padding: 8px 14px !important;
@@ -20,19 +23,27 @@
 }
 .ons-btn:hover,
 .ons-btn-inline:hover {
-  background: #e68868 !important;
+  background: linear-gradient(135deg, #6d28d9 0%, #9333ea 50%, #db2777 100%) !important;
+  box-shadow: 0 5px 14px rgba(124, 58, 237, .54) !important;
+  filter: brightness(1.06) !important;
+  transform: translateY(-1px) !important;
 }
-.ons-icon {
-  font-size: 13px !important;
-  line-height: 1 !important;
-  color: #1c1712 !important;
-  opacity: 1 !important;
+.ons-btn:focus-visible,
+.ons-btn-inline:focus-visible {
+  outline: 2px solid #fff !important;
+  outline-offset: 2px !important;
+}
+.ons-brand-icon {
+  display: block !important;
+  width: 16px !important;
+  height: 16px !important;
+  flex: 0 0 16px !important;
 }
 .ons-label {
   font-family: "Roboto", Arial, sans-serif !important;
   font-size: 12px !important;
-  font-weight: 600 !important;
-  color: #1c1712 !important;
+  font-weight: 700 !important;
+  color: #fff !important;
   line-height: 1.3 !important;
   opacity: 1 !important;
   display: inline !important;
@@ -42,9 +53,14 @@
   margin-left: 6px !important;
   flex-shrink: 0 !important;
 }
-.ons-btn-inline .ons-icon,
+.ons-btn-inline .ons-brand-icon,
 .ons-btn-inline .ons-label {
   font-size: 10px !important;
+}
+.ons-btn-inline .ons-brand-icon {
+  width: 12px !important;
+  height: 12px !important;
+  flex-basis: 12px !important;
 }
 .ons-btn-compact-fallback {
   width: 24px !important;

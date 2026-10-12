@@ -8,10 +8,12 @@ function makeButton(compact) {
   const btn = document.createElement("button");
   btn.className = compact ? "ons-btn ons-btn-compact" : "ons-btn";
   btn.type = "button";
+  const icon = `<svg class="ons-brand-icon" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect x="2" y="2" width="28" height="28" rx="8" fill="rgba(255,255,255,.2)" stroke="rgba(255,255,255,.72)" stroke-width="1.5"/><path d="M13 10l9 6-9 6z" fill="#fff"/></svg>`;
   btn.innerHTML = compact
-    ? `<span class="ons-icon">✨</span>`
-    : `<span class="ons-icon">✨</span><span class="ons-label">Summarize</span>`;
-  btn.title = "Summarize with Open Notebook";
+    ? icon
+    : `${icon}<span class="ons-label">Summarize</span>`;
+  btn.title = "Summarize with TubeNotes";
+  btn.setAttribute("aria-label", "Summarize with TubeNotes");
   return btn;
 }
 
