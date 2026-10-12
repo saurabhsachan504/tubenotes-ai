@@ -16,7 +16,7 @@ def test_store_release_opens_google_welcome_tab_only_on_first_install():
 def test_store_release_keeps_google_identity_permission_and_new_version():
     manifest = json.loads((RELEASE_DIR / "manifest.json").read_text(encoding="utf-8"))
 
-    assert manifest["version"] == "2.3.21"
+    assert manifest["version"] == "2.3.22"
     assert "identity" in manifest["permissions"]
 
 
@@ -50,6 +50,11 @@ def test_injected_summarize_button_uses_tubenotes_branding():
 
 def test_welcome_page_explains_the_one_time_google_setup():
     source = (RELEASE_DIR / "account.js").read_text(encoding="utf-8")
+    markup = (RELEASE_DIR / "account.html").read_text(encoding="utf-8")
 
     assert 'get("welcome") === "1"' in source
-    assert "Continue with Google once" in source
+    assert 'classList.add("welcome-install")' in source
+    assert "Maybe later" in source
+    assert "welcome-benefits" in markup
+    assert "Works with 40+ languages" in markup
+    assert "place-items:center" in markup

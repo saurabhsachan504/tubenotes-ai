@@ -11,9 +11,11 @@ let offerTimer = null;
 // same Google sign-in, but make it clear that this is the one-time setup step.
 const isWelcomeInstall = new URLSearchParams(location.search).get("welcome") === "1";
 if (isWelcomeInstall) {
+  document.documentElement.classList.add("welcome-install");
   document.title = "Welcome to TubeNotes";
-  $("welcomeTitle").textContent = "Welcome to TubeNotes";
-  $("welcomeCopy").textContent = "Continue with Google once to start summarizing YouTube videos.";
+  $("welcomeTitle").innerHTML = 'Welcome to <span>TubeNotes</span>';
+  $("welcomeCopy").textContent = "Turn YouTube videos into clear summaries, key points and PDF notes.";
+  $("closeAuth").textContent = "Maybe later";
 }
 
 function formatPrice(plan) {
