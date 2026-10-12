@@ -5,21 +5,9 @@ function showState(name) {
   STATES.forEach((s) => $(s).classList.toggle("hidden", s !== name));
 }
 
-// Built-in defaults so a fresh "Load unpacked" install just works without
-// visiting the Options page. These are matched by NAME against the live
-// Open Notebook API on first use, and the resolved IDs are cached in
-// browser.storage.sync so subsequent loads are instant. Change these here (or
-// override anything via the Options page) if your setup differs.
-const BUILT_IN_DEFAULTS = {
-  apiUrl: "https://dgxopennotebook-api.trueworks.in",
-  notebookName: "docker",
-  transformationName: "full_study_notes",
-  quickTransformationName: "quick_summary",
-  chatModelName: "qwen2.5:7b-instruct-q4_K_M",
-  fastMode: true, // skip embedding + poll aggressively for quick summaries
-  streamSummary: false, // chat-based summary is a fallback only (slow on this setup)
-  twoStageSummary: false, // off by default — was much slower on this setup
-};
+// Summary, notes, chat and translation are all handled by the authenticated
+// TubeNotes API. There is no separately configurable model or notebook server.
+const BUILT_IN_DEFAULTS = {};
 
 // Short instruction for STAGE 1 of the two-stage summary — small output so it
 // comes back fast and the user has something to read almost immediately.
@@ -167,15 +155,11 @@ const LANG_CODE_NAMES = {
   hu: "Hungarian", fi: "Finnish", da: "Danish", no: "Norwegian",
 };
 
-// Detect the summary language: Hindi by script (instant), otherwise ask the
-// background to detect it via Google (tiny sample). Returns a readable name.
+// Detect the summary language locally. The backend performs the authoritative
+// language detection for generation and translation.
 async function detectSummaryLangName(text) {
   if (detectTranscriptLang(text || "") === "hi") return "Hindi";
-  try {
-    const resp = await browser.runtime.sendMessage({ type: "DETECT_LANG", text: text || "" });
-    if (resp && resp.ok && resp.code) return LANG_CODE_NAMES[resp.code] || null;
-  } catch (_) {}
-  return null; // unknown → fall back to a generic "same language" rule
+  return "English";
 }
 
 // Languages gemma2 writes WELL natively. For these we generate directly (fast).
@@ -213,15 +197,10 @@ function isReasoningModel(name) {
   return /sarvam|deepseek-r1|qwq|reason|think/i.test(String(name || ""));
 }
 
-// Detect the transcript language properly: Google detect FIRST (so Marathi "mr"
-// isn't confused with Hindi "hi" — both use Devanagari), then a script fallback.
+// Detect the transcript language locally. Devanagari is Hindi as a safe UI
+// fallback; the TubeNotes backend uses a fuller detector when generating.
 async function detectSummaryLang(text) {
-  let code = null;
-  try {
-    const resp = await browser.runtime.sendMessage({ type: "DETECT_LANG", text: text || "" });
-    if (resp && resp.ok && resp.code) code = resp.code;
-  } catch (_) {}
-  if (!code) code = /[ऀ-ॿ]/.test(text || "") ? "hi" : "en";
+  const code = /[ऀ-ॿ]/.test(text || "") ? "hi" : "en";
   return { code, name: LANG_CODE_NAMES[code] || null, strong: STRONG_SUMMARY_LANGS.has(code) };
 }
 
@@ -571,133 +550,8 @@ async function summarizeLongVideo(settings, transcript) {
   return "";
 }
 
-// Create the Open Notebook source in the background (so follow-up chat / export
-// still work) without blocking the streamed summary. Stores the summary in the
-// job so the panel keeps it on refresh.
-function createSourceInBackground(settings, videoUrl, title, transcriptText, summary) {
-  browser.runtime
-    .sendMessage({
-      type: "ENSURE_CHAT_SOURCE",
-      payload: {
-        apiUrl: settings.apiUrl,
-        notebookId: settings.notebookId,
-        videoUrl,
-        videoTitle: title,
-        autoSummarize: false,
-        fastMode: settings.fastMode,
-        transcriptText,
-      },
-    })
-    .then(async (r) => {
-      if (r && r.ok && r.sourceId) {
-        const jobs = await getJobs();
-        const j = jobs[r.sourceId] || {};
-        j.messages = j.messages || [];
-        if (summary) j.messages.push({ role: "assistant", content: summary });
-        jobs[r.sourceId] = j;
-        await saveJobs(jobs);
-        window._activeSettings = settings;
-        window._activeSourceId = r.sourceId;
-      }
-    })
-    .catch(() => {});
-}
-
-// Ollama is no longer exposed on its own hostname; it is reached through the
-// backend, which checks the same login as every other endpoint.
-const VLLM_API_BASE = "https://tubenotes.trueworks.in/api/v1";
-
 async function getSettings() {
-  const stored = await browser.storage.sync.get([
-    "apiUrl",
-    "notebookId",
-    "transformationId",
-    "quickTransformationId",
-    "chatModelId",
-    "fastMode",
-    "streamSummary",
-    "summaryInstruction",
-    "twoStageSummary",
-    "summaryInstructionShort",
-    "ollamaUrl",
-    "ollamaModel",
-    "ollamaStreaming",
-  ]);
-
-  const settings = { ...stored };
-  if (!settings.apiUrl) settings.apiUrl = BUILT_IN_DEFAULTS.apiUrl;
-  // Default fastMode ON unless the user explicitly turned it off in Options.
-  if (settings.fastMode === undefined) settings.fastMode = BUILT_IN_DEFAULTS.fastMode;
-  if (settings.streamSummary === undefined) settings.streamSummary = BUILT_IN_DEFAULTS.streamSummary;
-  if (!settings.summaryInstruction) settings.summaryInstruction = DEFAULT_SUMMARY_INSTRUCTION;
-  if (settings.twoStageSummary === undefined) settings.twoStageSummary = BUILT_IN_DEFAULTS.twoStageSummary;
-  if (!settings.summaryInstructionShort) settings.summaryInstructionShort = DEFAULT_SHORT_SUMMARY_INSTRUCTION;
-  // Direct-Ollama streaming: summarise straight from the transcript, token by
-  // token, for an "instant" feel. Defaults point at the DGX's Ollama.
-  if (!settings.ollamaUrl) settings.ollamaUrl = VLLM_API_BASE; // authenticated proxy on the backend - Ollama itself is not exposed
-  // Anyone who used an earlier build still has the old public-tunnel URL sitting
-  // in storage, and the default above only fills a BLANK. Without this they
-  // would keep calling a hostname that is deliberately no longer answering.
-  if (/^https?:\/\/ollama\.trueworks\.in\/?$/i.test(String(settings.ollamaUrl || ""))) {
-    settings.ollamaUrl = VLLM_API_BASE;
-    try { browser.storage.sync.set({ ollamaUrl: VLLM_API_BASE }); } catch (_) {}
-  }
-  if (!settings.ollamaModel) settings.ollamaModel = "gemma4-summarizer"; // built-in default — good Hindi + English
-  if (settings.ollamaStreaming === undefined) settings.ollamaStreaming = true;
-
-  const missing =
-    !settings.notebookId ||
-    !settings.transformationId ||
-    !settings.quickTransformationId ||
-    !settings.chatModelId;
-
-  if (missing) {
-    try {
-      const [notebooks, transformations, models] = await Promise.all([
-        fetch(`${settings.apiUrl}/api/notebooks`).then((r) => r.json()),
-        fetch(`${settings.apiUrl}/api/transformations`).then((r) => r.json()),
-        fetch(`${settings.apiUrl}/api/models`).then((r) => r.json()),
-      ]);
-
-      if (!settings.notebookId) {
-        const nb = notebooks.find((n) => n.name === BUILT_IN_DEFAULTS.notebookName);
-        if (nb) settings.notebookId = nb.id;
-      }
-      if (!settings.transformationId) {
-        const tr = transformations.find(
-          (t) => t.name === BUILT_IN_DEFAULTS.transformationName
-        );
-        if (tr) settings.transformationId = tr.id;
-      }
-      if (!settings.quickTransformationId) {
-        const qt = transformations.find(
-          (t) => t.name === BUILT_IN_DEFAULTS.quickTransformationName
-        );
-        if (qt) settings.quickTransformationId = qt.id;
-      }
-      if (!settings.chatModelId) {
-        const m = models.find(
-          (mm) => mm.type === "language" && mm.name === BUILT_IN_DEFAULTS.chatModelName
-        );
-        if (m) settings.chatModelId = m.id;
-      }
-
-      // Cache whatever we successfully resolved so we don't hit the API
-      // again next time.
-      await browser.storage.sync.set({
-        apiUrl: settings.apiUrl,
-        notebookId: settings.notebookId,
-        transformationId: settings.transformationId,
-        quickTransformationId: settings.quickTransformationId,
-        chatModelId: settings.chatModelId,
-      });
-    } catch (e) {
-      // API unreachable — fall through with whatever we already had; the
-      // "not configured" screen will show if essentials are still missing.
-    }
-  }
-
-  return settings;
+  return {};
 }
 
 async function getJobs() {
@@ -991,16 +845,8 @@ async function refreshInner() {
     return;
   }
 
-  // Summary/PDF generation is always available through the authenticated
-  // TubeNotes API; that backend owns the internal vLLM URL/model configuration.
-  const vllmReady = true;
-  if (!vllmReady && (!settings.apiUrl || !settings.notebookId || !settings.transformationId)) {
-    stopFastPoll();
-    currentUrl = null;
-    $("exportBtn").disabled = true;
-    showState("notConfigured");
-    return;
-  }
+  // Summary, notes and follow-up chat are all available through the
+  // authenticated TubeNotes API; no separate server setup is required.
 
   const title = override ? override.title : cleanTitle(tab);
   pinnedUrl = effectiveUrl; // commit the pin
@@ -1073,8 +919,8 @@ async function refreshInner() {
   await prepChat(settings, { url: effectiveUrl }, title, !!override);
 }
 
-// vLLM runs behind TrialGuard. The extension never talks to the model port
-// directly; it streams through https://tubenotes.trueworks.in/api/v1/summarize.
+// Generation runs behind TrialGuard. The extension streams through the
+// authenticated TubeNotes API and never talks to a model host directly.
 async function prepChat(settings, tab, title, autoSummarize) {
   const myGen = ++genToken;
   let thinkingEl = appendThinking("Reading the video…");
@@ -1113,7 +959,7 @@ async function prepChat(settings, tab, title, autoSummarize) {
     console.warn("[ONS] vLLM summary failed:", e && e.message);
     appendBubble(
       "assistant",
-      `⚠ Couldn't generate the summary through TubeNotes vLLM. ${((e && e.message) || "Please try again.")}`
+      `⚠ Couldn't generate the summary through TubeNotes. ${((e && e.message) || "Please try again.")}`
     );
   } finally {
     activeSummaryUrl = null;
@@ -1472,8 +1318,8 @@ function openConvertPicker() {
   openLanguagePicker(translateSummaryTo, { title: "Convert summary to…" });
 }
 
-// Translate the currently-shown summary into the chosen language using Google
-// Translate (via the background), and replace it in place keeping the Markdown.
+// Translate the currently-shown summary through the authenticated TubeNotes API
+// and replace it in place while keeping its Markdown.
 let _translating = false;
 async function translateSummaryTo(code, name) {
   if (_translating) return;
@@ -1489,21 +1335,8 @@ async function translateSummaryTo(code, name) {
   removeInlineFollowups(); // hide old-language chips while converting
   const bubble = appendThinking(`🌐 Converting to ${label}…`);
   try {
-    const resp = await browser.runtime.sendMessage({
-      type: "GOOGLE_TRANSLATE",
-      text: src,
-      target: code,
-    });
-    if (!resp || !resp.ok || !resp.text) throw new Error((resp && resp.error) || "translate failed");
-    // This conversion is deliberately local (Google Translate), so record the
-    // successful extension action in TubeNotes for the admin dashboard.
-    TrialGuard.recordExtensionActivity({
-      kind: "translation",
-      language: code,
-      video_url: (streamedSummary && streamedSummary.url) || currentUrl || null,
-      title: (document.getElementById("pageTitle") || {}).textContent || "Extension summary translation",
-      output_chars: String(resp.text).length,
-    }).catch(() => {});
+    const resp = await TrialGuard.translateText(src, code);
+    if (!resp || !resp.text) throw new Error("translate failed");
     bubble.classList.remove("thinking");
     bubble.classList.add("assistant");
     bubble.innerHTML = mdToHtmlLite(resp.text);
@@ -1516,12 +1349,8 @@ async function translateSummaryTo(code, name) {
     // (Tareeka A: fast + exact). If none existed, regenerate from the new summary.
     if (prevFollowups.length) {
       try {
-        const fr = await browser.runtime.sendMessage({
-          type: "GOOGLE_TRANSLATE",
-          text: prevFollowups.join("\n"),
-          target: code,
-        });
-        const tq = fr && fr.ok && fr.text
+        const fr = await TrialGuard.translateText(prevFollowups.join("\n"), code);
+        const tq = fr && fr.text
           ? fr.text.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, prevFollowups.length)
           : [];
         if (tq.length) renderFollowups(tq);
@@ -1535,7 +1364,7 @@ async function translateSummaryTo(code, name) {
   } catch (e) {
     console.warn("[ONS] translate failed:", e && e.message);
     bubble.remove();
-    appendBubble("assistant", "⚠ Conversion failed — couldn't reach Google Translate. Please try again.");
+    appendBubble("assistant", "⚠ Conversion failed. Please try again.");
   } finally {
     _translating = false;
   }
@@ -2116,7 +1945,9 @@ async function refreshPdfServerLoad() {
   const count = document.getElementById("pdfCountLabel");
   const fill = document.getElementById("pdfMainFill");
   try {
-    const r = await fetch(`${VLLM_API_BASE}/load`, { cache: "no-store" });
+    const apiBase = String(TrialGuard.apiBase || "").replace(/\/+$/, "");
+    if (!apiBase) throw new Error("TubeNotes API unavailable");
+    const r = await fetch(`${apiBase}/load`, { cache: "no-store" });
     if (!r.ok) throw new Error(`load ${r.status}`);
     const d = await r.json();
     const running = d.running == null ? null : Math.round(Number(d.running));

@@ -492,24 +492,10 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     getJobs().then((jobs) => sendResponse({ jobs }));
     return true;
   }
-  // ---- Google Translate (free endpoint) — accurate translation for ALL langs ----
-  if (msg.type === "GOOGLE_TRANSLATE") {
-    googleTranslate(msg.text || "", msg.target || "en")
-      .then((text) => sendResponse({ ok: true, text }))
-      .catch((e) => sendResponse({ ok: false, error: (e && e.message) || String(e) }));
-    return true; // async
-  }
   // ---- One-shot (non-streaming) Ollama call — used for follow-up questions ----
   if (msg.type === "OLLAMA_ONESHOT") {
     ollamaOneShot(msg)
       .then((text) => sendResponse({ ok: true, text }))
-      .catch((e) => sendResponse({ ok: false, error: (e && e.message) || String(e) }));
-    return true; // async
-  }
-  // ---- Detect the language of a text (tiny sample) via Google's detector ----
-  if (msg.type === "DETECT_LANG") {
-    detectLanguage(msg.text || "")
-      .then((code) => sendResponse({ ok: true, code }))
       .catch((e) => sendResponse({ ok: false, error: (e && e.message) || String(e) }));
     return true; // async
   }
@@ -813,111 +799,6 @@ browser.alarms.onAlarm.addListener((a) => {
 browser.runtime.onStartup.addListener(() => { runPdfJob(); });
 // On every worker wake, resume an interrupted job (no-op if none / already running).
 runPdfJob();
-
-// ---- Google Translate via the free endpoint ----
-// Same engine as translate.google.com — excellent quality for every language
-// (Indic + European + Urdu…). Text is chunked on line boundaries so long
-// summaries stay under the request-size limit, and Markdown line structure is
-// preserved. Runs in the background so host-permission bypasses CORS.
-// Split text into pieces small enough for Google's URL-based endpoint.
-//
-// The old version only ever broke on "\n". Notes for a story are written as
-// flowing paragraphs, so one paragraph could easily be a single 5000+ char
-// line - which was never split, went into the URL whole, and Google refused
-// it. googleTranslate then threw, the caller swallowed the error, and the PDF
-// came out in the ORIGINAL language even though the user picked another one.
-// So: break on line boundaries first, and hard-split any line that is still
-// too long (on sentence ends where possible, on spaces otherwise).
-function splitForTranslate(text, size) {
-  const pieces = [];
-  const pushLong = (line) => {
-    let rest = line;
-    while (rest.length > size) {
-      const window = rest.slice(0, size);
-      let cut = Math.max(
-        window.lastIndexOf("। "),
-        window.lastIndexOf(". "),
-        window.lastIndexOf("? "),
-        window.lastIndexOf("! ")
-      );
-      if (cut < size * 0.5) cut = window.lastIndexOf(" ");
-      if (cut < size * 0.5) cut = size - 1; // no boundary at all: hard cut
-      pieces.push(rest.slice(0, cut + 1).trim());
-      rest = rest.slice(cut + 1);
-    }
-    if (rest.trim()) pieces.push(rest);
-  };
-
-  let cur = "";
-  for (const ln of String(text || "").split("\n")) {
-    if (ln.length > size) {
-      if (cur) { pieces.push(cur); cur = ""; }
-      pushLong(ln);
-      continue;
-    }
-    if (cur && cur.length + 1 + ln.length > size) {
-      pieces.push(cur);
-      cur = ln;
-    } else {
-      cur = cur ? cur + "\n" + ln : ln;
-    }
-  }
-  if (cur) pieces.push(cur);
-  return pieces.length ? pieces : [""];
-}
-
-async function translatePiece(piece, target) {
-  const url =
-    "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=" +
-    encodeURIComponent(target) +
-    "&dt=t&q=" +
-    encodeURIComponent(piece);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Translate HTTP ${res.status}`);
-  const data = await res.json();
-  // data[0] = [ [translatedSegment, originalSegment, …], … ]
-  return data && data[0] ? data[0].map((s) => (s && s[0]) || "").join("") : "";
-}
-
-// Translate in parallel batches. A 3-hour video's notes are ~126 pieces; one
-// after another that is nearly two minutes of pure waiting. Results are written
-// back into their own slot, so the order never depends on which reply landed
-// first.
-async function googleTranslate(text, target) {
-  if (!text) return "";
-  const pieces = splitForTranslate(text, TRANSLATE_PIECE_CHARS);
-  const out = new Array(pieces.length);
-  let cursor = 0;
-
-  async function worker() {
-    for (;;) {
-      const i = cursor++;
-      if (i >= pieces.length) return;
-      out[i] = await translatePiece(pieces[i], target);
-    }
-  }
-
-  const lanes = Math.max(1, Math.min(TRANSLATE_CONCURRENCY, pieces.length));
-  await Promise.all(Array.from({ length: lanes }, () => worker()));
-  return out.join("\n");
-}
-
-// Detect a text's language (returns a code like "fr", "es", "hi"). Sends only a
-// small sample to Google's detector — the summary itself is still written by the
-// local model, this just tells the model which language to write in.
-async function detectLanguage(text) {
-  const sample = String(text || "").replace(/\s+/g, " ").trim().slice(0, 700);
-  if (!sample) return null;
-  const url =
-    "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=" +
-    encodeURIComponent(sample);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Detect HTTP ${res.status}`);
-  const data = await res.json();
-  // data[2] = detected source language; data[8][0][0] is a fallback location.
-  let code = (data && data[2]) || (data && data[8] && data[8][0] && data[8][0][0]) || null;
-  return code ? String(code).split("-")[0].toLowerCase() : null;
-}
 
 // ---- Direct Ollama streaming (fast, token-by-token summary) ----
 // The side panel opens a port and sends { type:"START", url, model, system,

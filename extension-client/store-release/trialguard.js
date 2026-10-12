@@ -425,6 +425,15 @@
     return request("/extension/activity", { method: "POST", body: activity });
   }
 
+  // Keep all user-content processing behind the authenticated TubeNotes API.
+  // The extension never calls a third-party translation endpoint directly.
+  async function translateText(text, targetLang) {
+    return request("/translate", {
+      method: "POST",
+      body: { text: String(text || ""), target_lang: targetLang },
+    });
+  }
+
   // ---- entitlement ----------------------------------------------------
   async function cacheEntitlement(ent) {
     await api.storage.local.set({ [CACHE_KEY]: { entitlement: ent, fetched_at: Date.now() } });
@@ -698,6 +707,7 @@
     streamNotes,
     markPdfReady,
     recordExtensionActivity,
+    translateText,
     get apiBase() {
       return apiBase;
     },

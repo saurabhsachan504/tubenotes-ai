@@ -16,8 +16,26 @@ def test_store_release_opens_google_welcome_tab_only_on_first_install():
 def test_store_release_keeps_google_identity_permission_and_new_version():
     manifest = json.loads((RELEASE_DIR / "manifest.json").read_text(encoding="utf-8"))
 
-    assert manifest["version"] == "2.3.19"
+    assert manifest["version"] == "2.3.20"
     assert "identity" in manifest["permissions"]
+
+
+def test_store_release_uses_only_tubenotes_and_youtube_hosts():
+    manifest = json.loads((RELEASE_DIR / "manifest.json").read_text(encoding="utf-8"))
+
+    assert manifest["host_permissions"] == [
+        "https://tubenotes.ai/*",
+        "*://*.youtube.com/*",
+    ]
+
+
+def test_translation_uses_the_authenticated_tubenotes_api():
+    panel = (RELEASE_DIR / "sidepanel.js").read_text(encoding="utf-8")
+    guard = (RELEASE_DIR / "trialguard.js").read_text(encoding="utf-8")
+
+    assert "TrialGuard.translateText" in panel
+    assert 'request("/translate"' in guard
+    assert "translate.googleapis.com" not in panel
 
 
 def test_welcome_page_explains_the_one_time_google_setup():
