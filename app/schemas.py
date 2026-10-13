@@ -53,6 +53,7 @@ class SignupRequest(BaseModel):
     password: str = Field(min_length=1, max_length=200)
     full_name: str | None = Field(default=None, max_length=120)
     device: DeviceFingerprint
+    signup_source: Literal["web", "extension"] = "web"
 
     @field_validator("email")
     @classmethod
@@ -69,6 +70,7 @@ class GoogleLoginRequest(BaseModel):
 
     credential: str = Field(min_length=20, max_length=8192)
     device: DeviceFingerprint
+    signup_source: Literal["web", "extension"] = "web"
 
 
 class LoginRequest(BaseModel):

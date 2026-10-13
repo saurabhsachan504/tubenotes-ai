@@ -92,6 +92,9 @@ class User(TimestampMixin, Base):
     # header. Checkout pricing is still derived afresh from that request's
     # trusted header, never from this stored analytics value.
     billing_country: Mapped[str | None] = mapped_column(String(8), index=True)
+    # The initial client that created the account. It stays NULL for accounts
+    # created before source tracking was introduced, rather than guessing.
+    signup_source: Mapped[str | None] = mapped_column(String(16), index=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

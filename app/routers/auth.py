@@ -94,6 +94,18 @@ def _send_verification(db: Session, user: User) -> None:
     email_service.send_verification_email(user.email, raw)
 
 
+def _signup_source(request: Request, declared_source: str) -> str:
+    """Return the account's initial client without changing later logins.
+
+    The extension labels each API request with this header, so installed
+    extension releases are tracked as well. This is analytics only and is
+    never used for access-control decisions.
+    """
+    if request.headers.get("X-TubeNotes-Client", "").strip().lower() == "extension":
+        return "extension"
+    return declared_source
+
+
 # ---------------------------------------------------------------------------
 @router.post(
     "/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED
@@ -129,6 +141,7 @@ def signup(
         full_name=payload.full_name,
         signup_ip=ip,
         billing_country=pricing.country_code_for_headers(request.headers),
+        signup_source=_signup_source(request, payload.signup_source),
     )
     db.add(user)
     try:
@@ -231,6 +244,7 @@ def google_login(
                 full_name=identity.name,
                 signup_ip=ip,
                 billing_country=pricing.country_code_for_headers(request.headers),
+                signup_source=_signup_source(request, payload.signup_source),
                 google_sub=identity.sub,
                 auth_provider="google",
                 email_verified=True,

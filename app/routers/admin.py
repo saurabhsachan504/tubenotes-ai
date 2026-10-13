@@ -488,6 +488,7 @@ async def dashboard(days: int = 10, db: Session = Depends(get_db)):
         and job.kind == "translation"
         and job.status == "success"
     )
+    extension_users = sum(1 for user in users if user.signup_source == "extension")
     failed_jobs = sum(1 for job, _email in recent_window if job.status == "failed")
 
     date_keys = [(now - timedelta(days=offset)).date() for offset in range(days - 1, -1, -1)]
@@ -567,6 +568,7 @@ async def dashboard(days: int = 10, db: Session = Depends(get_db)):
             "extension_summaries": extension_summaries,
             "extension_pdfs": extension_pdfs,
             "extension_translations": extension_translations,
+            "extension_users": extension_users,
             "failed_jobs": failed_jobs,
             "active_subscriptions": active_pro_users,
             "paid_users": paid_users,
@@ -641,6 +643,7 @@ def list_users(limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
 def users_overview(
     query: str = "",
     status: str = "all",
+    source: str = "all",
     limit: int = 100,
     db: Session = Depends(get_db),
 ):
@@ -654,6 +657,9 @@ def users_overview(
     requested_status = status.strip().lower()
     if requested_status not in {"all", "active_today", "paid", "subscribed", "free", "payment_issue", "cancelled", "disabled"}:
         raise HTTPException(status_code=422, detail="Unsupported user status filter")
+    requested_source = source.strip().lower()
+    if requested_source not in {"all", "web", "extension", "unknown"}:
+        raise HTTPException(status_code=422, detail="Unsupported signup source filter")
 
     reporting_start = _reporting_start()
     users = db.execute(
@@ -719,6 +725,9 @@ def users_overview(
             continue
         if requested_status == "active_today" and user.id not in active_today_ids:
             continue
+        actual_source = user.signup_source or "unknown"
+        if requested_source != "all" and actual_source != requested_source:
+            continue
         trial_limit = user.trial_limit_override if user.trial_limit_override is not None else settings.FREE_TRIAL_LIMIT
         rows.append({
             "id": user.id,
@@ -731,6 +740,7 @@ def users_overview(
             "country": (user.billing_country or "Unknown").upper(),
             "signup_at": _iso(user.created_at),
             "last_login_at": _iso(user.last_login_at),
+            "signup_source": actual_source,
             "trials_used": user.trials_used,
             "trial_limit": trial_limit,
             "subscription": _subscription_data(active or current),

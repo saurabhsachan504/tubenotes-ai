@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.config import settings
 from app.models import BillingPayment, ProcessingJob, Subscription, SubscriptionStatus, User
-from tests.conftest import API, register
+from tests.conftest import API, make_device, register
 
 
 def test_admin_reporting_start_hides_old_records_without_deleting_them(
@@ -132,6 +132,37 @@ def test_dashboard_separates_completed_extension_operations(client, db, monkeypa
     assert overview.status_code == 200, overview.text
     assert overview.json()["total_jobs"] == 1
     assert overview.json()["operations"][0]["client_source"] == "extension"
+
+
+def test_admin_tracks_and_filters_extension_signup_source(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", "admin-test-key")
+    register(client, email="web-signup@example.com", device=make_device())
+    assert db.query(User).filter_by(email="web-signup@example.com").one().signup_source == "web"
+    extension_signup = client.post(
+        f"{API}/auth/signup",
+        json={
+            "email": "extension-signup@example.com",
+            "password": "Str0ngPass1",
+            "device": make_device(),
+        },
+        headers={"X-TubeNotes-Client": "extension"},
+    )
+    assert extension_signup.status_code == 201, extension_signup.text
+    assert db.query(User).filter_by(email="extension-signup@example.com").one().signup_source == "extension"
+
+    admin_headers = {"X-Admin-Key": "admin-test-key"}
+    dashboard = client.get(f"{API}/admin/dashboard", headers=admin_headers)
+    assert dashboard.status_code == 200, dashboard.text
+    assert dashboard.json()["metrics"]["extension_users"] == 1
+
+    directory = client.get(
+        f"{API}/admin/users/overview?source=extension", headers=admin_headers
+    )
+    assert directory.status_code == 200, directory.text
+    assert [row["email"] for row in directory.json()["users"]] == [
+        "extension-signup@example.com"
+    ]
+    assert directory.json()["users"][0]["signup_source"] == "extension"
 
 
 def test_extension_translation_activity_is_counted_only_for_extension_origin(client, db, monkeypatch):

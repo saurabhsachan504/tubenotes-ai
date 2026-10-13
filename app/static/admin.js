@@ -207,7 +207,7 @@
   }
   function render(d) {
     data = d; const m = d.metrics, labels = d.charts.labels;
-    $("totalUsers").textContent = number(m.total_users); $("activeToday").textContent = number(m.active_today); $("videoJobs").textContent = number(m.video_jobs); $("summaryOutputs").textContent = number(m.summary_outputs); $("pdfGenerated").textContent = number(m.pdf_requests); $("translations").textContent = number(m.translations); $("failedJobs").textContent = number(m.failed_jobs); $("extensionSummaries").textContent = number(m.extension_summaries); $("extensionPdfs").textContent = number(m.extension_pdfs); $("extensionTranslations").textContent = number(m.extension_translations); $("subscriptions").textContent = number(m.active_subscriptions) + " active subscriptions";
+    $("totalUsers").textContent = number(m.total_users); $("activeToday").textContent = number(m.active_today); $("videoJobs").textContent = number(m.video_jobs); $("summaryOutputs").textContent = number(m.summary_outputs); $("pdfGenerated").textContent = number(m.pdf_requests); $("translations").textContent = number(m.translations); $("failedJobs").textContent = number(m.failed_jobs); $("extensionUsers").textContent = number(m.extension_users); $("extensionSummaries").textContent = number(m.extension_summaries); $("extensionPdfs").textContent = number(m.extension_pdfs); $("extensionTranslations").textContent = number(m.extension_translations); $("subscriptions").textContent = number(m.active_subscriptions) + " active subscriptions";
     $("paidUsers").textContent = number(m.paid_users); $("activeProUsers").textContent = number(m.active_pro_users); $("paymentIssueUsers").textContent = number(m.payment_issue_users); $("cancelledUsers").textContent = number(m.cancelled_users);
     const word = `Last ${d.range_days} Days`; $("activityRange").textContent = word; $("rangeJobs").textContent = "In selected period"; $("updated").textContent = "Live · updated " + new Date(d.generated_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
     lineChart($("activityChart"), labels, d.charts.user_activity); barChart($("jobsChart"), labels, d.charts.jobs); countryChart(d.charts.countries, d.charts.country_total == null ? m.total_users : d.charts.country_total); renderHealth(d.health); renderHealthDetails(); renderTables(d);
@@ -221,6 +221,10 @@
     if (state === "canceled") return "Cancelled";
     return "Free trial";
   }
+  function signupSource(value) {
+    const source = String(value || "unknown").toLowerCase();
+    return source === "extension" ? "Extension" : (source === "web" ? "Web" : "Unknown");
+  }
   function renderUsers(payload) {
     const users = payload.users || [];
     $("usersCount").textContent = number(payload.total) + " user" + (payload.total === 1 ? "" : "s");
@@ -228,8 +232,8 @@
       const counts = user.counts || {};
       const trialLimit = Number(user.trial_limit || 0);
       const status = userStatus(user).toLowerCase().replace(" ", "-");
-      return `<tr><td><b>${esc(user.full_name || user.email)}</b><br><small>${esc(user.email)}</small></td><td>${esc(dateTime(user.signup_at))}</td><td>${esc(dateTime(user.last_login_at))}</td><td>${esc(countryLabel(user.country))}</td><td>${esc(user.manual_pro ? manualProText(user.manual_pro) : planText(user.subscription))}</td><td>${number(user.trials_used)} / ${number(trialLimit)}</td><td>${number(counts.videos)}</td><td>${number(counts.pdfs)}</td><td>${number(counts.translations)}</td><td>${number(counts.active_devices)} / ${number(counts.devices)}</td><td><span class="status ${esc(status)}">${esc(userStatus(user))}</span></td><td><button class="view-user" type="button" data-user-id="${esc(user.id)}">View</button></td></tr>`;
-    }).join("") : tableEmpty(12, "No users match these filters.");
+      return `<tr><td><b>${esc(user.full_name || user.email)}</b><br><small>${esc(user.email)}</small></td><td>${esc(dateTime(user.signup_at))}</td><td>${esc(dateTime(user.last_login_at))}</td><td>${esc(countryLabel(user.country))}</td><td>${esc(user.manual_pro ? manualProText(user.manual_pro) : planText(user.subscription))}</td><td>${esc(signupSource(user.signup_source))}</td><td>${number(user.trials_used)} / ${number(trialLimit)}</td><td>${number(counts.videos)}</td><td>${number(counts.pdfs)}</td><td>${number(counts.translations)}</td><td>${number(counts.active_devices)} / ${number(counts.devices)}</td><td><span class="status ${esc(status)}">${esc(userStatus(user))}</span></td><td><button class="view-user" type="button" data-user-id="${esc(user.id)}">View</button></td></tr>`;
+    }).join("") : tableEmpty(13, "No users match these filters.");
   }
   async function loadUsers() {
     if (usersLoading) return;
@@ -239,13 +243,14 @@
     try {
       const search = encodeURIComponent($("userSearch").value.trim());
       const status = encodeURIComponent($("userStatus").value);
-      renderUsers(await api(`/users/overview?limit=100&query=${search}&status=${status}`));
+      const source = encodeURIComponent($("userSource").value);
+      renderUsers(await api(`/users/overview?limit=100&query=${search}&status=${status}&source=${source}`));
     } catch (e) {
-      $("directoryRows").innerHTML = tableEmpty(12, e.status === 403 ? "Admin access required." : "Could not load users. Please refresh.");
+      $("directoryRows").innerHTML = tableEmpty(13, e.status === 403 ? "Admin access required." : "Could not load users. Please refresh.");
       $("usersCount").textContent = "Unavailable";
     } finally { button.disabled = false; usersLoading = false; }
   }
-  function showUsers(filter = "all") {
+  function showUsers(filter = "all", source = "all") {
     $("dashboard").classList.add("hidden");
     $("systemHealth").classList.add("hidden");
     $("users").classList.remove("hidden");
@@ -254,6 +259,7 @@
     $("errorLogs").classList.add("hidden");
     $("adminSettings").classList.add("hidden");
     $("userStatus").value = filter;
+    $("userSource").value = source;
     document.querySelectorAll(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.section === "users"));
     loadUsers();
     window.scrollTo({top: 0, behavior: "smooth"});
@@ -627,10 +633,12 @@
   $("usersRefresh").onclick = loadUsers;
   $("userSearch").oninput = () => { clearTimeout(userSearchTimer); userSearchTimer = setTimeout(loadUsers, 300); };
   $("userStatus").onchange = loadUsers;
+  $("userSource").onchange = loadUsers;
   document.querySelectorAll(".metric-link").forEach(card => card.onclick = () => {
     const action = card.dataset.dashboardAction;
     if (action === "users") showUsers("all");
     else if (action === "active_today") showUsers("active_today");
+    else if (action === "extension_users") showUsers("all", "extension");
     else if (action === "failed") showErrorLogs();
     else showOperations(action);
   });

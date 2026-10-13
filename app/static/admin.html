@@ -53,6 +53,7 @@
           <button class="metric metric-link coral" type="button" data-dashboard-action="pdf"><span class="metric-icon">▤</span><span><small>PDF Generated</small><strong id="pdfGenerated">—</strong><em>Completed PDF downloads</em></span></button>
           <button class="metric metric-link gold" type="button" data-dashboard-action="completed_translations"><span class="metric-icon">◎</span><span><small>Translations</small><strong id="translations">—</strong><em>Completed translations</em></span></button>
           <button class="metric metric-link danger" type="button" data-dashboard-action="failed" aria-label="Open failed video jobs"><span class="metric-icon">!</span><span><small>Failed Videos</small><strong id="failedJobs">—</strong><em>Open failed-job details</em></span></button>
+          <button class="metric metric-link purple" type="button" data-dashboard-action="extension_users" aria-label="Open extension users"><span class="metric-icon">EXT</span><span><small>Extension Users</small><strong id="extensionUsers">—</strong><em>Signed up from extension</em></span></button>
           <button class="metric metric-link purple" type="button" data-dashboard-action="extension_summaries"><span class="metric-icon">EXT</span><span><small>Extension Summaries</small><strong id="extensionSummaries">—</strong><em>Completed from extension</em></span></button>
           <button class="metric metric-link coral" type="button" data-dashboard-action="extension_pdf"><span class="metric-icon">PDF</span><span><small>Extension Full Notes PDFs</small><strong id="extensionPdfs">—</strong><em>Completed from extension</em></span></button>
           <button class="metric metric-link gold" type="button" data-dashboard-action="extension_translations"><span class="metric-icon">◎</span><span><small>Extension Translations</small><strong id="extensionTranslations">—</strong><em>Completed from extension</em></span></button>
@@ -107,8 +108,11 @@
           <label class="filter-label">Account type
             <select id="userStatus"><option value="all">All users</option><option value="active_today">Active today</option><option value="paid">Paid users</option><option value="subscribed">Subscribed / Pro</option><option value="free">Free trial</option><option value="payment_issue">Unpaid / past due</option><option value="cancelled">Cancelled</option><option value="disabled">Disabled</option></select>
           </label>
+          <label class="filter-label">Signup source
+            <select id="userSource"><option value="all">All sources</option><option value="web">Web</option><option value="extension">Extension</option><option value="unknown">Unknown</option></select>
+          </label>
         </div>
-        <article class="panel table-panel users-directory"><div class="panel-head"><h2>All Users</h2><span id="usersCount" class="muted">Loading...</span></div><div class="table-wrap"><table><thead><tr><th>User</th><th>Signup</th><th>Last login</th><th>Country</th><th>Plan</th><th>Trials</th><th>Videos</th><th>PDFs</th><th>Translations</th><th>Devices</th><th>Status</th><th></th></tr></thead><tbody id="directoryRows"></tbody></table></div></article>
+        <article class="panel table-panel users-directory"><div class="panel-head"><h2>All Users</h2><span id="usersCount" class="muted">Loading...</span></div><div class="table-wrap"><table><thead><tr><th>User</th><th>Signup</th><th>Last login</th><th>Country</th><th>Plan</th><th>Source</th><th>Trials</th><th>Videos</th><th>PDFs</th><th>Translations</th><th>Devices</th><th>Status</th><th></th></tr></thead><tbody id="directoryRows"></tbody></table></div></article>
       </section>
 
       <section id="operations" class="page-section operations-page hidden" aria-labelledby="operationsHeading">
