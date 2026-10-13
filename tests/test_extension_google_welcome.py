@@ -16,7 +16,7 @@ def test_store_release_opens_google_welcome_tab_only_on_first_install():
 def test_store_release_keeps_google_identity_permission_and_new_version():
     manifest = json.loads((RELEASE_DIR / "manifest.json").read_text(encoding="utf-8"))
 
-    assert manifest["version"] == "2.3.22"
+    assert manifest["version"] == "2.3.23"
     assert "identity" in manifest["permissions"]
 
 
@@ -58,3 +58,6 @@ def test_welcome_page_explains_the_one_time_google_setup():
     assert "welcome-benefits" in markup
     assert "Works with 40+ languages" in markup
     assert "place-items:center" in markup
+    assert "google-signin-mark" in markup
+    assert "#4285f4" not in markup
+    assert "max-height:760px" in markup
