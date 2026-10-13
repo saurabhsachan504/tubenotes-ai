@@ -22,6 +22,42 @@ def test_signup_returns_tokens_and_entitlement(client, device):
     assert me.json()["email"] == "user@example.com"
 
 
+def test_signup_records_last_login_time(client, db, device):
+    register(client, email="last-login-signup@example.com", device=device)
+
+    from app.models import User
+
+    assert db.query(User).filter_by(email="last-login-signup@example.com").one().last_login_at is not None
+
+
+def test_google_login_records_last_login_time(client, db, device, monkeypatch):
+    from app.config import settings
+    from app.services import google_auth
+    from app.services.google_auth import GoogleIdentity
+    from app.models import User
+
+    monkeypatch.setattr(settings, "GOOGLE_LOGIN_ENABLED", True)
+    monkeypatch.setattr(
+        google_auth,
+        "verify_id_token",
+        lambda _credential: GoogleIdentity(
+            sub="google-last-login-test-user",
+            email="google-last-login@example.com",
+            email_verified=True,
+            name="Google Test User",
+            picture=None,
+        ),
+    )
+
+    response = client.post(
+        f"{API}/auth/google",
+        json={"credential": "x" * 20, "device": device},
+    )
+
+    assert response.status_code == 200, response.text
+    assert db.query(User).filter_by(email="google-last-login@example.com").one().last_login_at is not None
+
+
 def test_signup_sends_one_personalised_welcome_email(client, device, monkeypatch):
     from app.services import email as email_service
 

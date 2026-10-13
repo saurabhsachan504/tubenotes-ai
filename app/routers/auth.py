@@ -143,6 +143,9 @@ def signup(
     device = device_service.register_device(
         db, user, payload.device, ip=ip, new_account=True
     )
+    # A successful signup also starts an authenticated session, so record it
+    # consistently with a later password or Google sign-in.
+    user.last_login_at = _now()
     tokens = _issue_tokens(db, user, device.device_hash)
     # Verification is optional for TubeNotes. Do not send a security-style
     # message unless the deployment explicitly enables that requirement.
@@ -251,6 +254,9 @@ def google_login(
     device = device_service.register_device(
         db, user, payload.device, ip=ip, new_account=new_account
     )
+    # Google sign-in can either create a user or authenticate an existing one.
+    # In both cases it is a successful login and must be visible to admins.
+    user.last_login_at = _now()
     tokens = _issue_tokens(db, user, device.device_hash)
     ent = entitlements.build_entitlement(db, user, device.device_hash, machine_hash)
 
