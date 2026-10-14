@@ -461,6 +461,37 @@
   // =====================================================================
   // Trials chip
   // =====================================================================
+  const motionAllowed = () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function replayMotion(element, className) {
+    if (!element || !motionAllowed()) return;
+    element.classList.remove(className);
+    void element.offsetWidth;
+    element.classList.add(className);
+  }
+
+  function revealResult() {
+    replayMotion(R(), "result-enter");
+  }
+
+  function initMotionReveals() {
+    if (!motionAllowed() || !("IntersectionObserver" in window)) return;
+    const items = [...document.querySelectorAll("#how .step, #faq details")];
+    if (!items.length) return;
+    items.forEach((item, index) => {
+      item.classList.add("motion-reveal");
+      item.style.setProperty("--reveal-delay", `${(index % 4) * 55}ms`);
+    });
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        entry.target.classList.add("is-visible");
+        observer.unobserve(entry.target);
+      }
+    }, { threshold: 0.12 });
+    items.forEach((item) => observer.observe(item));
+  }
+
   function accountInitials(user) {
     const name = String(user?.full_name || "").trim();
     const parts = name.split(/\s+/).filter(Boolean);
@@ -497,13 +528,14 @@
   function paintChip(ent) {
     const chip = $("trialChip");
     paintAccountButton();
-    if (!signedIn() || !ent) { chip.classList.add("hidden"); return; }
+    if (!signedIn() || !ent) { chip.classList.remove("chip-updated"); chip.classList.add("hidden"); return; }
     chip.classList.remove("hidden");
     chip.classList.remove("pro", "out");
-    if (ent.plan === "subscription") { chip.classList.add("pro"); chip.textContent = "★ Pro"; return; }
+    if (ent.plan === "subscription") { chip.classList.add("pro"); chip.textContent = "★ Pro"; replayMotion(chip, "chip-updated"); return; }
     const left = Math.min(ent.trials_remaining, ent.device_trials_remaining);
     if (left <= 0) chip.classList.add("out");
     chip.textContent = `${left} free left`;
+    replayMotion(chip, "chip-updated");
   }
 
   async function refreshEntitlement() {
@@ -631,6 +663,7 @@
           <div class="md" id="rBody"></div>
         </div>
       </div>`;
+    revealResult();
     R().scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -679,6 +712,7 @@
           <div class="load-meter-bar"><i id="loadMeterFill" style="width:0%"></i></div>
         </div>
       </div>`;
+    revealResult();
     R().scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
@@ -2459,6 +2493,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   // ---- boot ----
   if ($("outLang")) fillLangSelect($("outLang"), { includeAuto: true });
   initAddToHomeScreen();
+  initMotionReveals();
   initGoogle();
   loadBillingPrice().catch(() => {});
   // Returning signed-in users with an already granted permission are attached

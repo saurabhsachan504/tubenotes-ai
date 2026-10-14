@@ -178,7 +178,32 @@
     animation:hero-content-in .8s .24s cubic-bezier(.2,.8,.2,1) both;
   }
   .watermark span{color:#fff;font-size:clamp(34px,7vw,68px);font-weight:800;letter-spacing:-.03em}
-  @media(prefers-reduced-motion:reduce){.hero,.hero::before,.hero::after,.hero h1,.hero p.sub,.searchbar,.actions,.watermark,.btn-go{animation:none!important;transition:none!important}}
+  @keyframes soft-pop{0%{opacity:.72;transform:scale(.92)}65%{opacity:1;transform:scale(1.045)}100%{opacity:1;transform:scale(1)}}
+  @keyframes card-reveal{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes overlay-in{from{opacity:0}to{opacity:1}}
+  @keyframes modal-in{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+  @keyframes note-in{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
+  .nav-btn:not(.account-avatar):not(.extension-btn),.btn-paste,.act,.tool,.step{transition:transform .17s ease,box-shadow .17s ease,background .17s ease,border-color .17s ease}
+  .nav-btn:not(.account-avatar):not(.extension-btn):hover,.btn-paste:hover,.act:hover,.tool:hover,.step:hover{transform:translateY(-1px)}
+  .act:hover{box-shadow:0 8px 18px rgba(50,19,111,.16)}
+  .nav-btn.account-avatar{animation:soft-pop .34s cubic-bezier(.2,.8,.2,1) both}
+  .chip-trials.chip-updated{animation:soft-pop .32s cubic-bezier(.2,.8,.2,1) both}
+  .motion-reveal{opacity:0;transform:translateY(12px);transition:opacity .48s ease var(--reveal-delay,0ms),transform .48s cubic-bezier(.2,.8,.2,1) var(--reveal-delay,0ms)}
+  .motion-reveal.is-visible{opacity:1;transform:translateY(0)}
+  details{transition:border-color .18s ease,box-shadow .18s ease,background .18s ease}
+  details summary{position:relative;list-style:none;padding-right:24px}
+  details summary::-webkit-details-marker{display:none}
+  details summary::after{content:"+";position:absolute;right:0;top:-3px;color:var(--brand1);font-size:21px;font-weight:400;transition:transform .2s ease}
+  details[open]{border-color:color-mix(in srgb,var(--brand2) 42%,var(--line));box-shadow:0 7px 17px rgba(88,37,162,.08)}
+  details[open] summary::after{transform:rotate(45deg)}
+  details[open] p{animation:note-in .26s ease both}
+  .overlay:not(.hidden){animation:overlay-in .18s ease-out both}
+  .overlay:not(.hidden)>.modal{animation:modal-in .24s cubic-bezier(.2,.8,.2,1) both}
+  #result.result-enter .card{animation:card-reveal .4s cubic-bezier(.2,.8,.2,1) both}
+  #result.result-enter .toolbar{animation:card-reveal .4s .07s cubic-bezier(.2,.8,.2,1) both}
+  #result.result-enter .body{animation:card-reveal .4s .13s cubic-bezier(.2,.8,.2,1) both}
+  .note{animation:note-in .24s ease both}
+  @media(prefers-reduced-motion:reduce){.hero,.hero::before,.hero::after,.hero h1,.hero p.sub,.searchbar,.actions,.watermark,.btn-go,.nav-btn.account-avatar,.chip-trials.chip-updated,.overlay:not(.hidden),.overlay:not(.hidden)>.modal,#result.result-enter .card,#result.result-enter .toolbar,#result.result-enter .body,.note,details[open] p{animation:none!important;transition:none!important}.motion-reveal{opacity:1;transform:none;transition:none}}
 
   /* ---------------- results ---------------- */
   main{padding:34px 0 70px}
@@ -834,6 +859,6 @@
 </section>
 
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="/static/app.js?v=27"></script>
+<script src="/static/app.js?v=28"></script>
 </body>
 </html>
