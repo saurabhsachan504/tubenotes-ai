@@ -88,8 +88,19 @@
   /* ---------------- hero ---------------- */
   .hero{
     background:linear-gradient(120deg,#7c3aed 0%,#9333ea 38%,#c026d3 68%,#ec4899 100%);
+    background-size:180% 180%;
     padding:26px 0 78px; position:relative; overflow:hidden;
+    animation:hero-gradient-drift 16s ease-in-out infinite;
   }
+  .hero::before,.hero::after{content:"";position:absolute;z-index:0;pointer-events:none;border-radius:50%;background:rgba(255,255,255,.12);filter:blur(.2px)}
+  .hero::before{width:260px;height:260px;left:-108px;bottom:-148px;box-shadow:0 0 0 1px rgba(255,255,255,.09),0 0 60px rgba(255,255,255,.12);animation:hero-orbit-left 16s ease-in-out infinite}
+  .hero::after{width:210px;height:210px;right:-62px;top:-118px;box-shadow:0 0 0 1px rgba(255,255,255,.08),0 0 55px rgba(255,255,255,.1);animation:hero-orbit-right 19s ease-in-out infinite}
+  .hero>.wrap{position:relative;z-index:1}
+  @keyframes hero-gradient-drift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+  @keyframes hero-orbit-left{0%,100%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(42px,-22px,0) scale(1.08)}}
+  @keyframes hero-orbit-right{0%,100%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(-34px,28px,0) scale(1.1)}}
+  @keyframes hero-content-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes summarize-glow{0%,100%{box-shadow:0 0 0 rgba(255,255,255,0),0 7px 16px rgba(35,25,110,.18)}50%{box-shadow:0 0 0 5px rgba(255,255,255,.12),0 10px 24px rgba(87,32,184,.32)}}
   .pills{display:flex;gap:1px;justify-content:center;flex-wrap:wrap;margin-bottom:28px}
   .pill{
     display:inline-flex;align-items:center;gap:7px;
@@ -104,13 +115,15 @@
     text-align:center;color:#fff;font-size:clamp(30px,5vw,46px);
     font-weight:800;letter-spacing:-.025em;margin:0 0 10px;
     text-shadow:0 2px 18px rgba(0,0,0,.16);
+    animation:hero-content-in .58s cubic-bezier(.2,.8,.2,1) both;
   }
-  .hero p.sub{text-align:center;color:rgba(255,255,255,.93);font-size:16px;margin:0 0 30px}
+  .hero p.sub{text-align:center;color:rgba(255,255,255,.93);font-size:16px;margin:0 0 30px;animation:hero-content-in .64s .06s cubic-bezier(.2,.8,.2,1) both}
 
   .searchbar{
     display:flex;align-items:center;gap:8px;background:#fff;
     border-radius:12px;padding:8px;max-width:690px;margin:0 auto;
     box-shadow:0 12px 34px rgba(0,0,0,.20);
+    animation:hero-content-in .68s .12s cubic-bezier(.2,.8,.2,1) both;
   }
   .searchbar input{
     flex:1;border:none;outline:none;background:transparent;
@@ -127,12 +140,14 @@
     display:inline-flex;align-items:center;gap:8px;border:none;color:#fff;
     background:linear-gradient(135deg,#2563eb,#4f46e5);
     padding:12px 24px;border-radius:9px;font-size:15px;font-weight:600;white-space:nowrap;
+    transition:transform .18s ease,filter .18s ease,box-shadow .18s ease;
+    animation:summarize-glow 3.8s ease-in-out infinite;
   }
-  .btn-go:hover{filter:brightness(1.08)}
-  .btn-go:disabled{opacity:.6;cursor:default;filter:none}
+  .btn-go:hover{filter:brightness(1.08);transform:translateY(-1px)}
+  .btn-go:disabled{opacity:.6;cursor:default;filter:none;animation:none}
 
   /* the two icon actions under the search bar */
-  .actions{display:flex;gap:12px;justify-content:center;margin:18px auto 0;flex-wrap:wrap}
+  .actions{display:flex;gap:12px;justify-content:center;margin:18px auto 0;flex-wrap:wrap;animation:hero-content-in .72s .18s cubic-bezier(.2,.8,.2,1) both}
   .act{
     display:inline-flex;align-items:center;gap:9px;
     background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.42);
@@ -160,8 +175,10 @@
   .watermark{
     display:flex;align-items:center;justify-content:center;gap:16px;
     margin-top:46px;opacity:.34;user-select:none;
+    animation:hero-content-in .8s .24s cubic-bezier(.2,.8,.2,1) both;
   }
   .watermark span{color:#fff;font-size:clamp(34px,7vw,68px);font-weight:800;letter-spacing:-.03em}
+  @media(prefers-reduced-motion:reduce){.hero,.hero::before,.hero::after,.hero h1,.hero p.sub,.searchbar,.actions,.watermark,.btn-go{animation:none!important;transition:none!important}}
 
   /* ---------------- results ---------------- */
   main{padding:34px 0 70px}
