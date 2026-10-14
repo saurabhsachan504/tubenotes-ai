@@ -461,9 +461,42 @@
   // =====================================================================
   // Trials chip
   // =====================================================================
+  function accountInitials(user) {
+    const name = String(user?.full_name || "").trim();
+    const parts = name.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    const localPart = String(user?.email || "").split("@")[0].replace(/[^a-z0-9]/gi, "");
+    return localPart.slice(0, 2).toUpperCase();
+  }
+
+  function paintAccountButton(user = accountUser) {
+    const button = $("accountBtn");
+    if (!signedIn()) {
+      button.textContent = "Sign in";
+      button.classList.remove("account-avatar");
+      button.setAttribute("aria-label", "Sign in or create an account");
+      button.removeAttribute("title");
+      return;
+    }
+    const initials = accountInitials(user);
+    if (!initials) {
+      button.textContent = "Account";
+      button.classList.remove("account-avatar");
+      button.setAttribute("aria-label", "Open account");
+      button.title = "Open account";
+      return;
+    }
+    const label = String(user?.full_name || user?.email || "Account").trim();
+    button.textContent = initials;
+    button.classList.add("account-avatar");
+    button.setAttribute("aria-label", `Open account for ${label}`);
+    button.title = label;
+  }
+
   function paintChip(ent) {
     const chip = $("trialChip");
-    $("accountBtn").textContent = signedIn() ? "Account" : "Sign in";
+    paintAccountButton();
     if (!signedIn() || !ent) { chip.classList.add("hidden"); return; }
     chip.classList.remove("hidden");
     chip.classList.remove("pro", "out");
@@ -480,6 +513,19 @@
       paintChip(ent);
       return ent;
     } catch (_) { paintChip(null); return null; }
+  }
+
+  async function refreshAccountIdentity() {
+    if (!signedIn()) { accountUser = null; paintAccountButton(); return null; }
+    try {
+      accountUser = await api("/auth/me");
+      return accountUser;
+    } catch (_) {
+      accountUser = null;
+      return null;
+    } finally {
+      paintAccountButton();
+    }
   }
 
   // =====================================================================
@@ -1852,6 +1898,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
 
   async function finishAuthenticatedLogin(data) {
     tokens.set(data.tokens);
+    accountUser = data.user || null;
     // First successful signup/sign-in is the only point where a browser with
     // default permission is asked to show the native Allow/Block prompt.
     prepareWebPush({ welcome: Boolean(data.new_account), requestPermission: true });
@@ -2320,7 +2367,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   $("signoutBtn").onclick = async () => {
     const t = tokens.get();
     try { if (t) await api("/auth/logout", { method: "POST", body: { refresh_token: t.refresh_token } }); } catch (_) {}
-    tokens.clear(); paintChip(null); closeModal();
+    tokens.clear(); accountUser = null; paintChip(null); closeModal();
   };
 
   $("upgradeBtn").onclick = beginSubscription;
@@ -2421,5 +2468,6 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     const t = localStorage.getItem("tn_theme");
     if (t) { document.documentElement.dataset.theme = t; $("themeBtn").textContent = t === "dark" ? "☀️" : "🌙"; }
   } catch (_) {}
+  refreshAccountIdentity();
   refreshEntitlement();
 })();
