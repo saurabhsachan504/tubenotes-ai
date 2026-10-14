@@ -2072,6 +2072,82 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     }
   }
 
+  function renderSubscriptionManagement(subscription) {
+    const panel = $("subscriptionManagement");
+    panel.replaceChildren();
+    panel.className = "subscription-management hidden";
+
+    // Complimentary Pro is not a recurring provider subscription, and expired
+    // or incomplete checkouts cannot be cancelled from this account control.
+    if (!subscription || subscription.status !== "active") return;
+
+    const copy = document.createElement("div");
+    const title = document.createElement("b");
+    const detail = document.createElement("small");
+    const endDate = subscription.current_period_end
+      ? accountDate(subscription.current_period_end)
+      : "the end of the current billing period";
+
+    if (subscription.cancel_at_period_end) {
+      panel.className = "subscription-management scheduled";
+      title.textContent = "Cancellation scheduled";
+      detail.textContent = `Pro access remains active until ${endDate}. You will not be charged again.`;
+      $("acctDetail").textContent = subscription.current_period_end
+        ? `Access ends ${endDate}. Cancellation scheduled.`
+        : "Cancellation scheduled at the end of the current billing period.";
+      copy.append(title, detail);
+      panel.appendChild(copy);
+      return;
+    }
+
+    title.textContent = "Active subscription";
+    detail.textContent = subscription.current_period_end
+      ? `Renews on ${endDate}. Cancel any time; access stays active until then.`
+      : "Cancel any time; access stays active until the end of the current billing period.";
+    copy.append(title, detail);
+
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "cancel-subscription";
+    cancel.textContent = "Cancel plan";
+    cancel.onclick = () => cancelAccountSubscription(cancel, endDate);
+    panel.className = "subscription-management";
+    panel.append(copy, cancel);
+  }
+
+  async function loadSubscriptionManagement() {
+    try {
+      renderSubscriptionManagement(await api("/billing/subscription"));
+    } catch (_) {
+      // Billing history remains usable if the optional subscription status
+      // request is temporarily unavailable.
+      renderSubscriptionManagement(null);
+    }
+  }
+
+  async function cancelAccountSubscription(button, endDate) {
+    const message = `Cancel your subscription? You will keep Pro access until ${endDate}, and no future renewal will be charged.`;
+    if (!window.confirm(message)) return;
+
+    button.disabled = true;
+    button.textContent = "Cancelling...";
+    $("acctMsg").textContent = "";
+    $("acctMsg").className = "msg";
+    try {
+      const result = await api("/billing/cancel", { method: "POST", body: {} });
+      $("acctMsg").textContent = result?.detail || `Cancellation scheduled. Your access remains active until ${endDate}.`;
+      $("acctMsg").className = "msg ok";
+      await openAccount();
+      $("acctMsg").textContent = result?.detail || `Cancellation scheduled. Your access remains active until ${endDate}.`;
+      $("acctMsg").className = "msg ok";
+    } catch (e) {
+      $("acctMsg").textContent = e.message || "Couldn't cancel the subscription. Please try again.";
+      $("acctMsg").className = "msg";
+      button.disabled = false;
+      button.textContent = "Cancel plan";
+    }
+  }
+
   async function removeAccountDevice(deviceId, button, name) {
     if (!window.confirm(`Remove ${name}? You can sign in again from that device later.`)) return;
     button.disabled = true;
@@ -2120,6 +2196,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
       $("upgradeBtn").classList.toggle("hidden", pro);
       loadAccountDevices();
       loadBillingHistory();
+      complimentaryPro ? renderSubscriptionManagement(null) : loadSubscriptionManagement();
       // The link itself is cosmetic. /admin and every data endpoint verify
       // the signed JWT on the server, so revealing it cannot grant access.
       api("/admin/session")

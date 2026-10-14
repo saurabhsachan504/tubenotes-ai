@@ -356,6 +356,7 @@ def test_razorpay_webhook_activates_and_is_idempotent(client, device, monkeypatc
                             "status": "active",
                             "customer_id": "cust_1",
                             "current_end": 1900000000,
+                            "cancel_at_cycle_end": True,
                             "notes": {"user_id": user_id},
                         }
                     },
@@ -391,6 +392,7 @@ def test_razorpay_webhook_activates_and_is_idempotent(client, device, monkeypatc
 
     sub = client.get(f"{API}/billing/subscription", headers=headers).json()
     assert sub["status"] == "active"
+    assert sub["cancel_at_period_end"] is True
 
     history = client.get(f"{API}/billing/history", headers=headers)
     assert history.status_code == 200, history.text

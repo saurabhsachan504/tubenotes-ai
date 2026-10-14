@@ -134,6 +134,11 @@ class RazorpayProvider(PaymentProvider):
             normalised.current_period_end = datetime.fromtimestamp(
                 entity["current_end"], tz=timezone.utc
             )
+        # Razorpay includes this flag in subscription payloads after a
+        # customer chooses end-of-cycle cancellation. Keep the local record in
+        # sync so a later webhook cannot make the Account screen suggest a
+        # renewal that will not happen.
+        normalised.cancel_at_period_end = bool(entity.get("cancel_at_cycle_end"))
         if payment:
             normalised.payment_id = payment.get("id")
             normalised.payment_status = payment.get("status") or (
