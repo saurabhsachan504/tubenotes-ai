@@ -1,379 +1,343 @@
-# TrialGuard — registration, device-bound free trials and $5/mo subscriptions
+# TubeNotes.ai
 
-Python backend for a Chrome extension. Users sign up, get **5 free runs bound to
-their device**, and must subscribe for **$5/month** after that.
+TubeNotes.ai is an AI-powered learning platform that turns YouTube videos into clear summaries, key points, detailed notes, translations, and downloadable PDF documents. It includes a responsive web application, a Chrome Extension, secure account management, subscription billing, browser notifications, and an administrator dashboard.
 
-FastAPI · SQLAlchemy · JWT · SQLite (dev) → Postgres (prod) · Stripe/Razorpay/Mock
+> The Hindi project guide is available in [README.hi.md](README.hi.md).
 
-> Hindi version: [`README.hi.md`](README.hi.md)
-> Web app guide: [`WEBAPP.hi.md`](WEBAPP.hi.md)
+## What TubeNotes does
 
-It also ships a **web app** at `/` — paste a YouTube link, get a summary in the
-video's own language, download PDF notes. Same accounts and same credits as the
-extension. See `WEBAPP.hi.md`.
+- Accepts standard YouTube, `youtu.be`, and Shorts URLs.
+- Retrieves available video metadata and captions/transcripts.
+- Generates AI summaries and key points in the video's language or a selected language.
+- Creates structured full notes for long videos, then renders them as a PDF.
+- Translates generated notes into supported languages.
+- Provides a Chrome Extension that works directly on YouTube pages through a side panel.
+- Supports email/password and Google sign-in.
+- Manages free credits, subscriptions, invoices, cancellation at the end of a billing cycle, and active devices.
+- Includes an admin dashboard for users, jobs, billing, usage, system health, analytics, and browser push campaigns.
 
----
+## Architecture
 
-## Read this first: the MAC address
-
-You asked for the trial limit to be checked against the device's MAC address.
-**A Chrome extension cannot read a MAC address.** The browser sandbox exposes no
-network-hardware API — `chrome.system.network` is ChromeOS-kiosk only, and
-there is no workaround from extension JS. Any tutorial claiming otherwise is
-wrong or is describing a native app.
-
-So this backend implements the *intent* of that requirement with the strongest
-identifier the platform actually allows, plus an optional path to a real MAC:
-
-| Layer | What it is | Reset difficulty |
-|---|---|---|
-| `installation_id` | Random UUID in `chrome.storage.local` | Easy (clear storage) |
-| **Device hash** | HMAC of installation_id + hardware traits — the precise, per-install key | Easy (clear storage) |
-| **Machine hash** | HMAC of *hardware only* (platform, screen, cores, RAM, GPU) — no client-chosen field | Hard (needs different hardware) |
-| **Real MAC** *(optional)* | Read by the native helper in `native-helper/` | Very hard |
-| **Server caps** | Max 3 accounts per device, 9 per machine; both ledgers | Cannot be touched from the client |
-
-The raw fingerprint is never stored. The server HMACs it with
-`DEVICE_HASH_SECRET` and stores only the digest, so a database leak cannot be
-replayed or reversed into device identities.
-
-If you install the optional native helper, `device.js` picks up the real MAC
-automatically and the backend keys off that instead — no other change needed.
-
----
-
-## The rule that actually stops trial abuse
-
-Counting 5 trials per *account* is trivially defeated: sign up with a second
-email. So there are **three ledgers**, and access requires **all** to have room:
-
-```
-allowed  =  active_subscription
-         OR (user.trials_used     < 5     # this account
-         AND device_ledger.used   < 5     # this install, any account
-         AND machine_ledger.used  < 15)   # this hardware, any install
+```text
+Web App (HTML/CSS/JavaScript) ─┐
+                               ├── FastAPI REST API ── SQLAlchemy ── PostgreSQL / SQLite
+Chrome Extension (Manifest V3) ┘           │
+                                            ├── vLLM OpenAI-compatible API ── Gemma model
+                                            ├── YouTube transcript sources / yt-dlp
+                                            ├── Razorpay or Stripe
+                                            ├── Google Identity Services
+                                            ├── Web Push (VAPID)
+                                            └── SMTP / ntfy operational alerts
 ```
 
-The **device ledger** is account-independent: one browser install gets 5 free
-runs total no matter how many emails you throw at it.
+## Technology stack
 
-The **machine ledger** exists because the device hash includes the
-client-supplied `installation_id` — so clearing `chrome.storage.local` mints a
-fresh device. The machine hash is derived from hardware traits only, which a
-storage wipe cannot change, so it caps the whole computer at
-`MACHINE_TRIAL_LIMIT` (default 15) runs. It is deliberately looser than 5
-because it is lower entropy: two different people on identical hardware could
-land on the same row. It is skipped entirely when fewer than three hardware
-traits are reported, and when a real MAC is available (that key is better).
+### Frontend web application
 
-Signup is capped too: `MAX_ACCOUNTS_PER_DEVICE` (default 3) per device hash and
-3× that per machine hash.
+| Technology | Usage in TubeNotes |
+|---|---|
+| HTML5 | Customer web app, legal pages, account UI, and admin dashboard markup. |
+| CSS3 | Responsive layouts, light/dark themes, gradients, animations, accessibility states, and admin styling. |
+| Vanilla JavaScript (ES modules / modern browser APIs) | UI state, API calls, streaming results, account actions, PDF downloads, analytics events, and admin interactions. No React, Vue, or Angular framework is required. |
+| Fetch API | Communicates with the FastAPI backend using JSON and authenticated requests. |
+| NDJSON streaming | Streams AI summary generation progress and content to the browser. |
+| Progressive Web App (PWA) | `manifest.webmanifest`, service worker, install experience, icons, and offline-capable asset handling. |
+| Service Worker / Push API / Notifications API | Browser push subscription and customer notifications. |
+| Google Analytics 4 | Public web-page analytics through the Google tag (`gtag.js`). |
+| Meta Pixel | Public marketing page-view analytics. |
 
-**Honest limit:** without the native helper, a determined user who changes
-hardware traits (different machine, VM, spoofed values) gets a fresh allowance.
-That is inherent to the browser sandbox, not a gap in this code — the MAC-based
-path in `native-helper/` is the answer if that matters to your business.
+### Chrome Extension
 
-Everything is decided server-side. The extension is code the user can read and
-edit, so it may *ask* but never *decide*.
+| Technology | Usage in TubeNotes |
+|---|---|
+| Chrome Extensions Manifest V3 | Modern Chrome Extension platform and packaging format. |
+| Background service worker | Manages long-running extension tasks, API communication, alarms, and PDF workflows. |
+| Chrome Side Panel API | Displays TubeNotes alongside a YouTube video. |
+| Content scripts | Adds TubeNotes actions and reads permitted YouTube page context. |
+| Chrome Identity API | Google sign-in flow inside the extension. |
+| Chrome Storage API | Stores extension session and device-related local state. |
+| Chrome Tabs, Active Tab, Downloads, and Alarms APIs | YouTube integration, tab access, PDF download support, and scheduled background work. |
+| WebExtension browser polyfill | Browser-API compatibility layer included with the extension build. |
+| Plain HTML, CSS, and JavaScript | Extension account page, side panel, options page, content UI, and background logic. |
 
----
+### Backend and API
 
-## Quick start
+| Technology | Usage in TubeNotes |
+|---|---|
+| Python 3.11 | Primary server-side language and Docker runtime. |
+| FastAPI | REST API, routers, request validation, static-file serving, health check, and API documentation during development. |
+| Uvicorn | ASGI application server. |
+| Pydantic v2 and pydantic-settings | Request/response models, validation, and environment-based configuration. |
+| HTTPX | Async HTTP requests to AI, YouTube, translation, and external services. |
+| AnyIO / asyncio | Asynchronous streaming, concurrency limits, background work, and task coordination. |
+| Starlette components | CORS middleware, static files, response handling, and FastAPI runtime features. |
+
+### AI, summarization, translation, and video processing
+
+| Technology | Usage in TubeNotes |
+|---|---|
+| Gemma model | The language model used for summaries, full notes, key points, and supported-language generation. |
+| vLLM | Serves the Gemma model through an OpenAI-compatible `/chat/completions` API. It is deployed separately so model weights remain resident during application deployments. |
+| OpenAI-compatible API format | Standard request/response format used by the FastAPI service to call vLLM. |
+| Server-side concurrency gate | Controls AI workload across interactive summaries, long-note chunks, and translations to protect GPU capacity. |
+| `youtube-transcript-api` | First transcript/caption retrieval source. |
+| `yt-dlp` | Fallback transcript/video metadata retrieval path where captions need another extraction route. |
+| YouTube oEmbed / public metadata endpoints | Video title, author, thumbnail, and availability information. |
+| `langdetect` | Detects caption language when YouTube metadata is incomplete or incorrect. |
+| Google Translate endpoint | Translation fallback when model output needs language correction or vLLM translation is unavailable. |
+
+### Database and data migrations
+
+| Technology | Usage in TubeNotes |
+|---|---|
+| PostgreSQL 16 | Production relational database for users, devices, subscriptions, payment history, jobs, cached outputs, push subscriptions, and admin data. |
+| SQLite | Lightweight local development and test database option. |
+| SQLAlchemy 2 | ORM, database models, queries, transactions, and row-level entitlement protection. |
+| Alembic | Versioned database schema migrations. |
+| psycopg 3 | PostgreSQL database driver. |
+
+### Authentication, security, and abuse protection
+
+| Technology | Usage in TubeNotes |
+|---|---|
+| JWT / PyJWT | Short-lived access tokens and rotating refresh tokens. |
+| Cryptography | Secure verification support, including Google Identity token verification. |
+| bcrypt / Passlib | Password hashing with configurable work factors. |
+| HMAC-SHA256 | Hashes device fingerprints and validates signed webhook events. Raw device fingerprints are not stored. |
+| Google Identity Services | Google sign-in for the web application. |
+| Chrome Identity API | Google sign-in for the Chrome Extension. |
+| CORS middleware | Restricts allowed browser origins; extension IDs can also be allow-listed. |
+| Server-side rate limiting | Protects login, sign-up, verification, and password reset routes. |
+| Device and machine ledgers | Enforces free-credit limits across accounts and devices. |
+| Optional native messaging helper | A local helper can supply a real MAC address when this stronger device signal is intentionally installed. |
+| Security headers | Adds `X-Content-Type-Options` and `Referrer-Policy` responses. |
+
+### Payments and subscriptions
+
+| Technology | Usage in TubeNotes |
+|---|---|
+| Razorpay SDK | India-focused subscription checkout, payment records, invoices, webhooks, and end-of-cycle cancellation. |
+| Stripe SDK | Alternative international subscription checkout and webhook integration. |
+| Webhooks | Signature-verified, idempotent payment and subscription state updates. |
+| Mock payment provider | Safe local-development billing flow; disabled for real production use. |
+| Country-aware pricing | Trusted Cloudflare visitor-country headers can select INR or international plans. |
+
+### PDF generation
+
+| Technology | Usage in TubeNotes |
+|---|---|
+| WeasyPrint | Server-side HTML/CSS to PDF rendering for full notes. |
+| Python-Markdown | Converts structured Markdown notes for PDF rendering. |
+| Pango and Cairo | Text shaping and graphics rendering required by WeasyPrint. |
+| Noto fonts | Correct glyph coverage for Hindi, Tamil, Arabic, and other multilingual PDF content. |
+
+### Notifications, email, and monitoring
+
+| Technology | Usage in TubeNotes |
+|---|---|
+| `pywebpush` | Sends VAPID-authenticated browser push notifications. |
+| VAPID | Public/private key authentication for Web Push subscriptions. |
+| SMTP / Python `smtplib` | Email verification, password reset, billing, and account emails. |
+| ntfy | Optional private operational alerts for service and delivery failures. |
+| Admin dashboard | Browser-based reporting for usage, jobs, payments, error visibility, model queue, database, storage, and health signals. |
+
+### Deployment and infrastructure
+
+| Technology | Usage in TubeNotes |
+|---|---|
+| Docker | Reproducible Python application container. |
+| Docker Compose | Local, production, and shared-database deployment stacks. |
+| PostgreSQL Docker image | Production database container in the standard stack. |
+| Nginx | HTTPS reverse proxy configuration for the public TubeNotes domain. |
+| Cloudflare | Optional trusted country headers and optional Access protection for internal AI connectivity. |
+| Linux / Debian slim image | Container base image for the API and PDF-rendering libraries. |
+
+### Quality assurance and developer tooling
+
+| Technology | Usage in TubeNotes |
+|---|---|
+| pytest | Backend integration and unit test suite. |
+| `requirements.txt` | Production Python dependency lock list. |
+| `requirements-dev.txt` | Development and testing dependencies. |
+| `.env` configuration | Environment-driven secrets and deployment settings. Never commit real secrets. |
+| Git | Source control and deployment history. |
+
+## Repository structure
+
+```text
+app/
+  main.py                 FastAPI application, public pages, security middleware
+  config.py               Environment-based application settings
+  database.py             SQLAlchemy engine and session setup
+  models.py               Database models
+  schemas.py              Pydantic API schemas
+  routers/                Auth, summaries, billing, admin, push, contact, webhooks
+  services/               AI, YouTube, PDFs, payments, email, devices, push, caching
+  static/                 Web application, PWA, legal pages, and admin dashboard
+
+alembic/                  Database migrations
+extension-client/         Chrome Extension source and store-release package
+native-helper/            Optional native messaging helper for MAC address support
+deploy/                   Nginx and deployment scripts
+tests/                    pytest test suite
+Dockerfile                API container definition
+docker-compose.yml        Local Docker development stack
+docker-compose.prod.yml   Production stack with PostgreSQL
+docker-compose.shared-db.prod.yml  Production API using an existing shared database
+```
+
+## API overview
+
+The backend uses the `/api/v1` prefix.
+
+| Area | Example endpoints |
+|---|---|
+| Authentication | `/auth/signup`, `/auth/login`, `/auth/google`, `/auth/refresh`, `/auth/me` |
+| User devices | `/auth/devices` |
+| Entitlements and credits | `/entitlement/check`, `/usage/consume`, `/usage/history` |
+| Video intelligence | `/video/info`, `/summarize`, `/notes`, translation endpoints |
+| Billing | `/billing/plans`, `/billing/checkout`, `/billing/subscription`, `/billing/cancel` |
+| Payment webhooks | `/webhooks/razorpay`, `/webhooks/stripe` |
+| Browser push | `/push/config`, subscription and campaign endpoints |
+| Administration | `/admin/stats`, users, jobs, billing, analytics, health, and campaign routes |
+
+Interactive API documentation is available at `/docs` in non-production environments.
+
+## Local development
+
+### Prerequisites
+
+- Python 3.11+
+- Optional: Docker Desktop and Docker Compose
+- Optional: PostgreSQL 16 for a production-like local setup
+- A reachable vLLM/Gemma endpoint if you want to generate real AI output
+
+### Run with Python
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
+git clone <your-repository-url>
+cd tubenotes-ai
+
+python -m venv .venv
+```
+
+Activate the environment:
+
+```bash
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+
+# macOS / Linux
+source .venv/bin/activate
+```
+
+Install packages and create local configuration:
+
+```bash
 pip install -r requirements-dev.txt
-cp .env.example .env          # works as-is for local dev
+copy .env.example .env       # Windows
+# cp .env.example .env       # macOS / Linux
+```
+
+Start the API:
+
+```bash
 uvicorn app.main:app --reload
 ```
 
-Open <http://localhost:8000/docs> for interactive API docs.
+Open:
 
-Run the tests:
+- Web app: `http://localhost:8000/`
+- API docs: `http://localhost:8000/docs`
+- Admin UI: `http://localhost:8000/admin`
 
-```bash
-pytest            # 34 tests, no network or API keys needed
-```
-
-With Docker + Postgres:
+### Run with Docker
 
 ```bash
-cp .env.example .env
-docker compose up --build     # runs migrations, then serves on :8000
+copy .env.example .env       # Windows
+# cp .env.example .env       # macOS / Linux
+
+docker compose up --build
 ```
 
----
+This starts the FastAPI service and PostgreSQL. Docker startup applies Alembic migrations before serving the API.
 
-## API
+## Environment configuration
 
-Base path `/api/v1`. All authenticated calls use `Authorization: Bearer <access_token>`.
+Start with `.env.example` for the full list. Important production settings include:
 
-### Auth
+```dotenv
+ENV=prod
+DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST:5432/DATABASE
+SECRET_KEY=use-a-long-random-secret
+DEVICE_HASH_SECRET=use-a-different-long-random-secret
 
-| Method | Path | Purpose |
-|---|---|---|
-| POST | `/auth/signup` | Create account + bind first device → tokens + entitlement |
-| POST | `/auth/login` | Sign in → tokens + entitlement |
-| POST | `/auth/refresh` | Rotate refresh token |
-| POST | `/auth/logout` | Revoke this session (or all) |
-| GET | `/auth/me` | Current user |
-| GET/DELETE | `/auth/devices[/{id}]` | List / remove devices |
-| POST | `/auth/verify-email`, `/auth/resend-verification` | Email verification |
-| POST | `/auth/password/forgot`, `/password/reset`, `/password/change` | Passwords |
+GOOGLE_LOGIN_ENABLED=true
+GOOGLE_CLIENT_ID=your-google-oauth-client-id
 
-### Entitlement & usage — the two the extension calls constantly
+PAYMENT_PROVIDER=razorpay  # or stripe
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+RAZORPAY_WEBHOOK_SECRET=
 
-| Method | Path | Purpose |
-|---|---|---|
-| POST | `/entitlement/check` | **Read-only.** "Can this user run right now?" Never spends a trial. |
-| POST | `/usage/consume` | **Spends one trial.** Returns `402` when exhausted. |
-| GET | `/usage/history` | Recent runs |
+VLLM_URL=http://gemma4:8000/v1
+VLLM_MODEL=gemma4-summarizer
 
-`POST /usage/consume`
+WEB_PUSH_ENABLED=true
+WEB_PUSH_VAPID_PUBLIC_KEY=
+WEB_PUSH_VAPID_PRIVATE_KEY=
 
-```jsonc
-// request
-{
-  "device": { "installation_id": "…", "platform": "Win32", "screen": "1920x1080x24", "gpu": "…" },
-  "action": "run"
-}
-// header: Idempotency-Key: <uuid>   ← so a retried request is not charged twice
-
-// 200
-{
-  "allowed": true, "consumed": true, "duplicate": false, "granted_by": "trial",
-  "entitlement": { "trials_remaining": 3, "device_trials_remaining": 3, "plan": "free_trial", … }
-}
-
-// 402 — out of trials
-{
-  "detail": {
-    "message": "You have used all 5 free trials. Subscribe for $5/month to continue.",
-    "entitlement": { "reason": "trial_exhausted", "upgrade_url": "…", … }
-  }
-}
+EMAIL_BACKEND=smtp
+SMTP_HOST=
+SMTP_USER=
+SMTP_PASSWORD=
 ```
 
-`reason` values: `trial_available`, `subscription_active`, `trial_exhausted`,
-`device_trial_exhausted`, `machine_trial_exhausted`,
-`email_verification_required`, `account_disabled`, `device_blocked`.
+Do not commit `.env`, payment keys, database passwords, VAPID private keys, or OAuth credentials.
 
-### Billing
-
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/billing/plans` | The $5/month plan |
-| POST | `/billing/checkout` | Hosted checkout URL |
-| GET | `/billing/subscription` | Current subscription |
-| POST | `/billing/portal` | Provider portal (change card / cancel) |
-| POST | `/billing/cancel` | Cancel at period end |
-| POST | `/webhooks/stripe`, `/webhooks/razorpay` | Signature-verified, idempotent |
-
-### Summarization (web app)
-
-| Method | Path | Charges | Purpose |
-|---|---|---|---|
-| POST | `/video/info` | no | Title + thumbnail, shown before anything is generated |
-| POST | `/summarize` | 1 per video | Streaming summary or key points, NDJSON |
-| POST | `/notes` | same key | Whole-video chunked notes, used to build the PDF |
-
-One trial = one video: the idempotency key is `video:<youtubeId>`, so summary,
-key points and PDF notes for a video share one charge and re-runs are free.
-
-### Admin (header `X-Admin-Key`)
-
-`/admin/stats`, `/admin/users`, `/admin/grant-trials`, `/admin/block-device`,
-`/admin/reset-device-trials` — the last one is for legitimate cases like a
-resold laptop.
-
----
-
-## Wiring up the extension
-
-Copy `extension-client/*.js` and `popup.html` into your extension, merge
-`manifest.snippet.json` into your manifest, and set `API_BASE` in `api.js`.
-
-Then wrap your existing feature:
-
-```js
-import { runGated } from './gate.js';
-
-const outcome = await runGated('run_feature', () => doTheActualWork(payload));
-if (!outcome.ok && outcome.reason === 'subscription_required') {
-  // popup already shows the upgrade button; badge turns red
-}
-```
-
-`gate.js` calls `/usage/consume` **before** the work and only proceeds if the
-server said yes. It fails closed on network errors — that is deliberate, since
-an attacker who can block your API should not thereby get unlimited runs.
-
-| File | Role |
-|---|---|
-| `device.js` | Builds the fingerprint; picks up the native MAC if the helper is installed |
-| `api.js` | HTTP client, token storage, single-flight refresh, `ApiError.needsSubscription` |
-| `gate.js` | `runGated()` wrapper + toolbar badge showing trials left |
-| `popup.html` / `popup.js` | Signup / login / trial meter / upgrade button |
-| `background.example.js` | How to wire it into an MV3 service worker |
-
----
-
-## Testing the money flow without a payment account
-
-`PAYMENT_PROVIDER=mock` plus a `MOCK_BILLING_SECRET` gives you a local fake
-checkout page:
+## Database migrations
 
 ```bash
-curl -X POST localhost:8000/api/v1/billing/checkout -H "Authorization: Bearer $TOKEN" -d '{}'
-# open the returned URL, paste the access token, click "Pay now"
+alembic upgrade head
 ```
 
-The mock routes are disabled unless **all** of: `PAYMENT_PROVIDER=mock`,
-`ENV != prod`, and `MOCK_BILLING_SECRET` is set. `/billing/mock/confirm`
-requires a valid access token and only ever affects the caller — it cannot be
-pointed at someone else's `user_id`. The mock webhook verifies an HMAC over the
-raw body exactly like a real provider. **Leave `MOCK_BILLING_SECRET` empty in
-any internet-reachable deployment.**
+Generate a new migration only after changing SQLAlchemy models:
 
-### Switching to a real provider
+```bash
+alembic revision --autogenerate -m "describe the schema change"
+alembic upgrade head
+```
 
-**Stripe** — create a $5/month recurring price (or leave `STRIPE_PRICE_ID`
-empty and it is built inline), set `STRIPE_SECRET_KEY` and
-`STRIPE_WEBHOOK_SECRET`, point a webhook at `/api/v1/webhooks/stripe` for
-`checkout.session.completed`, `customer.subscription.*`, `invoice.paid`,
-`invoice.payment_failed`.
+## Tests
 
-**Razorpay** — likely the right choice if you bill from an Indian entity, since
-Stripe does not support Indian businesses collecting from Indian customers.
-Create a monthly plan, set `RAZORPAY_KEY_ID` / `KEY_SECRET` / `PLAN_ID` /
-`WEBHOOK_SECRET`, point a webhook at `/api/v1/webhooks/razorpay`.
+```bash
+pytest
+```
 
-Both are already implemented — it is an env-var change, not a code change.
+The test suite covers authentication, trials, billing, summaries, PDF generation, web push, output caching, admin reporting, analytics, and extension-related flows.
 
----
+## Production deployment
+
+The repository includes deployment files for Docker, Docker Compose, and Nginx:
+
+- `docker-compose.prod.yml` — API plus dedicated PostgreSQL stack.
+- `docker-compose.shared-db.prod.yml` — API deployment that connects to an existing private PostgreSQL Docker network.
+- `deploy/nginx-tubenotes-ai.conf` — Nginx reverse-proxy configuration.
+- `deploy/deploy.sh` and `deploy/deploy-shared-db.sh` — deployment helpers.
+
+For the full deployment procedure, see [DEPLOY.hi.md](DEPLOY.hi.md) and [DEPLOY_SHARED_DATABASE.hi.md](DEPLOY_SHARED_DATABASE.hi.md).
 
 ## Security notes
 
-- Passwords: bcrypt, SHA-256 pre-hashed so >72-byte passwords keep full entropy.
-- Access tokens 15 min; refresh tokens rotate, and **replaying a rotated token
-  revokes the entire family** (stolen-token detection).
-- Login and signup responses never reveal whether an email exists.
-- Rate limits on login, signup, password reset and verification resend.
-  `X-Forwarded-For` is ignored unless `TRUST_PROXY_HEADERS=true`, so clients
-  cannot spoof their IP past the limiter; turn it on only behind your own proxy.
-- Webhooks verify provider signatures and record event ids, so retries are safe.
-- `/usage/consume` locks the user row and device ledger (`SELECT … FOR UPDATE`
-  on Postgres), so two parallel requests cannot both spend the last trial.
-- CORS: set `ALLOWED_ORIGINS=chrome-extension://<your-id>` in production.
+- Secrets are read from environment variables, not source code.
+- Passwords are bcrypt-hashed.
+- Access and refresh tokens are separate; refresh tokens rotate.
+- Payment webhooks are signature-verified and processed idempotently.
+- Device identifiers are HMAC-hashed before database storage.
+- Production should use PostgreSQL, HTTPS, strict CORS origins, and a reverse proxy.
+- Use `ALLOWED_EXTENSION_IDS` to allow only the official Chrome Extension to access extension-origin API calls.
+- Keep mock billing disabled on public production deployments.
 
-### Before going live
+## License
 
-- [ ] Set strong `SECRET_KEY` and `DEVICE_HASH_SECRET` (the app refuses to boot
-      in `ENV=prod` with the dev defaults). Changing `DEVICE_HASH_SECRET` later
-      resets every device ledger — set it once.
-- [ ] `DATABASE_URL` → Postgres; run `alembic upgrade head`.
-- [ ] `PAYMENT_PROVIDER` → `stripe` or `razorpay`; configure the webhook.
-- [ ] `MOCK_BILLING_SECRET` → empty, so the fake checkout cannot be reached.
-- [ ] `TRUST_PROXY_HEADERS=true` only if a proxy you control sets `X-Forwarded-For`.
-- [ ] `ALLOWED_ORIGINS` → your extension id only.
-- [ ] `EMAIL_BACKEND=smtp` so verification and reset mails actually send.
-- [ ] Serve over HTTPS (any reverse proxy; the app already sends `--proxy-headers`).
-- [ ] Set `ADMIN_API_KEY` to something long, or the admin routes stay disabled.
-
----
-
-## Concurrency: the one contract to not break
-
-The summariser talks to a single Gemma model served by vLLM. vLLM runs a fixed
-number of sequences at once (`--max-num-seqs`); everything beyond that waits in
-its queue. So the app must never have more requests in flight than the server
-can run.
-
-**The contract is a multiplication:**
-
-```
-uvicorn --workers  x  VLLM_MAX_CONCURRENCY  ==  vLLM --max-num-seqs
-        3                      10                        30
-```
-
-`VLLM_MAX_CONCURRENCY` is **per worker** — each uvicorn worker is its own
-process with its own semaphore. Change any one of the three numbers and you
-must change the others. They live in `docker-compose.prod.yml` (workers),
-`.env` (`VLLM_MAX_CONCURRENCY`) and `~/gemma4-vllm/compose.yaml`
-(`--max-num-seqs`).
-
-Every call into vLLM — an on-screen summary, a chunk of full notes, a chunk of
-a translation — passes through the same process-wide gate in
-`app/services/summarizer.py` (`vllm_slot()`), and holds its slot until the last
-token is out.
-
-### Why this exists
-
-`NOTES_CONCURRENCY` used to be the only limit, and it was constructed *inside*
-`full_notes()` — so it bounded the chunks of a **single video** and nothing
-bounded the number of videos. Three people on three videos put
-`3 x NOTES_CONCURRENCY` generations onto a server built to run four. The
-overflow sat in vLLM's queue until it hit the read timeout, and the retry loop
-— which had no backoff — sent it straight back into the queue that had just
-failed it. That feedback loop is what turned a busy minute into a hang.
-
-vLLM's own logs during the incident:
-
-```
-Running: 4 reqs, Waiting: 8 reqs, GPU KV cache usage: 1.8%
-```
-
-Four running, eight queued, and 98% of the KV cache idle — the queue was the
-cap, never the memory.
-
-### If you need more throughput
-
-In order of leverage, measured on a GB10 (273 GB/s, unified memory):
-
-1. **Raise the batch size.** Decode on this box is memory-bandwidth bound, and
-   a bigger batch amortises the weight read across more sequences. This is the
-   free win and it is why `--max-num-seqs` is 30, not 4.
-2. **Generate fewer tokens.** A 1:1 latency saving. `NOTES_NUM_PREDICT` is
-   already scaled per chunk by `_budget_for()`.
-3. **Prefix caching** (already on). Every request shares the same system
-   prompt, so most of the prefill is a cache hit.
-4. **Speculative decoding** (`--speculative-config`). Summaries reuse the
-   transcript's own phrasing, which n-gram speculation is good at. Untried
-   here; worth a measurement before anything below this line.
-5. **Custom kernels.** Only worth it once the memory bus is actually saturated.
-   At NVFP4 the active weights are ~2 GB, so the ceiling is roughly 136
-   token-steps/s; until measurements sit near that, hand-written kernels buy
-   single-digit percentages for a great deal of work.
-
-Note what is *not* on the list: the web layer. uvicorn relays a few KB/s of
-JSON per stream and does no per-request CPU work — it is nowhere near being the
-constraint, and neither is the HTTP hop to vLLM (sub-millisecond against ~28 ms
-per decoded token). Keeping vLLM in its own container is deliberate: the
-weights stay resident across app deploys, and running three app workers is only
-possible because the model is not embedded in them.
-
-## Layout
-
-```
-app/
-  config.py          settings (env-driven)
-  database.py        engine/session; SQLite→Postgres by URL
-  models.py          User, Device, DeviceTrialLedger, UsageEvent, Subscription, tokens
-  schemas.py         Pydantic request/response models
-  security.py        bcrypt, JWT, device HMAC
-  deps.py            auth dependencies
-  routers/           auth, usage, billing, webhooks, admin
-  services/
-    youtube.py       URL parsing, transcript (captions -> yt-dlp), metadata
-    summarizer.py    prompts, vLLM streaming, the concurrency gate
-    devices.py       fingerprint → hash, device registration, per-device caps
-    entitlements.py  THE trial/subscription decision engine
-    billing.py       applies webhook events to subscription state
-    payments/        base + stripe + razorpay + mock
-extension-client/    JS to drop into your extension
-native-helper/       optional native messaging host that reads the real MAC
-app/static/          the web app (single HTML + JS, served at "/")
-tests/               69 tests
-alembic/             migrations
-```
+No licence has been declared in this repository. Add the appropriate licence before distributing the code publicly.
