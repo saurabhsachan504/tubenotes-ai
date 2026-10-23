@@ -392,8 +392,8 @@
   .chat-form:focus-within{border-color:var(--brand2);box-shadow:0 0 0 3px rgba(168,85,247,.12)}
   .chat-send{display:grid;place-items:center;flex:0 0 auto;width:40px;min-height:40px;padding:0;border:0;border-radius:50%;color:#fff;background:linear-gradient(135deg,var(--brand1),var(--brand3));box-shadow:0 5px 13px rgba(124,58,237,.2)}
   .chat-send:hover{filter:brightness(1.08)}.chat-send:disabled,.chat-form textarea:disabled{opacity:.62;cursor:wait}
-  .chat-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:7px;margin:11px 0 0}
-  .chat-action{display:inline-flex;align-items:center;gap:5px;min-height:29px;padding:6px 10px;border:0;border-radius:7px;color:#fff;font:750 11px/1.1 inherit;box-shadow:0 3px 9px rgba(61,35,105,.16);transition:transform .16s ease,filter .16s ease}
+  .chat-actions{display:flex;flex-wrap:nowrap;justify-content:center;gap:6px;width:100%;margin:11px 0 0}
+  .chat-action{display:inline-flex;align-items:center;justify-content:center;flex:1 1 0;min-width:0;gap:5px;min-height:29px;padding:6px 8px;border:0;border-radius:7px;color:#fff;font:750 11px/1.1 inherit;white-space:nowrap;box-shadow:0 3px 9px rgba(61,35,105,.16);transition:transform .16s ease,filter .16s ease}
   .chat-action:hover{filter:brightness(1.07);transform:translateY(-1px)}.chat-action svg{width:13px;height:13px}.chat-action.copy{background:linear-gradient(135deg,#4f46e5,#6636d8)}.chat-action.pdf{background:linear-gradient(135deg,#ca2b82,#e13d9e)}.chat-action.youtube{background:linear-gradient(135deg,#df2929,#ed4141)}
   .tool.chat-pdf-focus{outline:3px solid rgba(250,204,21,.92);outline-offset:3px;animation:chat-pdf-pulse .9s ease-in-out 3}
   @keyframes chat-pdf-pulse{50%{transform:translateY(-3px) scale(1.035);filter:brightness(1.16)}}
@@ -666,6 +666,9 @@
     .chat-form{align-items:center;flex-direction:row;padding-left:12px}
     .chat-send{width:40px}
     .chat-message{max-width:94%}
+    .chat-actions{gap:4px}
+    .chat-action{gap:3px;min-height:28px;padding:6px 3px;font-size:9.5px;letter-spacing:-.02em}
+    .chat-action svg{width:11px;height:11px}
   }
   .pdf-flow-live{height:34vh;overflow-y:auto;margin:10px 0 4px;padding:10px 12px;
     border:1px solid var(--line,#e3e8ee);border-radius:8px;background:var(--card,#fff);
