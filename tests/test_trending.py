@@ -67,6 +67,8 @@ def test_podcast_detection_accepts_common_podcast_indicators():
     assert trending_service._is_podcast({"title": "Creator interview: episode 12"})
     assert trending_service._is_podcast({"channelTitle": "Hindi \u092c\u093e\u0924\u091a\u0940\u0924"})
     assert trending_service._is_podcast({"description": "Un nuevo episodio de conversaci\u00f3n"})
+    assert trending_service._is_podcast({"channelTitle": "BeerBiceps"})
+    assert trending_service._is_podcast({"channelTitle": "Lex Fridman"})
     assert not trending_service._is_podcast({"title": "Official movie trailer"})
 
 

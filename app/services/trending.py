@@ -32,6 +32,53 @@ _PODCAST_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+# Trusted channel-name markers curated from the product's podcast catalogue.
+# They are only used to classify videos that already appear in YouTube's
+# selected regional ``mostPopular`` chart; they never alter the chart country
+# or its ordering.
+_KNOWN_PODCAST_CHANNEL_MARKERS = frozenset({
+    # India
+    "beerbiceps", "the ranveer show", "raj shamani", "figuring out", "wtf is",
+    "nikhil kamath", "ankur warikoo", "shwetabh gangwar", "mensutra",
+    "prakhar ke pravachan", "dostcast", "vinamre kasanaa", "the indian dream",
+    "the neon show", "suhani shah", "ani podcast", "smita prakash",
+    "the lallantop", "unfiltered by samdish", "the seen and the unseen",
+    "amit varma", "realhit", "neelesh misra", "the slow interview",
+    "abhi and niyu", "keerthi history", "the internet said so", "cyrus says",
+    "untriggered", "aminjaz", "chalchitra talks", "men of culture",
+    "tanmay bhat", "samay raina", "aakash gupta", "rohan joshi",
+    "khooni monday", "desi crime", "bhootiyagiri", "indian murder mystery",
+    "sandeep maheshwari", "gaur gopal das", "sadhguru", "jay shetty",
+    # USA and Canada
+    "lex fridman", "huberman lab", "waveform", "mkbhd", "wan show",
+    "linus tech tips", "startalk", "hard fork", "darknet diaries",
+    "sean carroll", "mindscape", "tim ferriss", "garyvee", "gary vaynerchuk",
+    "colin and samir", "my first million", "shaan puri", "sam parr",
+    "the ramsey show", "dave ramsey", "how i built this", "guy raz",
+    "smart passive income", "pat flynn", "entrepreneurs on fire", "john lee dumas",
+    "biggerpockets", "powerfuljre", "joe rogan", "impaulsive", "h3 podcast",
+    "call her daddy", "anything goes", "emma chamberlain", "flagrant",
+    "andrew schulz", "this past weekend", "theo von", "2 bears 1 cave",
+    "tigerbelly", "monday morning podcast", "bill burr", "conan obrien",
+    "armchair expert", "dax shepard", "wtf with marc maron", "trash taste",
+    "jordan b peterson", "jordan peterson", "making sense", "sam harris",
+    "ben shapiro", "valuetainment", "patrick bet david", "pbd podcast",
+    "megyn kelly", "triggernometry", "rich roll", "peter attia", "david sinclair",
+    "on purpose", "mind pump",
+    # United Kingdom and Europe
+    "diary of a ceo", "steven bartlett", "modern wisdom", "chris williamson",
+    "ali abdaal", "high performance", "grace beverley", "ricky gervais",
+    "sidecast", "sidemen", "fellas podcast", "jaackmaate", "shxtsngigs",
+    "help i sexted my boss", "rest is entertainment", "rest is history",
+    "rest is politics", "russell brand",
+    # Australia and global/niche shows
+    "hamish and andy", "inspired unemployed", "misfits podcast", "howie games",
+    "betoota advocate", "trevor noah", "mo gawdat", "iced coffee hour",
+    "graham stephan", "kinda funny", "ign unfiltered", "dropped frames",
+    "the yard", "new heights", "pat mcafee", "club shay shay", "games with names",
+    "crime junkie", "my favorite murder", "rotten mango", "stephanie soo",
+})
 _VIDEOS_API_URL = "https://www.googleapis.com/youtube/v3/videos"
 _cache: dict[tuple[str, int, str], tuple[float, "TrendingPage"]] = {}
 _client: httpx.AsyncClient | None = None
@@ -79,12 +126,23 @@ def _thumbnail(snippet: dict) -> str:
     return ""
 
 
+def _normalise_channel_name(value: str) -> str:
+    return f" {_NON_ALNUM_RE.sub(' ', value.casefold()).strip()} "
+
+
+def _is_known_podcast_channel(channel_name: object) -> bool:
+    if not isinstance(channel_name, str):
+        return False
+    normalised = _normalise_channel_name(channel_name)
+    return any(f" {marker} " in normalised for marker in _KNOWN_PODCAST_CHANNEL_MARKERS)
+
+
 def _is_podcast(snippet: dict) -> bool:
     """Identify podcast-style videos using public YouTube metadata.
 
     YouTube's regional Trending endpoint has no official podcast-only filter,
-    so this uses practical podcast indicators in public title, description,
-    channel and tag metadata after obtaining the official regional chart.
+    so this uses practical podcast indicators and trusted channel-name markers
+    in public metadata after obtaining the official regional chart.
     """
     parts = [
         snippet.get("title"),
@@ -94,7 +152,8 @@ def _is_podcast(snippet: dict) -> bool:
     tags = snippet.get("tags") or []
     if isinstance(tags, list):
         parts.extend(tag for tag in tags if isinstance(tag, str))
-    return _PODCAST_RE.search(" ".join(part for part in parts if isinstance(part, str))) is not None
+    metadata = " ".join(part for part in parts if isinstance(part, str))
+    return bool(_PODCAST_RE.search(metadata)) or _is_known_podcast_channel(snippet.get("channelTitle"))
 
 
 async def fetch(
