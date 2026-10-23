@@ -253,6 +253,80 @@
     return json;
   }
 
+  // Trending data comes from our backend so the YouTube Data API key never
+  // reaches the page. Each card uses the exact same summarise flow as a URL
+  // pasted by the visitor, including sign-in and credit checks.
+  function countryName(code) {
+    try {
+      return new Intl.DisplayNames([navigator.language || "en"], { type: "region" }).of(code) || code;
+    } catch (_) { return code; }
+  }
+
+  function formatViews(value) {
+    if (!Number.isFinite(Number(value))) return "Views unavailable";
+    return `${new Intl.NumberFormat(navigator.language || "en", { notation: "compact", maximumFractionDigits: 1 }).format(Number(value))} views`;
+  }
+
+  function renderTrending(data) {
+    const section = $("trending"), list = $("trendingList"), hint = $("trendingHint");
+    const selector = $("trendingRegion");
+    list.replaceChildren();
+    if (Array.from(selector.options).some((option) => option.value === data.region)) selector.value = data.region;
+    hint.textContent = `Top videos in ${countryName(data.region)}. Click one to summarize it.`;
+
+    data.videos.forEach((video, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "trending-card";
+      button.title = `Summarize: ${video.title}`;
+
+      if (video.thumbnail) {
+        const image = document.createElement("img");
+        image.src = video.thumbnail;
+        image.alt = "";
+        image.loading = "lazy";
+        button.append(image);
+      }
+      const copy = document.createElement("span");
+      copy.className = "trending-copy";
+      const rank = document.createElement("span");
+      rank.className = "trending-rank";
+      rank.textContent = `#${index + 1} trending`;
+      const title = document.createElement("span");
+      title.className = "trending-title";
+      title.textContent = video.title;
+      const meta = document.createElement("span");
+      meta.className = "trending-meta";
+      meta.textContent = `${video.channel} · ${formatViews(video.views)}`;
+      copy.append(rank, title, meta);
+      button.append(copy);
+      button.addEventListener("click", () => {
+        $("url").value = video.url;
+        $("url").scrollIntoView({ behavior: "smooth", block: "center" });
+        $("url").focus({ preventScroll: true });
+        run("summary");
+      });
+      list.append(button);
+    });
+    section.classList.remove("hidden");
+  }
+
+  async function loadTrending(region = "") {
+    const section = $("trending"), list = $("trendingList");
+    if (!section || !list) return;
+    try {
+      const query = region ? `?region=${encodeURIComponent(region)}` : "";
+      const data = await api(`/trending${query}`, { auth: false, cache: "no-store" });
+      if (!data || !Array.isArray(data.videos) || !data.videos.length) throw new Error("No trending videos available.");
+      renderTrending(data);
+    } catch (_) {
+      // An unset key or a temporary YouTube failure must not distract from
+      // the core URL summariser. The section appears as soon as it succeeds.
+      section.classList.add("hidden");
+      list.replaceChildren();
+    }
+  }
+
   function err(status, detail) {
     const e = new Error(typeof detail === "string" ? detail : (detail && detail.message) || "Request failed");
     e.status = status; e.detail = detail;
@@ -2364,6 +2438,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   // selected output tab or an existing on-screen summary.
   $("pdfBtn").onclick = () => pdfFlow({ full: true });
   $("url").addEventListener("keydown", (e) => { if (e.key === "Enter") run(mode); });
+  $("trendingRegion").addEventListener("change", (event) => loadTrending(event.target.value));
 
   $("pasteBtn").onclick = async () => {
     try {
@@ -2572,6 +2647,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   initAddToHomeScreen();
   initMotionReveals();
   initGoogle();
+  loadTrending();
   loadBillingPrice().catch(() => {});
   // Returning signed-in users with an already granted permission are attached
   // silently. Anonymous visitors are never shown a native permission prompt.

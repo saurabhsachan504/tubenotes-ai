@@ -164,6 +164,24 @@ class MessageOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# YouTube trending
+# ---------------------------------------------------------------------------
+class TrendingVideoOut(BaseModel):
+    video_id: str
+    title: str
+    channel: str
+    thumbnail: str
+    views: int | None = None
+    url: str
+
+
+class TrendingOut(BaseModel):
+    region: str
+    source: Literal["selected", "detected", "fallback"]
+    videos: list[TrendingVideoOut]
+
+
+# ---------------------------------------------------------------------------
 # Browser Web Push
 # ---------------------------------------------------------------------------
 class WebPushConfigOut(BaseModel):

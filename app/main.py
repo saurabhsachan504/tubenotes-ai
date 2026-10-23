@@ -31,8 +31,9 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import engine, init_db
-from app.routers import admin, auth, billing, contact, push, summarize, usage, webhooks
+from app.routers import admin, auth, billing, contact, push, summarize, trending, usage, webhooks
 from app.services import translate as translate_service
+from app.services import trending as trending_service
 from app.services import youtube
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -135,6 +136,7 @@ async def lifespan(app: FastAPI):
     summarize.pdf.shutdown()
     await summarize.summarizer.close_vllm_client()
     await translate_service.close_google_client()
+    await trending_service.close_client()
     await youtube.close_oembed_client()
     engine.dispose()
 
@@ -223,6 +225,7 @@ app.include_router(webhooks.router, prefix=settings.API_PREFIX)
 app.include_router(admin.router, prefix=settings.API_PREFIX)
 app.include_router(contact.router, prefix=settings.API_PREFIX)
 app.include_router(push.router, prefix=settings.API_PREFIX)
+app.include_router(trending.router, prefix=settings.API_PREFIX)
 
 
 @app.get("/healthz", tags=["meta"])

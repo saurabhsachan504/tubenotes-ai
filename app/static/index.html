@@ -544,6 +544,18 @@
   .pick-item .code{font-size:11px;opacity:.65;text-transform:uppercase}
   .pick-empty{color:var(--muted);font-size:13px;padding:14px 12px}
   .meter > i{display:block;height:100%;background:linear-gradient(90deg,var(--brand1),var(--brand3))}
+  /* ---------------- trending videos ---------------- */
+  .trending{margin:0 0 42px;padding:22px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,color-mix(in srgb,var(--brand1) 7%,var(--panel)),var(--panel) 52%,color-mix(in srgb,var(--brand3) 7%,var(--panel)));box-shadow:var(--shadow)}
+  .trending-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:17px}
+  .trending-kicker{display:block;margin-bottom:3px;color:var(--brand1);font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}
+  .trending h2{margin:0;font-size:22px;line-height:1.2;letter-spacing:-.025em}.trending p{margin:5px 0 0;color:var(--muted);font-size:13px}
+  .trending select{min-width:148px;padding:9px 32px 9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--ink);font:inherit;font-size:13px;font-weight:650}
+  .trending-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+  .trending-card{display:grid;grid-template-columns:126px minmax(0,1fr);gap:11px;width:100%;padding:0;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--field);color:var(--ink);text-align:left;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+  .trending-card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--brand2) 60%,var(--line));box-shadow:0 10px 23px rgba(79,45,137,.14)}
+  .trending-card img{width:126px;height:71px;align-self:stretch;object-fit:cover;background:var(--chip)}
+  .trending-copy{min-width:0;padding:8px 10px 8px 0}.trending-rank{display:block;margin-bottom:2px;color:var(--brand1);font-size:10px;font-weight:800}.trending-title{display:-webkit-box;overflow:hidden;margin:0;color:var(--ink);font-size:13px;font-weight:750;line-height:1.28;-webkit-box-orient:vertical;-webkit-line-clamp:2}.trending-meta{display:block;overflow:hidden;margin-top:4px;color:var(--muted);font-size:11px;line-height:1.25;text-overflow:ellipsis;white-space:nowrap}
+  .trending-empty{margin:0;color:var(--muted);font-size:13px}
   /* ---------------- responsive layout ---------------- */
   @media(max-width:900px){
     .wrap{padding-left:18px;padding-right:18px}
@@ -566,6 +578,7 @@
     .tool{min-height:42px}
     .video-chat{margin-top:16px}
     .extension-btn{display:none}
+    .trending{padding:17px}.trending-head{gap:12px}.trending h2{font-size:19px}.trending select{min-width:128px;font-size:12px}.trending-grid{grid-template-columns:1fr}.trending-card{grid-template-columns:118px minmax(0,1fr)}.trending-card img{width:118px;height:67px}
   }
 
   @media(max-width:620px){
@@ -724,6 +737,26 @@
 
 <main class="wrap">
   <div id="result" class="hidden"></div>
+
+  <section id="trending" class="trending hidden" aria-labelledby="trendingTitle">
+    <div class="trending-head">
+      <div>
+        <span class="trending-kicker">Popular on YouTube</span>
+        <h2 id="trendingTitle">Trending videos</h2>
+        <p id="trendingHint">Click a video to paste its link and create a summary.</p>
+      </div>
+      <select id="trendingRegion" aria-label="Trending video country">
+        <option value="">Your country</option>
+        <option value="IN">India</option><option value="US">United States</option>
+        <option value="GB">United Kingdom</option><option value="CA">Canada</option>
+        <option value="AU">Australia</option><option value="AE">United Arab Emirates</option>
+        <option value="DE">Germany</option><option value="FR">France</option>
+        <option value="BR">Brazil</option><option value="ID">Indonesia</option>
+        <option value="JP">Japan</option><option value="MX">Mexico</option>
+      </select>
+    </div>
+    <div id="trendingList" class="trending-grid" aria-live="polite"></div>
+  </section>
 
   <section id="how">
     <h2 class="sec">How it works</h2>

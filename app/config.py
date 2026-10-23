@@ -287,6 +287,11 @@ class Settings(BaseSettings):
     TRANSCRIPT_CACHE_MAX_ENTRIES: int = 200
     # Applied to each request made by youtube-transcript-api and yt-dlp.
     YOUTUBE_REQUEST_TIMEOUT_SECONDS: int = 12
+    # Public trending data is fetched by the API server, never by the browser.
+    # This keeps the YouTube Data API key out of page source and extension code.
+    YOUTUBE_DATA_API_KEY: str = ""
+    YOUTUBE_TRENDING_CACHE_SECONDS: int = Field(default=900, ge=60, le=86_400)
+    YOUTUBE_TRENDING_DEFAULT_REGION: str = "IN"
     # The two transcript sources used to run one after the other: the captions
     # API first, and yt-dlp only once it had failed - which, on a request that
     # times out, means 12 seconds of waiting before the second one even starts.
