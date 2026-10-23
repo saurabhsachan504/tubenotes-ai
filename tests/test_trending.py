@@ -4,7 +4,7 @@ import httpx
 
 from app.routers import trending as trending_router
 from app.services import trending as trending_service
-from app.services.trending import TrendingVideo
+from app.services.trending import TrendingPage, TrendingVideo
 
 
 def test_podcast_search_is_country_scoped_and_recent(monkeypatch):
@@ -16,7 +16,8 @@ def test_podcast_search_is_country_scoped_and_recent(monkeypatch):
             return httpx.Response(
                 200,
                 json={
-                    "items": [{
+            "nextPageToken": "NEXT_PAGE_TOKEN",
+            "items": [{
                         "id": {"videoId": "dQw4w9WgXcQ"},
                         "snippet": {
                             "title": "Recent podcast", "channelTitle": "Podcast channel",
@@ -41,8 +42,9 @@ def test_podcast_search_is_country_scoped_and_recent(monkeypatch):
         asyncio.run(client.aclose())
         trending_service._cache.clear()
 
-    assert len(videos) == 1
-    assert videos[0].views == 456789
+    assert len(videos.videos) == 1
+    assert videos.videos[0].views == 456789
+    assert videos.next_page_token == "NEXT_PAGE_TOKEN"
     search_params = dict(requests[0].url.params)
     assert search_params["q"] == "podcast"
     assert search_params["regionCode"] == "IN"
@@ -54,37 +56,40 @@ def test_podcast_search_is_country_scoped_and_recent(monkeypatch):
 def test_trending_podcasts_use_trusted_cloudflare_country(client, monkeypatch):
     seen = {}
 
-    async def fake_fetch(region, limit):
-        seen.update(region=region, limit=limit)
-        return (
+    async def fake_fetch(region, limit, page_token=None):
+        seen.update(region=region, limit=limit, page_token=page_token)
+        return TrendingPage(videos=(
             TrendingVideo(
                 video_id="dQw4w9WgXcQ",
                 title="A popular video",
                 channel="TubeNotes test channel",
                 thumbnail="https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
                 views=123456,
+                published_at="2026-10-20T12:00:00Z",
                 url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
             ),
-        )
+        ), next_page_token="NEXT_TOKEN")
 
     monkeypatch.setattr(trending_router.trending, "fetch", fake_fetch)
     response = client.get("/api/v1/trending", headers={"CF-IPCountry": "US"})
 
     assert response.status_code == 200, response.text
-    assert seen == {"region": "US", "limit": 10}
+    assert seen == {"region": "US", "limit": 10, "page_token": None}
     assert response.json()["source"] == "detected"
+    assert response.json()["next_page_token"] == "NEXT_TOKEN"
+    assert response.json()["videos"][0]["published_at"] == "2026-10-20T12:00:00Z"
     assert response.json()["videos"][0]["url"].endswith("dQw4w9WgXcQ")
 
 
 def test_trending_region_override_and_validation(client, monkeypatch):
-    async def fake_fetch(region, limit):
-        return (
+    async def fake_fetch(region, limit, page_token=None):
+        return TrendingPage(videos=(
             TrendingVideo(
                 video_id="dQw4w9WgXcQ", title="Video", channel="Channel",
-                thumbnail="", views=None,
+                thumbnail="", views=None, published_at=None,
                 url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
             ),
-        )
+        ), next_page_token=None)
 
     monkeypatch.setattr(trending_router.trending, "fetch", fake_fetch)
     response = client.get("/api/v1/trending?region=IN")

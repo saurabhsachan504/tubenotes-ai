@@ -172,12 +172,14 @@ class TrendingVideoOut(BaseModel):
     channel: str
     thumbnail: str
     views: int | None = None
+    published_at: str | None = None
     url: str
 
 
 class TrendingOut(BaseModel):
     region: str
     source: Literal["selected", "detected", "fallback"]
+    next_page_token: str | None = None
     videos: list[TrendingVideoOut]
 
 

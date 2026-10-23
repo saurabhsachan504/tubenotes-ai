@@ -554,7 +554,8 @@
   .trending-card{display:grid;grid-template-columns:126px minmax(0,1fr);gap:11px;width:100%;padding:0;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--field);color:var(--ink);text-align:left;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
   .trending-card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--brand2) 60%,var(--line));box-shadow:0 10px 23px rgba(79,45,137,.14)}
   .trending-card img{width:126px;height:71px;align-self:stretch;object-fit:cover;background:var(--chip)}
-  .trending-copy{min-width:0;padding:8px 10px 8px 0}.trending-rank{display:block;margin-bottom:2px;color:var(--brand1);font-size:10px;font-weight:800}.trending-title{display:-webkit-box;overflow:hidden;margin:0;color:var(--ink);font-size:13px;font-weight:750;line-height:1.28;-webkit-box-orient:vertical;-webkit-line-clamp:2}.trending-meta{display:block;overflow:hidden;margin-top:4px;color:var(--muted);font-size:11px;line-height:1.25;text-overflow:ellipsis;white-space:nowrap}
+  .trending-copy{min-width:0;padding:8px 10px 8px 0}.trending-rank{display:block;margin-bottom:2px;color:var(--brand1);font-size:10px;font-weight:800}.trending-title{display:-webkit-box;overflow:hidden;margin:0;color:var(--ink);font-size:13px;font-weight:750;line-height:1.28;-webkit-box-orient:vertical;-webkit-line-clamp:2}.trending-meta{display:block;overflow:hidden;margin-top:4px;color:var(--muted);font-size:11px;line-height:1.25;text-overflow:ellipsis;white-space:nowrap}.trending-date{display:block;margin-top:3px;color:var(--muted);font-size:10px;line-height:1.2}
+  .trending-footer{display:flex;justify-content:center;margin-top:17px}.trending-next{min-width:150px;padding:10px 16px;border:0;border-radius:10px;background:linear-gradient(135deg,var(--brand1),var(--brand3));color:#fff;font:inherit;font-size:13px;font-weight:750;box-shadow:0 7px 17px rgba(124,58,237,.22)}.trending-next:hover{filter:brightness(1.06);transform:translateY(-1px)}.trending-next:disabled{cursor:wait;opacity:.68;transform:none}
   .trending-empty{margin:0;color:var(--muted);font-size:13px}
   /* ---------------- responsive layout ---------------- */
   @media(max-width:900px){
@@ -743,7 +744,7 @@
       <div>
         <span class="trending-kicker">Popular on YouTube</span>
         <h2 id="trendingTitle">Trending podcasts</h2>
-        <p id="trendingHint">Click a podcast to paste its link and create a summary.</p>
+        <p id="trendingHint">Click to Summarize</p>
       </div>
       <select id="trendingRegion" aria-label="Trending video country">
         <option value="">Your country</option>
@@ -756,6 +757,7 @@
       </select>
     </div>
     <div id="trendingList" class="trending-grid" aria-live="polite"></div>
+    <div class="trending-footer"><button id="trendingNext" class="trending-next hidden" type="button">Next podcasts</button></div>
   </section>
 
   <section id="how">
