@@ -40,7 +40,7 @@ _KNOWN_PODCAST_CHANNEL_MARKERS = frozenset({
     "tanmay bhat", "samay raina", "aakash gupta", "rohan joshi",
     "khooni monday", "desi crime", "bhootiyagiri", "indian murder mystery",
     "sandeep maheshwari", "gaur gopal das", "sadhguru", "jay shetty",
-    # USA and Canada
+    # USA
     "lex fridman", "huberman lab", "waveform", "mkbhd", "wan show",
     "linus tech tips", "startalk", "hard fork", "darknet diaries",
     "sean carroll", "mindscape", "tim ferriss", "garyvee", "gary vaynerchuk",
@@ -62,12 +62,46 @@ _KNOWN_PODCAST_CHANNEL_MARKERS = frozenset({
     "sidecast", "sidemen", "fellas podcast", "jaackmaate", "shxtsngigs",
     "help i sexted my boss", "rest is entertainment", "rest is history",
     "rest is politics", "russell brand",
-    # Australia and global/niche shows
+    # Canada
+    "full send", "very really good", "kurtis conner", "tmg podcast", "wan show",
+    "linus tech tips", "sidenote", "asapscience", "area52", "chris ramsay",
+    "jeff nippard", "steve dangle",
+    # Australia
     "hamish and andy", "inspired unemployed", "misfits podcast", "howie games",
-    "betoota advocate", "trevor noah", "mo gawdat", "iced coffee hour",
-    "graham stephan", "kinda funny", "ign unfiltered", "dropped frames",
-    "the yard", "new heights", "pat mcafee", "club shay shay", "games with names",
-    "crime junkie", "my favorite murder", "rotten mango", "stephanie soo",
+    "betoota advocate", "cold ones", "alpha blokes", "grade cricketer", "hello sport",
+    "bloke in a bar", "the imperfects", "shameless", "mark bouris", "casefile",
+    "abc conversations",
+    # Germany
+    "hotel matze", "jung und naiv", "leeroy will s wissen", "die deutschen",
+    "baywatch berlin", "hobbylos", "omr podcast", "finanzfluss", "kack sachgeschichten",
+    # France
+    "zack en roue libre", "zacknani", "popcorn", "legend", "un bon moment",
+    "hugodecrypte", "fouloscopie", "squeezie", "canape six places", "mcfly et carlito",
+    "mcskyz", "affaires sensibles",
+    # Brazil
+    "flow podcast", "inteligencia ltda", "poddelas", "nerdcast", "ticaracaticast",
+    "beto ribeiro", "quinta misteriosa", "nao inviabilize", "mamilos", "tv 247",
+    "jota jota podcast",
+    # United Arab Emirates
+    "abtalks", "anas bukhash", "hikmat wehbi", "dukkan show", "kris fade",
+    "dubai works", "lovin dubai", "with loulou", "dubai stars", "taking care of business",
+    "helen farmer",
+    # Indonesia
+    "deddy corbuzier", "close the door", "curhat bang", "denny sumargo", "vindes",
+    "akbar faizal", "pwk", "has creative", "podkesmas", "podcast seminggu",
+    "lentera malam", "rjl 5", "fajar aditya", "nadia omara", "endgame",
+    "gita wirjawan", "raymond chin",
+    # Mexico
+    "la cotorrisa", "hermanos de leche", "la pension", "las alucines", "envinadas",
+    "relatos de la noche", "leyendas legendarias", "extra anormal",
+    "hablemos de lo que no existe", "penitencia", "yordi rosado", "creativo",
+    "robertomtz", "gusgri", "farid dieck", "cracks podcast", "oso trava",
+    "dimes y billetes",
+    # Other global/niche shows
+    "trevor noah", "mo gawdat", "iced coffee hour", "graham stephan", "kinda funny",
+    "ign unfiltered", "dropped frames", "the yard", "new heights", "pat mcafee",
+    "club shay shay", "games with names", "crime junkie", "my favorite murder",
+    "rotten mango", "stephanie soo",
 })
 _VIDEOS_API_URL = "https://www.googleapis.com/youtube/v3/videos"
 _cache: dict[tuple[str, int, str], tuple[float, "TrendingPage"]] = {}

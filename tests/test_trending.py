@@ -68,6 +68,10 @@ def test_podcast_detection_requires_explicit_marker_or_trusted_channel():
     assert trending_service._is_podcast({"description": "The latest vodcast is live"})
     assert trending_service._is_podcast({"channelTitle": "BeerBiceps"})
     assert trending_service._is_podcast({"channelTitle": "Lex Fridman"})
+    assert trending_service._is_podcast({"channelTitle": "Hotel Matze"})
+    assert trending_service._is_podcast({"channelTitle": "Flow Podcast"})
+    assert trending_service._is_podcast({"channelTitle": "Deddy Corbuzier"})
+    assert trending_service._is_podcast({"channelTitle": "La Cotorrisa"})
     assert not trending_service._is_podcast({"title": "Creator interview: episode 12"})
     assert not trending_service._is_podcast({"title": "Official movie trailer"})
 
