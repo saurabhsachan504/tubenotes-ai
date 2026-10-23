@@ -290,6 +290,7 @@
     const section = $("trending"), list = $("trendingList"), hint = $("trendingHint");
     const selector = $("trendingRegion"), next = $("trendingNext");
     if (!append) list.replaceChildren();
+    const rankOffset = append ? list.querySelectorAll(".trending-card").length : 0;
     if (Array.from(selector.options).some((option) => option.value === data.region)) selector.value = data.region;
     trendingLoadedRegion = data.region;
     trendingNextPageToken = data.next_page_token || null;
@@ -312,7 +313,7 @@
       copy.className = "trending-copy";
       const rank = document.createElement("span");
       rank.className = "trending-rank";
-      rank.textContent = `#${index + 1} popular podcast`;
+      rank.textContent = `#${rankOffset + index + 1} popular podcast`;
       const title = document.createElement("span");
       title.className = "trending-title";
       title.textContent = video.title;
