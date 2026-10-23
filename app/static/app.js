@@ -256,8 +256,8 @@
     return json;
   }
 
-  // Trending podcast data comes from our backend so the YouTube Data API key
-  // never reaches the page. Each card uses the same flow as a pasted URL.
+  // Official regional trending data comes from our backend so the YouTube
+  // Data API key never reaches the page. Each card uses the same flow as a pasted URL.
   function countryName(code) {
     try {
       return new Intl.DisplayNames([navigator.language || "en"], { type: "region" }).of(code) || code;
@@ -284,13 +284,13 @@
     if (Array.from(selector.options).some((option) => option.value === data.region)) selector.value = data.region;
     trendingLoadedRegion = data.region;
     trendingNextPageToken = data.next_page_token || null;
-    hint.textContent = `Country-focused popular podcasts in ${countryName(data.region)}. Click to Summarize`;
+    hint.textContent = `Top trending videos in ${countryName(data.region)}. Click to Summarize`;
 
     data.videos.forEach((video, index) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "trending-card";
-      button.title = `Summarize podcast: ${video.title}`;
+      button.title = `Summarize: ${video.title}`;
 
       if (video.thumbnail) {
         const image = document.createElement("img");
@@ -303,7 +303,7 @@
       copy.className = "trending-copy";
       const rank = document.createElement("span");
       rank.className = "trending-rank";
-      rank.textContent = `#${index + 1} popular podcast`;
+      rank.textContent = `#${index + 1} trending`;
       const title = document.createElement("span");
       title.className = "trending-title";
       title.textContent = video.title;
@@ -325,7 +325,7 @@
     });
     next.classList.toggle("hidden", !trendingNextPageToken);
     next.disabled = false;
-    next.textContent = "Next podcasts";
+    next.textContent = "Next videos";
     section.classList.remove("hidden");
   }
 
@@ -341,7 +341,7 @@
       if (pageToken) params.set("page_token", pageToken);
       const query = params.size ? `?${params}` : "";
       const data = await api(`/trending${query}`, { auth: false, cache: "no-store" });
-      if (!data || !Array.isArray(data.videos) || !data.videos.length) throw new Error("No trending podcasts available.");
+      if (!data || !Array.isArray(data.videos) || !data.videos.length) throw new Error("No trending videos available.");
       renderTrending(data, { append });
     } catch (_) {
       // An unset key or a temporary YouTube failure must not distract from

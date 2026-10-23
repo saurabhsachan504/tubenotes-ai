@@ -290,11 +290,9 @@ class Settings(BaseSettings):
     # Public trending data is fetched by the API server, never by the browser.
     # This keeps the YouTube Data API key out of page source and extension code.
     YOUTUBE_DATA_API_KEY: str = ""
-    # search.list costs substantially more quota than videos.list. A six-hour
-    # cache keeps a popular country from exhausting the project's daily quota.
+    # Cache each country's official chart briefly to save YouTube API quota.
     YOUTUBE_TRENDING_CACHE_SECONDS: int = Field(default=21_600, ge=300, le=86_400)
     YOUTUBE_TRENDING_DEFAULT_REGION: str = "IN"
-    YOUTUBE_TRENDING_WINDOW_DAYS: int = Field(default=90, ge=7, le=365)
     # The two transcript sources used to run one after the other: the captions
     # API first, and yt-dlp only once it had failed - which, on a request that
     # times out, means 12 seconds of waiting before the second one even starts.
