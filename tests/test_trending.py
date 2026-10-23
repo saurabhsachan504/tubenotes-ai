@@ -1,8 +1,57 @@
+import asyncio
+
+import httpx
+
 from app.routers import trending as trending_router
+from app.services import trending as trending_service
 from app.services.trending import TrendingVideo
 
 
-def test_trending_uses_trusted_cloudflare_country(client, monkeypatch):
+def test_podcast_search_is_country_scoped_and_recent(monkeypatch):
+    requests = []
+
+    async def handler(request):
+        requests.append(request)
+        if request.url.path.endswith("/search"):
+            return httpx.Response(
+                200,
+                json={
+                    "items": [{
+                        "id": {"videoId": "dQw4w9WgXcQ"},
+                        "snippet": {
+                            "title": "Recent podcast", "channelTitle": "Podcast channel",
+                            "thumbnails": {"high": {"url": "https://example.test/thumb.jpg"}},
+                        },
+                    }],
+                },
+            )
+        return httpx.Response(
+            200,
+            json={"items": [{"id": "dQw4w9WgXcQ", "statistics": {"viewCount": "456789"}}]},
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(trending_service, "_http_client", lambda: client)
+    monkeypatch.setattr(trending_service.settings, "YOUTUBE_DATA_API_KEY", "test-key")
+    monkeypatch.setattr(trending_service.settings, "YOUTUBE_TRENDING_WINDOW_DAYS", 90)
+    trending_service._cache.clear()
+    try:
+        videos = asyncio.run(trending_service.fetch("IN"))
+    finally:
+        asyncio.run(client.aclose())
+        trending_service._cache.clear()
+
+    assert len(videos) == 1
+    assert videos[0].views == 456789
+    search_params = dict(requests[0].url.params)
+    assert search_params["q"] == "podcast"
+    assert search_params["regionCode"] == "IN"
+    assert search_params["order"] == "viewCount"
+    assert search_params["videoDuration"] == "long"
+    assert "publishedAfter" in search_params
+
+
+def test_trending_podcasts_use_trusted_cloudflare_country(client, monkeypatch):
     seen = {}
 
     async def fake_fetch(region, limit):

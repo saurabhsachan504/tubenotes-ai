@@ -253,9 +253,8 @@
     return json;
   }
 
-  // Trending data comes from our backend so the YouTube Data API key never
-  // reaches the page. Each card uses the exact same summarise flow as a URL
-  // pasted by the visitor, including sign-in and credit checks.
+  // Trending podcast data comes from our backend so the YouTube Data API key
+  // never reaches the page. Each card uses the same flow as a pasted URL.
   function countryName(code) {
     try {
       return new Intl.DisplayNames([navigator.language || "en"], { type: "region" }).of(code) || code;
@@ -272,13 +271,13 @@
     const selector = $("trendingRegion");
     list.replaceChildren();
     if (Array.from(selector.options).some((option) => option.value === data.region)) selector.value = data.region;
-    hint.textContent = `Top videos in ${countryName(data.region)}. Click one to summarize it.`;
+    hint.textContent = `Top popular podcasts in ${countryName(data.region)}. Click one to summarize it.`;
 
     data.videos.forEach((video, index) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "trending-card";
-      button.title = `Summarize: ${video.title}`;
+      button.title = `Summarize podcast: ${video.title}`;
 
       if (video.thumbnail) {
         const image = document.createElement("img");
@@ -291,7 +290,7 @@
       copy.className = "trending-copy";
       const rank = document.createElement("span");
       rank.className = "trending-rank";
-      rank.textContent = `#${index + 1} trending`;
+      rank.textContent = `#${index + 1} popular podcast`;
       const title = document.createElement("span");
       title.className = "trending-title";
       title.textContent = video.title;
@@ -317,7 +316,7 @@
     try {
       const query = region ? `?region=${encodeURIComponent(region)}` : "";
       const data = await api(`/trending${query}`, { auth: false, cache: "no-store" });
-      if (!data || !Array.isArray(data.videos) || !data.videos.length) throw new Error("No trending videos available.");
+      if (!data || !Array.isArray(data.videos) || !data.videos.length) throw new Error("No trending podcasts available.");
       renderTrending(data);
     } catch (_) {
       // An unset key or a temporary YouTube failure must not distract from
