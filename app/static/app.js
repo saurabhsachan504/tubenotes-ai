@@ -1492,7 +1492,22 @@
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
           </button>
         </form>
+        <div class="chat-actions" aria-label="Summary actions">
+          <button class="chat-action copy" id="chatCopySummary" type="button">${ICONS.copy}<span>Copy Summary</span></button>
+          <button class="chat-action pdf" id="chatFullNotesPdf" type="button">${ICONS.notes}<span>Full Notes PDF</span></button>
+          <button class="chat-action youtube" id="chatOpenYoutube" type="button">${ICONS.open}<span>Open on YouTube</span></button>
+        </div>
       </section>`;
+  }
+
+  function bindChatActions(summary) {
+    $("chatCopySummary")?.addEventListener("click", () => {
+      navigator.clipboard.writeText(summary).then(() => status("Copied to clipboard"));
+    });
+    $("chatFullNotesPdf")?.addEventListener("click", () => pdfFlow({ full: true }));
+    $("chatOpenYoutube")?.addEventListener("click", () => {
+      if (lastNotes?.url) window.open(lastNotes.url, "_blank", "noopener");
+    });
   }
 
   function mountVideoChat(summary) {
@@ -1511,6 +1526,7 @@
     const input = $("videoChatInput");
     form.addEventListener("submit", sendVideoChat);
     bindChatSuggestions();
+    bindChatActions(summary);
     // Chat convention: Enter sends. Shift + Enter is reserved for a new line.
     // isComposing protects Hindi/Indic IME users while they are choosing text.
     input.addEventListener("keydown", (event) => {
