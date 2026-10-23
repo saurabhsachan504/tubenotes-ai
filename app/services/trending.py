@@ -11,6 +11,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -118,7 +119,7 @@ _COUNTRY_PODCAST_QUERIES = {
 _RELEVANCE_LANGUAGES = {
     "DE": "de", "FR": "fr", "BR": "pt", "AE": "ar", "ID": "id", "MX": "es",
 }
-_cache: dict[tuple[str, int, str], tuple[float, "TrendingPage"]] = {}
+_cache: dict[tuple[str, int, str, int], tuple[float, "TrendingPage"]] = {}
 _client: httpx.AsyncClient | None = None
 
 
@@ -198,6 +199,7 @@ async def fetch(
     region: str,
     limit: int = 10,
     page_token: str | None = None,
+    days: int = 90,
 ) -> TrendingPage:
     """Return top-watched podcast videos for one selected country."""
     region = normalise_region(region)
@@ -205,13 +207,15 @@ async def fetch(
         raise TrendingUnavailable("Choose a valid two-letter country code.")
     api_key = settings.YOUTUBE_DATA_API_KEY.strip()
     if not api_key:
-        raise TrendingUnavailable("Trending podcasts are not configured yet.")
+        raise TrendingUnavailable("Top podcasts are not configured yet.")
 
     limit = max(1, min(int(limit), 50))
+    if days not in (60, 90):
+        raise TrendingUnavailable("Choose either the last 60 or 90 days.")
     # Search up to 50 candidates, then keep the first requested podcast videos.
     candidate_limit = min(50, max(25, limit * 5))
     page_token = (page_token or "").strip()
-    key = (region, limit, page_token)
+    key = (region, limit, page_token, days)
     now = time.monotonic()
     cached = _cache.get(key)
     if cached and now - cached[0] < settings.YOUTUBE_TRENDING_CACHE_SECONDS:
@@ -228,6 +232,7 @@ async def fetch(
                 "type": "video",
                 "order": "viewCount",
                 "videoDuration": "long",
+                "publishedAfter": (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "maxResults": candidate_limit,
                 "pageToken": page_token or None,
                 "key": api_key,

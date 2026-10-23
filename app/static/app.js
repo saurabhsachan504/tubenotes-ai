@@ -18,6 +18,7 @@
   let activeLaunchOffer = null;
   let trendingNextPageToken = null;
   let trendingLoadedRegion = "";
+  let trendingLoadedDays = 90;
   let trendingLoading = false;
   // Empty on the primary site. A legacy domain can set this through /meta so
   // its Subscribe button takes users to the canonical checkout domain.
@@ -279,12 +280,14 @@
 
   function renderTrending(data, { append = false } = {}) {
     const section = $("trending"), list = $("trendingList"), hint = $("trendingHint");
-    const selector = $("trendingRegion"), next = $("trendingNext");
+    const selector = $("trendingRegion"), windowSelector = $("trendingWindow"), next = $("trendingNext");
     if (!append) list.replaceChildren();
     if (Array.from(selector.options).some((option) => option.value === data.region)) selector.value = data.region;
     trendingLoadedRegion = data.region;
+    trendingLoadedDays = Number(data.days) === 60 ? 60 : 90;
+    windowSelector.value = String(trendingLoadedDays);
     trendingNextPageToken = data.next_page_token || null;
-    hint.textContent = `Top watched podcasts in ${countryName(data.region)}. Click to Summarize`;
+    hint.textContent = `Top watched podcasts in ${countryName(data.region)} from the last ${trendingLoadedDays} days. Click to Summarize`;
 
     data.videos.forEach((video, index) => {
       const button = document.createElement("button");
@@ -329,16 +332,18 @@
     section.classList.remove("hidden");
   }
 
-  async function loadTrending(region = "", pageToken = "") {
+  async function loadTrending(region = "", pageToken = "", days = null) {
     const section = $("trending"), list = $("trendingList"), next = $("trendingNext");
     if (!section || !list || trendingLoading) return;
     trendingLoading = true;
     const append = Boolean(pageToken);
+    const selectedDays = Number(days || $("trendingWindow").value) === 60 ? 60 : 90;
     if (append) { next.disabled = true; next.textContent = "Loading…"; }
     try {
       const params = new URLSearchParams();
       if (region) params.set("region", region);
       if (pageToken) params.set("page_token", pageToken);
+      params.set("days", String(selectedDays));
       const query = params.size ? `?${params}` : "";
       const data = await api(`/trending${query}`, { auth: false, cache: "no-store" });
       if (!data || !Array.isArray(data.videos) || !data.videos.length) throw new Error("No top podcasts available.");
@@ -2470,8 +2475,9 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   $("pdfBtn").onclick = () => pdfFlow({ full: true });
   $("url").addEventListener("keydown", (e) => { if (e.key === "Enter") run(mode); });
   $("trendingRegion").addEventListener("change", (event) => loadTrending(event.target.value));
+  $("trendingWindow").addEventListener("change", () => loadTrending($("trendingRegion").value));
   $("trendingNext").addEventListener("click", () => {
-    if (trendingNextPageToken) loadTrending(trendingLoadedRegion || $("trendingRegion").value, trendingNextPageToken);
+    if (trendingNextPageToken) loadTrending(trendingLoadedRegion || $("trendingRegion").value, trendingNextPageToken, trendingLoadedDays);
   });
 
   $("pasteBtn").onclick = async () => {

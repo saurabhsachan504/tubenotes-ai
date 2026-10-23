@@ -72,6 +72,7 @@ def test_top_watched_country_podcast_request(monkeypatch):
     assert search_params["order"] == "viewCount"
     assert search_params["videoDuration"] == "long"
     assert search_params["q"] == trending_service._COUNTRY_PODCAST_QUERIES["US"]
+    assert search_params["publishedAfter"].endswith("Z")
     assert "chart" not in search_params
     assert requests[1].url.path.endswith("/videos")
     assert dict(requests[1].url.params)["id"] == "not-a-podcast,dQw4w9WgXcQ"
@@ -93,8 +94,8 @@ def test_podcast_detection_requires_explicit_marker_or_trusted_channel():
 def test_trending_detects_cloudflare_country(client, monkeypatch):
     seen = {}
 
-    async def fake_fetch(region, limit, page_token=None):
-        seen.update(region=region, limit=limit, page_token=page_token)
+    async def fake_fetch(region, limit, page_token=None, days=90):
+        seen.update(region=region, limit=limit, page_token=page_token, days=days)
         return TrendingPage(videos=(
             TrendingVideo(
                 video_id="dQw4w9WgXcQ", title="Video", channel="Channel",
@@ -107,7 +108,7 @@ def test_trending_detects_cloudflare_country(client, monkeypatch):
     response = client.get("/api/v1/trending", headers={"CF-IPCountry": "US"})
 
     assert response.status_code == 200, response.text
-    assert seen == {"region": "US", "limit": 10, "page_token": None}
+    assert seen == {"region": "US", "limit": 10, "page_token": None, "days": 90}
     assert response.json()["source"] == "detected"
     assert response.json()["next_page_token"] == "NEXT_TOKEN"
 
@@ -115,8 +116,8 @@ def test_trending_detects_cloudflare_country(client, monkeypatch):
 def test_trending_manual_country_and_next_page(client, monkeypatch):
     seen = {}
 
-    async def fake_fetch(region, limit, page_token=None):
-        seen.update(region=region, limit=limit, page_token=page_token)
+    async def fake_fetch(region, limit, page_token=None, days=90):
+        seen.update(region=region, limit=limit, page_token=page_token, days=days)
         return TrendingPage(videos=(
             TrendingVideo(
                 video_id="dQw4w9WgXcQ", title="Video", channel="Channel",
@@ -126,12 +127,12 @@ def test_trending_manual_country_and_next_page(client, monkeypatch):
         ), next_page_token=None)
 
     monkeypatch.setattr(trending_router.trending, "fetch", fake_fetch)
-    response = client.get("/api/v1/trending?region=JP&page_token=NEXT_TOKEN")
+    response = client.get("/api/v1/trending?region=JP&page_token=NEXT_TOKEN&days=60")
 
     assert response.status_code == 200
     assert response.json()["region"] == "JP"
     assert response.json()["source"] == "selected"
-    assert seen == {"region": "JP", "limit": 10, "page_token": "NEXT_TOKEN"}
+    assert seen == {"region": "JP", "limit": 10, "page_token": "NEXT_TOKEN", "days": 60}
 
     invalid = client.get("/api/v1/trending?region=IND")
     assert invalid.status_code == 422

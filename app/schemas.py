@@ -164,7 +164,7 @@ class MessageOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# YouTube trending
+# YouTube top podcasts
 # ---------------------------------------------------------------------------
 class TrendingVideoOut(BaseModel):
     video_id: str
@@ -179,6 +179,7 @@ class TrendingVideoOut(BaseModel):
 class TrendingOut(BaseModel):
     region: str
     source: Literal["selected", "detected", "fallback"]
+    days: int
     next_page_token: str | None = None
     videos: list[TrendingVideoOut]
 
