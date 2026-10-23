@@ -20,6 +20,7 @@ logger = logging.getLogger("trialguard.trending")
 _REGION_RE = re.compile(r"^[A-Z]{2}$")
 _SEARCH_API_URL = "https://www.googleapis.com/youtube/v3/search"
 _VIDEOS_API_URL = "https://www.googleapis.com/youtube/v3/videos"
+_CHANNELS_API_URL = "https://www.googleapis.com/youtube/v3/channels"
 _cache: dict[tuple[str, int, str], tuple[float, "TrendingPage"]] = {}
 _client: httpx.AsyncClient | None = None
 
@@ -100,6 +101,10 @@ async def fetch(
     if cached and now - cached[0] < settings.YOUTUBE_TRENDING_CACHE_SECONDS:
         return cached[1]
 
+    # A strict channel-country filter excludes creators who leave their
+    # channel country blank. Fetch a wider candidate set to still fill ten
+    # cards for popular regions.
+    candidate_limit = min(50, max(limit * 5, 25))
     try:
         response = await _http_client().get(
             _SEARCH_API_URL,
@@ -112,10 +117,10 @@ async def fetch(
                 "videoDuration": "long",
                 "publishedAfter": _published_after(),
                 "safeSearch": "moderate",
-                "maxResults": limit,
+                "maxResults": candidate_limit,
                 "pageToken": page_token or None,
                 "key": api_key,
-                "fields": "nextPageToken,items(id/videoId,snippet(title,channelTitle,publishedAt,thumbnails))",
+                "fields": "nextPageToken,items(id/videoId,snippet(channelId,title,channelTitle,publishedAt,thumbnails))",
             },
         )
         response.raise_for_status()
@@ -129,12 +134,47 @@ async def fetch(
         raise TrendingUnavailable("Trending podcasts are temporarily unavailable.") from exc
 
     items = response.json().get("items", [])
-    video_ids = []
+    candidates: list[tuple[str, str, dict]] = []
     for item in items:
         identity = item.get("id") or {}
+        snippet = item.get("snippet") or {}
         video_id = identity.get("videoId") if isinstance(identity, dict) else None
-        if isinstance(video_id, str):
-            video_ids.append(video_id)
+        channel_id = snippet.get("channelId") if isinstance(snippet, dict) else None
+        if isinstance(video_id, str) and isinstance(channel_id, str):
+            candidates.append((video_id, channel_id, snippet))
+
+    # ``regionCode`` means a video can be viewed in a country; it does not
+    # mean its creator is from there. Keep only channels whose declared
+    # country exactly matches the selected dropdown country.
+    channel_ids = list(dict.fromkeys(channel_id for _, channel_id, _ in candidates))
+    channel_countries: dict[str, str] = {}
+    if channel_ids:
+        try:
+            channels_response = await _http_client().get(
+                _CHANNELS_API_URL,
+                params={
+                    "part": "snippet",
+                    "id": ",".join(channel_ids),
+                    "key": api_key,
+                    "fields": "items(id,snippet/country)",
+                },
+            )
+            channels_response.raise_for_status()
+            for channel in channels_response.json().get("items", []):
+                channel_id = channel.get("id")
+                country = normalise_region((channel.get("snippet") or {}).get("country"))
+                if isinstance(channel_id, str) and country:
+                    channel_countries[channel_id] = country
+        except httpx.HTTPError as exc:
+            logger.warning("YouTube channel-country lookup failed: %s", exc.__class__.__name__)
+            raise TrendingUnavailable("Country-verified podcasts are temporarily unavailable.") from exc
+
+    candidates = [
+        candidate
+        for candidate in candidates
+        if channel_countries.get(candidate[1]) == region
+    ][:limit]
+    video_ids = [video_id for video_id, _, _ in candidates]
     views_by_id: dict[str, int] = {}
     if video_ids:
         # search.list does not return statistics. This inexpensive second call
@@ -159,11 +199,9 @@ async def fetch(
             logger.info("YouTube podcast statistics unavailable: %s", exc.__class__.__name__)
 
     videos: list[TrendingVideo] = []
-    for item in items:
-        video_id = (item.get("id") or {}).get("videoId")
-        snippet = item.get("snippet") or {}
+    for video_id, _, snippet in candidates:
         title = snippet.get("title")
-        if not isinstance(video_id, str) or not isinstance(title, str):
+        if not isinstance(title, str):
             continue
         videos.append(
             TrendingVideo(

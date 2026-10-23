@@ -21,10 +21,16 @@ def test_podcast_search_is_country_scoped_and_recent(monkeypatch):
                         "id": {"videoId": "dQw4w9WgXcQ"},
                         "snippet": {
                             "title": "Recent podcast", "channelTitle": "Podcast channel",
+                            "channelId": "test-channel",
                             "thumbnails": {"high": {"url": "https://example.test/thumb.jpg"}},
                         },
                     }],
                 },
+            )
+        if request.url.path.endswith("/channels"):
+            return httpx.Response(
+                200,
+                json={"items": [{"id": "test-channel", "snippet": {"country": "IN"}}]},
             )
         return httpx.Response(
             200,
@@ -51,6 +57,38 @@ def test_podcast_search_is_country_scoped_and_recent(monkeypatch):
     assert search_params["order"] == "viewCount"
     assert search_params["videoDuration"] == "long"
     assert "publishedAfter" in search_params
+    channel_params = dict(requests[1].url.params)
+    assert channel_params["id"] == "test-channel"
+
+
+def test_declared_foreign_channel_is_excluded(monkeypatch):
+    async def handler(request):
+        if request.url.path.endswith("/search"):
+            return httpx.Response(
+                200,
+                json={"items": [{
+                    "id": {"videoId": "dQw4w9WgXcQ"},
+                    "snippet": {"channelId": "foreign-channel", "title": "Foreign podcast"},
+                }]},
+            )
+        return httpx.Response(
+            200,
+            json={"items": [{"id": "foreign-channel", "snippet": {"country": "US"}}]},
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(trending_service, "_http_client", lambda: client)
+    monkeypatch.setattr(trending_service.settings, "YOUTUBE_DATA_API_KEY", "test-key")
+    trending_service._cache.clear()
+    try:
+        try:
+            asyncio.run(trending_service.fetch("IN"))
+            assert False, "A declared US channel must not appear in India results."
+        except trending_service.TrendingUnavailable:
+            pass
+    finally:
+        asyncio.run(client.aclose())
+        trending_service._cache.clear()
 
 
 def test_trending_podcasts_use_trusted_cloudflare_country(client, monkeypatch):
