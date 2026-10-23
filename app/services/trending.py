@@ -21,17 +21,7 @@ from app.config import settings
 logger = logging.getLogger("trialguard.trending")
 
 _REGION_RE = re.compile(r"^[A-Z]{2}$")
-_PODCAST_RE = re.compile(
-    r"(?:"
-    r"\bpod[\s-]*casts?\b|\bvodcasts?\b|\btalk\s*show\b|"
-    r"\binterviews?\b|\bconversations?\b|\bround\s*table\b|"
-    r"\bpanel\s+discussion\b|\bfireside\s+chat\b|"
-    r"\b(?:talk|podcast)\s+episode\b|\bep(?:isode)?\.?\s*\d+\b|"
-    r"\btalks\b|बातचीत|इंटरव्यू|साक्षात्कार|चर्चा|संवाद|"
-    r"ポッドキャスト|インタビュー|entrevistas?|conversaci[óo]n|charlas?|bate-papo"
-    r")",
-    re.IGNORECASE,
-)
+_PODCAST_RE = re.compile(r"\b(?:pod[\s-]*casts?|vodcasts?)\b", re.IGNORECASE)
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 # Trusted channel-name markers curated from the product's podcast catalogue.
 # They are only used to classify videos that already appear in YouTube's
@@ -141,8 +131,8 @@ def _is_podcast(snippet: dict) -> bool:
     """Identify podcast-style videos using public YouTube metadata.
 
     YouTube's regional Trending endpoint has no official podcast-only filter,
-    so this uses practical podcast indicators and trusted channel-name markers
-    in public metadata after obtaining the official regional chart.
+    so this requires an explicit ``podcast``/``vodcast`` metadata marker or a
+    trusted channel-name marker after obtaining the official regional chart.
     """
     parts = [
         snippet.get("title"),

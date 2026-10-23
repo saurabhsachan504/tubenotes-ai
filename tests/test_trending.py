@@ -28,7 +28,7 @@ def test_official_regional_chart_filters_to_podcasts(monkeypatch):
                 }, {
                     "id": "dQw4w9WgXcQ",
                     "snippet": {
-                        "title": "A regionally trending interview",
+                        "title": "A regionally trending podcast interview",
                         "description": "A long-form conversation with the guest.",
                         "channelTitle": "Trending channel",
                         "publishedAt": "2026-10-20T12:00:00Z",
@@ -63,12 +63,12 @@ def test_official_regional_chart_filters_to_podcasts(monkeypatch):
     assert "publishedAfter" not in params
 
 
-def test_podcast_detection_accepts_common_podcast_indicators():
-    assert trending_service._is_podcast({"title": "Creator interview: episode 12"})
-    assert trending_service._is_podcast({"channelTitle": "Hindi \u092c\u093e\u0924\u091a\u0940\u0924"})
-    assert trending_service._is_podcast({"description": "Un nuevo episodio de conversaci\u00f3n"})
+def test_podcast_detection_requires_explicit_marker_or_trusted_channel():
+    assert trending_service._is_podcast({"title": "Creator podcast: episode 12"})
+    assert trending_service._is_podcast({"description": "The latest vodcast is live"})
     assert trending_service._is_podcast({"channelTitle": "BeerBiceps"})
     assert trending_service._is_podcast({"channelTitle": "Lex Fridman"})
+    assert not trending_service._is_podcast({"title": "Creator interview: episode 12"})
     assert not trending_service._is_podcast({"title": "Official movie trailer"})
 
 
