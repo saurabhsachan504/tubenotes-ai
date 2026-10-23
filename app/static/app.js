@@ -277,6 +277,15 @@
     }).format(date);
   }
 
+  function formatDuration(value) {
+    const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(value || "");
+    if (!match) return "Duration unavailable";
+    const hours = Number(match[1] || 0), minutes = Number(match[2] || 0), seconds = Number(match[3] || 0);
+    if (hours) return `${hours}h ${minutes}m`;
+    if (minutes) return `${minutes}m ${seconds}s`;
+    return `${seconds}s`;
+  }
+
   function renderTrending(data, { append = false } = {}) {
     const section = $("trending"), list = $("trendingList"), hint = $("trendingHint");
     const selector = $("trendingRegion"), next = $("trendingNext");
@@ -312,7 +321,7 @@
       meta.textContent = `${video.channel} · ${formatViews(video.views)}`;
       const published = document.createElement("span");
       published.className = "trending-date";
-      published.textContent = `Published: ${formatPublishedAt(video.published_at)}`;
+      published.textContent = `Published: ${formatPublishedAt(video.published_at)} · Duration: ${formatDuration(video.duration)}`;
       copy.append(rank, title, meta, published);
       button.append(copy);
       button.addEventListener("click", () => {

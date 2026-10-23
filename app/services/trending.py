@@ -36,6 +36,7 @@ class TrendingVideo:
     thumbnail: str
     views: int | None
     published_at: str | None
+    duration: str | None
     url: str
 
 
@@ -136,17 +137,18 @@ async def fetch(
         if isinstance(video_id, str):
             video_ids.append(video_id)
     views_by_id: dict[str, int] = {}
+    durations_by_id: dict[str, str] = {}
     if video_ids:
-        # search.list does not return statistics. This inexpensive second call
-        # lets the cards show the actual count without changing their ranking.
+        # search.list does not return statistics or duration. This inexpensive
+        # second call enriches cards without changing their ranking.
         try:
             stats_response = await _http_client().get(
                 _VIDEOS_API_URL,
                 params={
-                    "part": "statistics",
+                    "part": "statistics,contentDetails",
                     "id": ",".join(video_ids),
                     "key": api_key,
-                    "fields": "items(id,statistics/viewCount)",
+                    "fields": "items(id,statistics/viewCount,contentDetails/duration)",
                 },
             )
             stats_response.raise_for_status()
@@ -155,6 +157,9 @@ async def fetch(
                     views_by_id[stat["id"]] = int(stat.get("statistics", {}).get("viewCount"))
                 except (KeyError, TypeError, ValueError):
                     continue
+                duration = (stat.get("contentDetails") or {}).get("duration")
+                if isinstance(duration, str):
+                    durations_by_id[stat["id"]] = duration
         except httpx.HTTPError as exc:
             logger.info("YouTube podcast statistics unavailable: %s", exc.__class__.__name__)
 
@@ -177,6 +182,7 @@ async def fetch(
                     if isinstance(snippet.get("publishedAt"), str)
                     else None
                 ),
+                duration=durations_by_id.get(video_id),
                 url=f"https://www.youtube.com/watch?v={video_id}",
             )
         )

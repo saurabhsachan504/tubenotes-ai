@@ -173,6 +173,7 @@ class TrendingVideoOut(BaseModel):
     thumbnail: str
     views: int | None = None
     published_at: str | None = None
+    duration: str | None = None
     url: str
 
 

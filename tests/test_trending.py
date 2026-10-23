@@ -28,7 +28,11 @@ def test_podcast_search_is_country_scoped_and_recent(monkeypatch):
             )
         return httpx.Response(
             200,
-            json={"items": [{"id": "dQw4w9WgXcQ", "statistics": {"viewCount": "456789"}}]},
+            json={"items": [{
+                "id": "dQw4w9WgXcQ",
+                "statistics": {"viewCount": "456789"},
+                "contentDetails": {"duration": "PT1H2M3S"},
+            }]},
         )
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -44,6 +48,7 @@ def test_podcast_search_is_country_scoped_and_recent(monkeypatch):
 
     assert len(videos.videos) == 1
     assert videos.videos[0].views == 456789
+    assert videos.videos[0].duration == "PT1H2M3S"
     assert videos.next_page_token == "NEXT_PAGE_TOKEN"
     search_params = dict(requests[0].url.params)
     assert search_params["q"] == "podcast"
@@ -66,6 +71,7 @@ def test_trending_podcasts_use_trusted_cloudflare_country(client, monkeypatch):
                 thumbnail="https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
                 views=123456,
                 published_at="2026-10-20T12:00:00Z",
+                duration="PT42M10S",
                 url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
             ),
         ), next_page_token="NEXT_TOKEN")
@@ -78,6 +84,7 @@ def test_trending_podcasts_use_trusted_cloudflare_country(client, monkeypatch):
     assert response.json()["source"] == "detected"
     assert response.json()["next_page_token"] == "NEXT_TOKEN"
     assert response.json()["videos"][0]["published_at"] == "2026-10-20T12:00:00Z"
+    assert response.json()["videos"][0]["duration"] == "PT42M10S"
     assert response.json()["videos"][0]["url"].endswith("dQw4w9WgXcQ")
 
 
@@ -87,6 +94,7 @@ def test_trending_region_override_and_validation(client, monkeypatch):
             TrendingVideo(
                 video_id="dQw4w9WgXcQ", title="Video", channel="Channel",
                 thumbnail="", views=None, published_at=None,
+                duration=None,
                 url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
             ),
         ), next_page_token=None)

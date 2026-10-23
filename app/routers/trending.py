@@ -43,6 +43,7 @@ async def list_trending(
                 thumbnail=video.thumbnail,
                 views=video.views,
                 published_at=video.published_at,
+                duration=video.duration,
                 url=video.url,
             )
             for video in page.videos
