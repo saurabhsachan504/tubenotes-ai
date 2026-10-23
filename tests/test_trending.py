@@ -91,6 +91,49 @@ def test_declared_foreign_channel_is_excluded(monkeypatch):
         trending_service._cache.clear()
 
 
+def test_blank_country_channel_can_fill_country_focused_results(monkeypatch):
+    async def handler(request):
+        if request.url.path.endswith("/search"):
+            return httpx.Response(
+                200,
+                json={"items": [
+                    {
+                        "id": {"videoId": "dQw4w9WgXcQ"},
+                        "snippet": {"channelId": "india-channel", "title": "India podcast"},
+                    },
+                    {
+                        "id": {"videoId": "M7lc1UVf-VE"},
+                        "snippet": {"channelId": "unset-channel", "title": "Hindi podcast from India"},
+                    },
+                    {
+                        "id": {"videoId": "aqz-KE-bpKQ"},
+                        "snippet": {"channelId": "us-channel", "title": "US podcast"},
+                    },
+                ]},
+            )
+        if request.url.path.endswith("/channels"):
+            return httpx.Response(
+                200,
+                json={"items": [
+                    {"id": "india-channel", "snippet": {"country": "IN"}},
+                    {"id": "us-channel", "snippet": {"country": "US"}},
+                ]},
+            )
+        return httpx.Response(200, json={"items": []})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(trending_service, "_http_client", lambda: client)
+    monkeypatch.setattr(trending_service.settings, "YOUTUBE_DATA_API_KEY", "test-key")
+    trending_service._cache.clear()
+    try:
+        page = asyncio.run(trending_service.fetch("IN"))
+    finally:
+        asyncio.run(client.aclose())
+        trending_service._cache.clear()
+
+    assert [video.video_id for video in page.videos] == ["dQw4w9WgXcQ", "M7lc1UVf-VE"]
+
+
 def test_trending_podcasts_use_trusted_cloudflare_country(client, monkeypatch):
     seen = {}
 

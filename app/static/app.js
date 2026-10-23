@@ -284,7 +284,7 @@
     if (Array.from(selector.options).some((option) => option.value === data.region)) selector.value = data.region;
     trendingLoadedRegion = data.region;
     trendingNextPageToken = data.next_page_token || null;
-    hint.textContent = `Country-verified popular podcasts in ${countryName(data.region)}. Click to Summarize`;
+    hint.textContent = `Country-focused popular podcasts in ${countryName(data.region)}. Click to Summarize`;
 
     data.videos.forEach((video, index) => {
       const button = document.createElement("button");

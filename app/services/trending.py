@@ -24,6 +24,24 @@ _CHANNELS_API_URL = "https://www.googleapis.com/youtube/v3/channels"
 _cache: dict[tuple[str, int, str], tuple[float, "TrendingPage"]] = {}
 _client: httpx.AsyncClient | None = None
 
+# These are relevance hints, not proof of where a creator lives. They help
+# rank channels that have not declared a country after exact channel-country
+# matches. A declared foreign country is always excluded below.
+_COUNTRY_HINTS: dict[str, tuple[str, ...]] = {
+    "IN": ("india", "indian", "hindi", "bharat", "bollywood", "tamil", "telugu", "bengali", "marathi", "punjabi", "हिंदी", "भारत", "தமிழ்", "తెలుగు", "বাংলা"),
+    "US": ("usa", "u.s.", "united states", "america", "american"),
+    "GB": ("uk", "u.k.", "united kingdom", "britain", "british", "england", "english"),
+    "CA": ("canada", "canadian", "quebec", "canadien"),
+    "AU": ("australia", "australian"),
+    "AE": ("uae", "dubai", "emirates", "emirati", "arabic", "عربي"),
+    "DE": ("germany", "german", "deutsch", "deutschland"),
+    "FR": ("france", "french", "français", "francais"),
+    "BR": ("brazil", "brazilian", "brasil", "brasileiro", "português", "portugues"),
+    "ID": ("indonesia", "indonesian", "bahasa indonesia"),
+    "JP": ("japan", "japanese", "日本", "日本語"),
+    "MX": ("mexico", "mexican", "méxico", "mexicano", "español", "espanol"),
+}
+
 
 class TrendingUnavailable(Exception):
     """The upstream trending chart cannot currently be shown."""
@@ -74,6 +92,14 @@ def _published_after() -> str:
     return f"{cutoff.isoformat()}T00:00:00Z"
 
 
+def _country_signal_score(region: str, snippet: dict) -> int:
+    """Give an unknown-country channel a small country/language relevance boost."""
+    text = " ".join(
+        str(snippet.get(name) or "") for name in ("title", "description", "channelTitle")
+    ).casefold()
+    return 40 * sum(1 for hint in _COUNTRY_HINTS.get(region, ()) if hint.casefold() in text)
+
+
 async def fetch(
     region: str,
     limit: int = 10,
@@ -120,7 +146,7 @@ async def fetch(
                 "maxResults": candidate_limit,
                 "pageToken": page_token or None,
                 "key": api_key,
-                "fields": "nextPageToken,items(id/videoId,snippet(channelId,title,channelTitle,publishedAt,thumbnails))",
+                "fields": "nextPageToken,items(id/videoId,snippet(channelId,title,description,channelTitle,publishedAt,thumbnails))",
             },
         )
         response.raise_for_status()
@@ -144,8 +170,9 @@ async def fetch(
             candidates.append((video_id, channel_id, snippet))
 
     # ``regionCode`` means a video can be viewed in a country; it does not
-    # mean its creator is from there. Keep only channels whose declared
-    # country exactly matches the selected dropdown country.
+    # mean its creator is from there. We first rank exact declared-country
+    # matches, then use country/language hints for channels with no declared
+    # country. A channel declaring any *other* country is never included.
     channel_ids = list(dict.fromkeys(channel_id for _, channel_id, _ in candidates))
     channel_countries: dict[str, str] = {}
     if channel_ids:
@@ -169,11 +196,17 @@ async def fetch(
             logger.warning("YouTube channel-country lookup failed: %s", exc.__class__.__name__)
             raise TrendingUnavailable("Country-verified podcasts are temporarily unavailable.") from exc
 
-    candidates = [
-        candidate
-        for candidate in candidates
-        if channel_countries.get(candidate[1]) == region
-    ][:limit]
+    ranked: list[tuple[int, int, tuple[str, str, dict]]] = []
+    for position, candidate in enumerate(candidates):
+        _, channel_id, snippet = candidate
+        declared_country = channel_countries.get(channel_id)
+        if declared_country and declared_country != region:
+            continue
+        # Exact declared channel country dominates. For blank metadata, keep
+        # the selected region's own YouTube ranking and boost local signals.
+        score = 10_000 if declared_country == region else _country_signal_score(region, snippet)
+        ranked.append((score, position, candidate))
+    candidates = [candidate for _, _, candidate in sorted(ranked, key=lambda item: (-item[0], item[1]))[:limit]]
     video_ids = [video_id for video_id, _, _ in candidates]
     views_by_id: dict[str, int] = {}
     if video_ids:
