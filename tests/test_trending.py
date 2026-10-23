@@ -28,8 +28,8 @@ def test_official_regional_chart_filters_to_podcasts(monkeypatch):
                 }, {
                     "id": "dQw4w9WgXcQ",
                     "snippet": {
-                        "title": "A regionally trending podcast",
-                        "description": "The official video podcast episode.",
+                        "title": "A regionally trending interview",
+                        "description": "A long-form conversation with the guest.",
                         "channelTitle": "Trending channel",
                         "publishedAt": "2026-10-20T12:00:00Z",
                         "thumbnails": {"high": {"url": "https://example.test/podcast.jpg"}},
@@ -61,6 +61,13 @@ def test_official_regional_chart_filters_to_podcasts(monkeypatch):
     assert params["maxResults"] == "50"
     assert "q" not in params
     assert "publishedAfter" not in params
+
+
+def test_podcast_detection_accepts_common_podcast_indicators():
+    assert trending_service._is_podcast({"title": "Creator interview: episode 12"})
+    assert trending_service._is_podcast({"channelTitle": "Hindi \u092c\u093e\u0924\u091a\u0940\u0924"})
+    assert trending_service._is_podcast({"description": "Un nuevo episodio de conversaci\u00f3n"})
+    assert not trending_service._is_podcast({"title": "Official movie trailer"})
 
 
 def test_trending_detects_cloudflare_country(client, monkeypatch):

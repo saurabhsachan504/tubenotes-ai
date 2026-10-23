@@ -2,10 +2,10 @@
 
 Candidates come from YouTube's official
 ``videos.list(chart=mostPopular, regionCode=...)`` endpoint.  We preserve that
-country's chart order and retain videos whose public metadata explicitly marks
-them as podcasts.  This means a podcast from any creator country can appear if
-it is trending for the selected audience country.  The API key is used only on
-the server and never sent to the browser.
+country's chart order and retain videos with public podcast-style metadata.
+This means a podcast from any creator country can appear if it is trending for
+the selected audience country.  The API key is used only on the server and
+never sent to the browser.
 """
 from __future__ import annotations
 
@@ -21,7 +21,17 @@ from app.config import settings
 logger = logging.getLogger("trialguard.trending")
 
 _REGION_RE = re.compile(r"^[A-Z]{2}$")
-_PODCAST_RE = re.compile(r"\bpod[\s-]*casts?\b", re.IGNORECASE)
+_PODCAST_RE = re.compile(
+    r"(?:"
+    r"\bpod[\s-]*casts?\b|\bvodcasts?\b|\btalk\s*show\b|"
+    r"\binterviews?\b|\bconversations?\b|\bround\s*table\b|"
+    r"\bpanel\s+discussion\b|\bfireside\s+chat\b|"
+    r"\b(?:talk|podcast)\s+episode\b|\bep(?:isode)?\.?\s*\d+\b|"
+    r"\btalks\b|बातचीत|इंटरव्यू|साक्षात्कार|चर्चा|संवाद|"
+    r"ポッドキャスト|インタビュー|entrevistas?|conversaci[óo]n|charlas?|bate-papo"
+    r")",
+    re.IGNORECASE,
+)
 _VIDEOS_API_URL = "https://www.googleapis.com/youtube/v3/videos"
 _cache: dict[tuple[str, int, str], tuple[float, "TrendingPage"]] = {}
 _client: httpx.AsyncClient | None = None
@@ -70,11 +80,11 @@ def _thumbnail(snippet: dict) -> str:
 
 
 def _is_podcast(snippet: dict) -> bool:
-    """Identify videos explicitly described as podcasts by YouTube metadata.
+    """Identify podcast-style videos using public YouTube metadata.
 
     YouTube's regional Trending endpoint has no official podcast-only filter,
-    so this intentionally uses only public title, description, channel and tag
-    metadata after obtaining the official regional chart.
+    so this uses practical podcast indicators in public title, description,
+    channel and tag metadata after obtaining the official regional chart.
     """
     parts = [
         snippet.get("title"),
