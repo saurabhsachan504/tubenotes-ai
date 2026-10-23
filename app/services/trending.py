@@ -1,9 +1,11 @@
-"""Official country-specific YouTube trending chart lookup.
+"""Country-specific, podcast-only YouTube Trending chart lookup.
 
-This uses YouTube's ``videos.list(chart=mostPopular, regionCode=...)`` endpoint
-instead of a keyword search. Therefore a selected country matches the same
-regional audience chart that YouTube exposes for that country. The API key is
-used only on the server and never sent to the browser.
+Candidates come from YouTube's official
+``videos.list(chart=mostPopular, regionCode=...)`` endpoint.  We preserve that
+country's chart order and retain videos whose public metadata explicitly marks
+them as podcasts.  This means a podcast from any creator country can appear if
+it is trending for the selected audience country.  The API key is used only on
+the server and never sent to the browser.
 """
 from __future__ import annotations
 
@@ -19,6 +21,7 @@ from app.config import settings
 logger = logging.getLogger("trialguard.trending")
 
 _REGION_RE = re.compile(r"^[A-Z]{2}$")
+_PODCAST_RE = re.compile(r"\bpod[\s-]*casts?\b", re.IGNORECASE)
 _VIDEOS_API_URL = "https://www.googleapis.com/youtube/v3/videos"
 _cache: dict[tuple[str, int, str], tuple[float, "TrendingPage"]] = {}
 _client: httpx.AsyncClient | None = None
@@ -66,20 +69,41 @@ def _thumbnail(snippet: dict) -> str:
     return ""
 
 
+def _is_podcast(snippet: dict) -> bool:
+    """Identify videos explicitly described as podcasts by YouTube metadata.
+
+    YouTube's regional Trending endpoint has no official podcast-only filter,
+    so this intentionally uses only public title, description, channel and tag
+    metadata after obtaining the official regional chart.
+    """
+    parts = [
+        snippet.get("title"),
+        snippet.get("description"),
+        snippet.get("channelTitle"),
+    ]
+    tags = snippet.get("tags") or []
+    if isinstance(tags, list):
+        parts.extend(tag for tag in tags if isinstance(tag, str))
+    return _PODCAST_RE.search(" ".join(part for part in parts if isinstance(part, str))) is not None
+
+
 async def fetch(
     region: str,
     limit: int = 10,
     page_token: str | None = None,
 ) -> TrendingPage:
-    """Return one page from YouTube's official ``mostPopular`` regional chart."""
+    """Return podcasts from one page of YouTube's official regional chart."""
     region = normalise_region(region)
     if not region:
         raise TrendingUnavailable("Choose a valid two-letter country code.")
     api_key = settings.YOUTUBE_DATA_API_KEY.strip()
     if not api_key:
-        raise TrendingUnavailable("Trending videos are not configured yet.")
+        raise TrendingUnavailable("Trending podcasts are not configured yet.")
 
     limit = max(1, min(int(limit), 50))
+    # Fetch a wider part of the official chart before filtering it to podcasts.
+    # ``videos.list`` permits at most 50 items per request.
+    candidate_limit = min(50, max(25, limit * 5))
     page_token = (page_token or "").strip()
     key = (region, limit, page_token)
     now = time.monotonic()
@@ -94,19 +118,19 @@ async def fetch(
                 "part": "snippet,statistics",
                 "chart": "mostPopular",
                 "regionCode": region,
-                "maxResults": limit,
+                "maxResults": candidate_limit,
                 "pageToken": page_token or None,
                 "key": api_key,
-                "fields": "nextPageToken,items(id,snippet(title,channelTitle,publishedAt,thumbnails),statistics(viewCount))",
+                "fields": "nextPageToken,items(id,snippet(title,description,tags,channelTitle,publishedAt,thumbnails),statistics(viewCount))",
             },
         )
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
         logger.warning("YouTube regional trending API returned HTTP %s", exc.response.status_code)
-        raise TrendingUnavailable("Trending videos are temporarily unavailable.") from exc
+        raise TrendingUnavailable("Trending podcasts are temporarily unavailable.") from exc
     except httpx.HTTPError as exc:
         logger.warning("YouTube regional trending API request failed: %s", exc.__class__.__name__)
-        raise TrendingUnavailable("Trending videos are temporarily unavailable.") from exc
+        raise TrendingUnavailable("Trending podcasts are temporarily unavailable.") from exc
 
     payload = response.json()
     videos: list[TrendingVideo] = []
@@ -114,7 +138,7 @@ async def fetch(
         video_id = item.get("id")
         snippet = item.get("snippet") or {}
         title = snippet.get("title")
-        if not isinstance(video_id, str) or not isinstance(title, str):
+        if not isinstance(video_id, str) or not isinstance(title, str) or not _is_podcast(snippet):
             continue
         views_raw = (item.get("statistics") or {}).get("viewCount")
         try:
@@ -132,9 +156,11 @@ async def fetch(
                 url=f"https://www.youtube.com/watch?v={video_id}",
             )
         )
+        if len(videos) >= limit:
+            break
 
     if not videos:
-        raise TrendingUnavailable("No trending chart is available for this country.")
+        raise TrendingUnavailable("No trending podcasts are available for this country.")
     result = TrendingPage(
         videos=tuple(videos),
         next_page_token=payload.get("nextPageToken") if isinstance(payload.get("nextPageToken"), str) else None,

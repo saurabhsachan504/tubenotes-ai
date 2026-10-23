@@ -7,7 +7,7 @@ from app.services import trending as trending_service
 from app.services.trending import TrendingPage, TrendingVideo
 
 
-def test_official_regional_chart_request(monkeypatch):
+def test_official_regional_chart_filters_to_podcasts(monkeypatch):
     requests = []
 
     async def handler(request):
@@ -17,12 +17,22 @@ def test_official_regional_chart_request(monkeypatch):
             json={
                 "nextPageToken": "NEXT_PAGE_TOKEN",
                 "items": [{
-                    "id": "dQw4w9WgXcQ",
+                    "id": "not-a-podcast",
                     "snippet": {
-                        "title": "A regionally trending video",
+                        "title": "A regionally trending movie trailer",
                         "channelTitle": "Trending channel",
                         "publishedAt": "2026-10-20T12:00:00Z",
                         "thumbnails": {"high": {"url": "https://example.test/thumb.jpg"}},
+                    },
+                    "statistics": {"viewCount": "456789"},
+                }, {
+                    "id": "dQw4w9WgXcQ",
+                    "snippet": {
+                        "title": "A regionally trending podcast",
+                        "description": "The official video podcast episode.",
+                        "channelTitle": "Trending channel",
+                        "publishedAt": "2026-10-20T12:00:00Z",
+                        "thumbnails": {"high": {"url": "https://example.test/podcast.jpg"}},
                     },
                     "statistics": {"viewCount": "456789"},
                 }],
@@ -40,6 +50,7 @@ def test_official_regional_chart_request(monkeypatch):
         trending_service._cache.clear()
 
     assert len(page.videos) == 1
+    assert page.videos[0].video_id == "dQw4w9WgXcQ"
     assert page.videos[0].views == 456789
     assert page.next_page_token == "NEXT_PAGE_TOKEN"
     params = dict(requests[0].url.params)
@@ -47,7 +58,7 @@ def test_official_regional_chart_request(monkeypatch):
     assert params["chart"] == "mostPopular"
     assert params["regionCode"] == "US"
     assert params["pageToken"] == "FIRST_TOKEN"
-    assert params["maxResults"] == "10"
+    assert params["maxResults"] == "50"
     assert "q" not in params
     assert "publishedAfter" not in params
 
