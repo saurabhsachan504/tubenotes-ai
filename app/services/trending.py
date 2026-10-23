@@ -1,11 +1,9 @@
-"""Country-specific, podcast-only YouTube Trending chart lookup.
+"""Country-specific, top-watched podcast lookup.
 
-Candidates come from YouTube's official
-``videos.list(chart=mostPopular, regionCode=...)`` endpoint.  We preserve that
-country's chart order and retain videos with public podcast-style metadata.
-This means a podcast from any creator country can appear if it is trending for
-the selected audience country.  The API key is used only on the server and
-never sent to the browser.
+Each country uses a query based on its curated podcast directory.  YouTube
+searches are ordered by total video views, then each result is enriched with
+its current view count.  This is intentionally different from YouTube's
+short-lived ``mostPopular`` (Trending) chart.  The API key is server-only.
 """
 from __future__ import annotations
 
@@ -24,9 +22,8 @@ _REGION_RE = re.compile(r"^[A-Z]{2}$")
 _PODCAST_RE = re.compile(r"\b(?:pod[\s-]*casts?|vodcasts?)\b", re.IGNORECASE)
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 # Trusted channel-name markers curated from the product's podcast catalogue.
-# They are only used to classify videos that already appear in YouTube's
-# selected regional ``mostPopular`` chart; they never alter the chart country
-# or its ordering.
+# They only classify candidates returned by YouTube's selected-country search.
+# They never change the selected country or the API's view-count ordering.
 _KNOWN_PODCAST_CHANNEL_MARKERS = frozenset({
     # India
     "beerbiceps", "the ranveer show", "raj shamani", "figuring out", "wtf is",
@@ -103,13 +100,30 @@ _KNOWN_PODCAST_CHANNEL_MARKERS = frozenset({
     "club shay shay", "games with names", "crime junkie", "my favorite murder",
     "rotten mango", "stephanie soo",
 })
+_SEARCH_API_URL = "https://www.googleapis.com/youtube/v3/search"
 _VIDEOS_API_URL = "https://www.googleapis.com/youtube/v3/videos"
+_COUNTRY_PODCAST_QUERIES = {
+    "IN": "podcast|raj shamani|beerbiceps|ranveer allahbadia|nikhil kamath|lallantop|sandeep maheshwari",
+    "US": "podcast|joe rogan|lex fridman|huberman lab|tim ferriss|call her daddy|my first million",
+    "GB": "podcast|diary of a ceo|steven bartlett|modern wisdom|rest is history|shxtsngigs|the fellas",
+    "CA": "podcast|full send|tmg podcast|wan show|jeff nippard|kurtis conner|steve dangle",
+    "AU": "podcast|cold ones|misfits|hamish and andy|howie games|alpha blokes|casefile",
+    "DE": "podcast|hotel matze|jung und naiv|omr podcast|hobbylos|baywatch berlin|finanzfluss",
+    "FR": "podcast|zack nani|popcorn|legend|hugo decrypte|mcfly carlito|affaires sensibles",
+    "BR": "podcast|flow podcast|inteligencia ltda|poddelas|nerdcast|ticaracaticast|mamilos",
+    "AE": "podcast|abtalks|anas bukhash|hikmat wehbi|dukkan show|kris fade|dubai works",
+    "ID": "podcast|deddy corbuzier|close the door|vindes|podkesmas|gita wirjawan|raymond chin",
+    "MX": "podcast|la cotorrisa|leyendas legendarias|creativo|gusgri|farid dieck|cracks podcast",
+}
+_RELEVANCE_LANGUAGES = {
+    "DE": "de", "FR": "fr", "BR": "pt", "AE": "ar", "ID": "id", "MX": "es",
+}
 _cache: dict[tuple[str, int, str], tuple[float, "TrendingPage"]] = {}
 _client: httpx.AsyncClient | None = None
 
 
 class TrendingUnavailable(Exception):
-    """The upstream regional chart cannot currently be shown."""
+    """The upstream top-podcast lookup cannot currently be shown."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,9 +178,9 @@ def _is_known_podcast_channel(channel_name: object) -> bool:
 def _is_podcast(snippet: dict) -> bool:
     """Identify podcast-style videos using public YouTube metadata.
 
-    YouTube's regional Trending endpoint has no official podcast-only filter,
+    YouTube's public search API has no official podcast-only filter,
     so this requires an explicit ``podcast``/``vodcast`` metadata marker or a
-    trusted channel-name marker after obtaining the official regional chart.
+    trusted channel-name marker after obtaining the country search results.
     """
     parts = [
         snippet.get("title"),
@@ -185,7 +199,7 @@ async def fetch(
     limit: int = 10,
     page_token: str | None = None,
 ) -> TrendingPage:
-    """Return podcasts from one page of YouTube's official regional chart."""
+    """Return top-watched podcast videos for one selected country."""
     region = normalise_region(region)
     if not region:
         raise TrendingUnavailable("Choose a valid two-letter country code.")
@@ -194,8 +208,7 @@ async def fetch(
         raise TrendingUnavailable("Trending podcasts are not configured yet.")
 
     limit = max(1, min(int(limit), 50))
-    # Fetch a wider part of the official chart before filtering it to podcasts.
-    # ``videos.list`` permits at most 50 items per request.
+    # Search up to 50 candidates, then keep the first requested podcast videos.
     candidate_limit = min(50, max(25, limit * 5))
     page_token = (page_token or "").strip()
     key = (region, limit, page_token)
@@ -205,30 +218,66 @@ async def fetch(
         return cached[1]
 
     try:
-        response = await _http_client().get(
-            _VIDEOS_API_URL,
+        search_response = await _http_client().get(
+            _SEARCH_API_URL,
             params={
-                "part": "snippet,statistics",
-                "chart": "mostPopular",
+                "part": "snippet",
+                "q": _COUNTRY_PODCAST_QUERIES.get(region, "podcast"),
                 "regionCode": region,
+                "relevanceLanguage": _RELEVANCE_LANGUAGES.get(region),
+                "type": "video",
+                "order": "viewCount",
+                "videoDuration": "long",
                 "maxResults": candidate_limit,
                 "pageToken": page_token or None,
                 "key": api_key,
-                "fields": "nextPageToken,items(id,snippet(title,description,tags,channelTitle,publishedAt,thumbnails),statistics(viewCount))",
+                "fields": "nextPageToken,items(id/videoId,snippet(title,description,channelTitle,publishedAt,thumbnails))",
             },
         )
-        response.raise_for_status()
+        search_response.raise_for_status()
     except httpx.HTTPStatusError as exc:
-        logger.warning("YouTube regional trending API returned HTTP %s", exc.response.status_code)
-        raise TrendingUnavailable("Trending podcasts are temporarily unavailable.") from exc
+        logger.warning("YouTube top-podcast search returned HTTP %s", exc.response.status_code)
+        raise TrendingUnavailable("Top podcasts are temporarily unavailable.") from exc
     except httpx.HTTPError as exc:
-        logger.warning("YouTube regional trending API request failed: %s", exc.__class__.__name__)
-        raise TrendingUnavailable("Trending podcasts are temporarily unavailable.") from exc
+        logger.warning("YouTube top-podcast search failed: %s", exc.__class__.__name__)
+        raise TrendingUnavailable("Top podcasts are temporarily unavailable.") from exc
 
-    payload = response.json()
+    payload = search_response.json()
+    search_items = payload.get("items", [])
+    video_ids = [
+        item.get("id", {}).get("videoId")
+        for item in search_items
+        if isinstance(item, dict) and isinstance(item.get("id"), dict) and isinstance(item["id"].get("videoId"), str)
+    ]
+    if not video_ids:
+        raise TrendingUnavailable("No top podcasts are available for this country.")
+
+    try:
+        details_response = await _http_client().get(
+            _VIDEOS_API_URL,
+            params={
+                "part": "snippet,statistics",
+                "id": ",".join(video_ids),
+                "key": api_key,
+                "fields": "items(id,snippet(title,description,tags,channelTitle,publishedAt,thumbnails),statistics(viewCount))",
+            },
+        )
+        details_response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        logger.warning("YouTube top-podcast details returned HTTP %s", exc.response.status_code)
+        raise TrendingUnavailable("Top podcasts are temporarily unavailable.") from exc
+    except httpx.HTTPError as exc:
+        logger.warning("YouTube top-podcast details request failed: %s", exc.__class__.__name__)
+        raise TrendingUnavailable("Top podcasts are temporarily unavailable.") from exc
+
+    details_by_id = {
+        item.get("id"): item
+        for item in details_response.json().get("items", [])
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
     videos: list[TrendingVideo] = []
-    for item in payload.get("items", []):
-        video_id = item.get("id")
+    for video_id in video_ids:
+        item = details_by_id.get(video_id) or {}
         snippet = item.get("snippet") or {}
         title = snippet.get("title")
         if not isinstance(video_id, str) or not isinstance(title, str) or not _is_podcast(snippet):
@@ -253,7 +302,7 @@ async def fetch(
             break
 
     if not videos:
-        raise TrendingUnavailable("No trending podcasts are available for this country.")
+        raise TrendingUnavailable("No top podcasts are available for this country.")
     result = TrendingPage(
         videos=tuple(videos),
         next_page_token=payload.get("nextPageToken") if isinstance(payload.get("nextPageToken"), str) else None,

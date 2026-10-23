@@ -256,7 +256,7 @@
     return json;
   }
 
-  // Official regional trending data comes from our backend so the YouTube
+  // Country-specific top-podcast data comes from our backend so the YouTube
   // Data API key never reaches the page. Each card uses the same flow as a pasted URL.
   function countryName(code) {
     try {
@@ -284,7 +284,7 @@
     if (Array.from(selector.options).some((option) => option.value === data.region)) selector.value = data.region;
     trendingLoadedRegion = data.region;
     trendingNextPageToken = data.next_page_token || null;
-    hint.textContent = `Top trending podcasts in ${countryName(data.region)}. Click to Summarize`;
+    hint.textContent = `Top watched podcasts in ${countryName(data.region)}. Click to Summarize`;
 
     data.videos.forEach((video, index) => {
       const button = document.createElement("button");
@@ -303,7 +303,7 @@
       copy.className = "trending-copy";
       const rank = document.createElement("span");
       rank.className = "trending-rank";
-      rank.textContent = `#${index + 1} trending podcast`;
+      rank.textContent = `#${index + 1} top watched podcast`;
       const title = document.createElement("span");
       title.className = "trending-title";
       title.textContent = video.title;
@@ -341,7 +341,7 @@
       if (pageToken) params.set("page_token", pageToken);
       const query = params.size ? `?${params}` : "";
       const data = await api(`/trending${query}`, { auth: false, cache: "no-store" });
-      if (!data || !Array.isArray(data.videos) || !data.videos.length) throw new Error("No trending podcasts available.");
+      if (!data || !Array.isArray(data.videos) || !data.videos.length) throw new Error("No top podcasts available.");
       renderTrending(data, { append });
     } catch (_) {
       // An unset key or a temporary YouTube failure must not distract from

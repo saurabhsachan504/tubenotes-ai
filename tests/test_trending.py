@@ -7,19 +7,29 @@ from app.services import trending as trending_service
 from app.services.trending import TrendingPage, TrendingVideo
 
 
-def test_official_regional_chart_filters_to_podcasts(monkeypatch):
+def test_top_watched_country_podcast_request(monkeypatch):
     requests = []
 
     async def handler(request):
         requests.append(request)
+        if request.url.path.endswith("/search"):
+            return httpx.Response(
+                200,
+                json={
+                    "nextPageToken": "NEXT_PAGE_TOKEN",
+                    "items": [
+                        {"id": {"videoId": "not-a-podcast"}},
+                        {"id": {"videoId": "dQw4w9WgXcQ"}},
+                    ],
+                },
+            )
         return httpx.Response(
             200,
             json={
-                "nextPageToken": "NEXT_PAGE_TOKEN",
                 "items": [{
                     "id": "not-a-podcast",
                     "snippet": {
-                        "title": "A regionally trending movie trailer",
+                        "title": "A popular movie trailer",
                         "channelTitle": "Trending channel",
                         "publishedAt": "2026-10-20T12:00:00Z",
                         "thumbnails": {"high": {"url": "https://example.test/thumb.jpg"}},
@@ -28,7 +38,7 @@ def test_official_regional_chart_filters_to_podcasts(monkeypatch):
                 }, {
                     "id": "dQw4w9WgXcQ",
                     "snippet": {
-                        "title": "A regionally trending podcast interview",
+                        "title": "A highly watched podcast interview",
                         "description": "A long-form conversation with the guest.",
                         "channelTitle": "Trending channel",
                         "publishedAt": "2026-10-20T12:00:00Z",
@@ -53,14 +63,18 @@ def test_official_regional_chart_filters_to_podcasts(monkeypatch):
     assert page.videos[0].video_id == "dQw4w9WgXcQ"
     assert page.videos[0].views == 456789
     assert page.next_page_token == "NEXT_PAGE_TOKEN"
-    params = dict(requests[0].url.params)
-    assert requests[0].url.path.endswith("/videos")
-    assert params["chart"] == "mostPopular"
-    assert params["regionCode"] == "US"
-    assert params["pageToken"] == "FIRST_TOKEN"
-    assert params["maxResults"] == "50"
-    assert "q" not in params
-    assert "publishedAfter" not in params
+    search_params = dict(requests[0].url.params)
+    assert requests[0].url.path.endswith("/search")
+    assert search_params["regionCode"] == "US"
+    assert search_params["pageToken"] == "FIRST_TOKEN"
+    assert search_params["maxResults"] == "50"
+    assert search_params["type"] == "video"
+    assert search_params["order"] == "viewCount"
+    assert search_params["videoDuration"] == "long"
+    assert search_params["q"] == trending_service._COUNTRY_PODCAST_QUERIES["US"]
+    assert "chart" not in search_params
+    assert requests[1].url.path.endswith("/videos")
+    assert dict(requests[1].url.params)["id"] == "not-a-podcast,dQw4w9WgXcQ"
 
 
 def test_podcast_detection_requires_explicit_marker_or_trusted_channel():

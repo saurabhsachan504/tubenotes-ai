@@ -290,7 +290,7 @@ class Settings(BaseSettings):
     # Public trending data is fetched by the API server, never by the browser.
     # This keeps the YouTube Data API key out of page source and extension code.
     YOUTUBE_DATA_API_KEY: str = ""
-    # Cache each country's official chart briefly to save YouTube API quota.
+    # Cache each country's top-podcast lookup to save YouTube API quota.
     YOUTUBE_TRENDING_CACHE_SECONDS: int = Field(default=21_600, ge=300, le=86_400)
     YOUTUBE_TRENDING_DEFAULT_REGION: str = "IN"
     # The two transcript sources used to run one after the other: the captions
