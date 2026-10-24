@@ -51,22 +51,11 @@ def test_google_login_records_last_login_time(client, db, device, monkeypatch):
 
     response = client.post(
         f"{API}/auth/google",
-        json={"credential": "x" * 20, "device": device, "newsletter_opt_in": True},
+        json={"credential": "x" * 20, "device": device},
     )
 
     assert response.status_code == 200, response.text
-    user = db.query(User).filter_by(email="google-last-login@example.com").one()
-    assert user.last_login_at is not None
-    assert user.newsletter_opt_in is True
-
-    # A later Google sign-in must not overwrite consent from its checkbox.
-    repeat = client.post(
-        f"{API}/auth/google",
-        json={"credential": "x" * 20, "device": device, "newsletter_opt_in": False},
-    )
-    assert repeat.status_code == 200, repeat.text
-    db.expire_all()
-    assert db.query(User).filter_by(email="google-last-login@example.com").one().newsletter_opt_in is True
+    assert db.query(User).filter_by(email="google-last-login@example.com").one().last_login_at is not None
 
 
 def test_signup_sends_one_personalised_welcome_email(client, device, monkeypatch):

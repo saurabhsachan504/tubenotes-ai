@@ -2061,7 +2061,6 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     $("tabIn").classList.toggle("on", !up);
     $("tabUp").classList.toggle("on", up);
     $("nameWrap").classList.toggle("hidden", !up);
-    $("newsletterOptInWrap").classList.toggle("hidden", !up);
     $("authTitle").textContent = up ? "Create your account" : "Welcome back";
     $("authLead").textContent = up
       ? "5 free videos, no card needed."
@@ -2339,7 +2338,6 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
       ]);
       accountUser = user;
       $("acctEmail").textContent = user.email;
-      $("newsletterPreference").checked = Boolean(user.newsletter_opt_in);
       paintChip(ent);
       const pro = ent.plan === "subscription";
       const complimentaryPro = ent.subscription_status === "manual";
@@ -2575,7 +2573,6 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
       };
       if (authMode === "signup") {
         body.full_name = $("fullName").value.trim() || null;
-        body.newsletter_opt_in = $("newsletterOptIn").checked;
       }
       const data = await api(authMode === "signup" ? "/auth/signup" : "/auth/login",
         { auth: false, method: "POST", body });
@@ -2636,29 +2633,6 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     try { if (t) await api("/auth/logout", { method: "POST", body: { refresh_token: t.refresh_token } }); } catch (_) {}
     tokens.clear(); accountUser = null; paintChip(null); closeModal();
   };
-
-  $("newsletterPreference").addEventListener("change", async (event) => {
-    const control = event.currentTarget;
-    const previous = !control.checked;
-    control.disabled = true;
-    try {
-      const user = await api("/auth/newsletter-preference", {
-        method: "PUT", body: { newsletter_opt_in: control.checked },
-      });
-      accountUser = user;
-      control.checked = Boolean(user.newsletter_opt_in);
-      $("acctMsg").textContent = control.checked
-        ? "Podcast updates are on. You can unsubscribe anytime."
-        : "Podcast updates are off.";
-      $("acctMsg").className = "msg ok";
-    } catch (error) {
-      control.checked = previous;
-      $("acctMsg").textContent = error.message || "Couldn't update email preference.";
-      $("acctMsg").className = "msg";
-    } finally {
-      control.disabled = false;
-    }
-  });
 
   $("upgradeBtn").onclick = beginSubscription;
   $("offerClose").onclick = closeOffer;
@@ -2724,7 +2698,6 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
         body: {
           credential: resp.credential,
           device: device(),
-          newsletter_opt_in: $("googleNewsletterOptIn").checked,
         },
       });
       await finishAuthenticatedLogin(data);
@@ -2749,13 +2722,6 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
 
   // ---- boot ----
   if ($("outLang")) fillLangSelect($("outLang"), { includeAuto: true });
-  // Newsletter card links land on the app with their chosen YouTube video
-  // already in the summarizer field. We never auto-run it: the visitor stays
-  // in control of language and any sign-in requirement.
-  try {
-    const sharedVideo = new URLSearchParams(window.location.search).get("youtube_url");
-    if (sharedVideo && videoIdFrom(sharedVideo)) $("url").value = sharedVideo;
-  } catch (_) {}
   initAddToHomeScreen();
   initMotionReveals();
   initGoogle();

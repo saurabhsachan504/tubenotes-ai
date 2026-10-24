@@ -54,7 +54,6 @@ class SignupRequest(BaseModel):
     full_name: str | None = Field(default=None, max_length=120)
     device: DeviceFingerprint
     signup_source: Literal["web", "extension"] = "web"
-    newsletter_opt_in: bool = False
 
     @field_validator("email")
     @classmethod
@@ -72,9 +71,6 @@ class GoogleLoginRequest(BaseModel):
     credential: str = Field(min_length=20, max_length=8192)
     device: DeviceFingerprint
     signup_source: Literal["web", "extension"] = "web"
-    # Consent is collected in the web UI before the Google credential flow.
-    # It only applies when this request creates a brand-new account.
-    newsletter_opt_in: bool = False
 
 
 class LoginRequest(BaseModel):
@@ -121,13 +117,8 @@ class UserOut(BaseModel):
     email_verified: bool
     is_active: bool
     is_admin: bool
-    newsletter_opt_in: bool
     trials_used: int
     created_at: datetime
-
-
-class NewsletterPreferenceRequest(BaseModel):
-    newsletter_opt_in: bool
 
 
 class TokenPair(BaseModel):
