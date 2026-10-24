@@ -2543,12 +2543,16 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     }
   };
 
-  $("themeBtn").onclick = () => {
-    const dark = document.documentElement.dataset.theme === "dark";
-    document.documentElement.dataset.theme = dark ? "light" : "dark";
-    $("themeBtn").textContent = dark ? "🌙" : "☀️";
-    try { localStorage.setItem("tn_theme", dark ? "light" : "dark"); } catch (_) {}
-  };
+  const themeSelect = $("themeSelect");
+  function setTheme(theme, persist = true) {
+    const selected = theme === "dark" ? "dark" : "light";
+    document.documentElement.dataset.theme = selected;
+    themeSelect.value = selected;
+    if (persist) {
+      try { localStorage.setItem("tn_theme", selected); } catch (_) {}
+    }
+  }
+  themeSelect.addEventListener("change", () => setTheme(themeSelect.value));
 
   $("accountBtn").onclick = () => (signedIn() ? openAccount() : openAuth("login"));
   $("tabIn").onclick = () => setAuthMode("login");
@@ -2728,7 +2732,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   prepareWebPush();
   try {
     const t = localStorage.getItem("tn_theme");
-    if (t) { document.documentElement.dataset.theme = t; $("themeBtn").textContent = t === "dark" ? "☀️" : "🌙"; }
+    if (t) setTheme(t, false);
   } catch (_) {}
   refreshAccountIdentity();
   refreshEntitlement();
