@@ -28,6 +28,7 @@ from app.schemas import (
     GoogleLoginRequest,
     LoginRequest,
     LogoutRequest,
+    NewsletterPreferenceRequest,
     MessageOut,
     PasswordChangeRequest,
     PasswordResetRequest,
@@ -142,6 +143,8 @@ def signup(
         signup_ip=ip,
         billing_country=pricing.country_code_for_headers(request.headers),
         signup_source=_signup_source(request, payload.signup_source),
+        newsletter_opt_in=payload.newsletter_opt_in,
+        newsletter_opted_in_at=_now() if payload.newsletter_opt_in else None,
     )
     db.add(user)
     try:
@@ -527,6 +530,24 @@ def logout(
 
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
+    return UserOut.model_validate(user)
+
+
+@router.put("/newsletter-preference", response_model=UserOut)
+def update_newsletter_preference(
+    payload: NewsletterPreferenceRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Let an authenticated customer grant or withdraw marketing consent."""
+    user.newsletter_opt_in = payload.newsletter_opt_in
+    if payload.newsletter_opt_in:
+        user.newsletter_opted_in_at = _now()
+        user.newsletter_unsubscribed_at = None
+    else:
+        user.newsletter_unsubscribed_at = _now()
+    db.commit()
+    db.refresh(user)
     return UserOut.model_validate(user)
 
 

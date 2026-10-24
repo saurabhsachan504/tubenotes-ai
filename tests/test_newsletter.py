@@ -1,0 +1,77 @@
+from datetime import datetime
+
+from app.models import NewsletterRun, User
+from app.services import newsletter
+
+
+def test_newsletter_schedule_is_wednesday_and_sunday_at_9am_ist():
+    assert newsletter.is_due(datetime(2026, 10, 25, 9, 0, tzinfo=newsletter.IST))  # Sunday
+    assert newsletter.is_due(datetime(2026, 10, 28, 9, 0, tzinfo=newsletter.IST))  # Wednesday
+    assert not newsletter.is_due(datetime(2026, 10, 28, 9, 1, tzinfo=newsletter.IST))
+    assert not newsletter.is_due(datetime(2026, 10, 26, 9, 0, tzinfo=newsletter.IST))
+
+
+def test_unsubscribe_link_turns_off_marketing_preference(client, db, device):
+    result = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "email": "updates@example.com",
+            "password": "Str0ngPass1",
+            "device": device,
+            "newsletter_opt_in": True,
+        },
+    )
+    assert result.status_code == 201, result.text
+    user = db.query(User).filter_by(email="updates@example.com").one()
+    assert user.newsletter_opt_in is True
+    response = client.get(
+        "/api/v1/newsletter/unsubscribe",
+        params={"token": newsletter.unsubscribe_token(user.id)},
+    )
+    assert response.status_code == 200
+    db.expire_all()
+    user = db.query(User).filter_by(email="updates@example.com").one()
+    assert user.newsletter_opt_in is False
+    assert user.newsletter_unsubscribed_at is not None
+
+
+def test_newsletter_preference_can_be_changed_after_signup(client, db, device):
+    result = client.post(
+        "/api/v1/auth/signup",
+        json={"email": "preference@example.com", "password": "Str0ngPass1", "device": device},
+    )
+    token = result.json()["tokens"]["access_token"]
+    response = client.put(
+        "/api/v1/auth/newsletter-preference",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"newsletter_opt_in": True},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["newsletter_opt_in"] is True
+    db.expire_all()
+    assert db.query(User).filter_by(email="preference@example.com").one().newsletter_opted_in_at is not None
+
+
+def test_due_run_is_idempotent_and_targets_only_opted_in_users(db, monkeypatch):
+    opted_in = User(email="yes@example.com", password_hash="x", newsletter_opt_in=True)
+    opted_out = User(email="no@example.com", password_hash="x", newsletter_opt_in=False)
+    db.add_all([opted_in, opted_out])
+    db.commit()
+    monkeypatch.setattr(newsletter.settings, "NEWSLETTER_ENABLED", True)
+    monkeypatch.setattr(newsletter.settings, "EMAIL_BACKEND", "smtp")
+    monkeypatch.setattr(newsletter.settings, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(newsletter.settings, "MARKETING_ADDRESS", "TubeNotes, India")
+    monkeypatch.setattr(newsletter, "_latest_videos", lambda: ())
+    sent = []
+    monkeypatch.setattr(
+        newsletter.email,
+        "send_email",
+        lambda to, *args, **kwargs: sent.append(to) or True,
+    )
+    at = datetime(2026, 10, 25, 9, 0, tzinfo=newsletter.IST)
+    first = newsletter.run_due(db, at=at)
+    second = newsletter.run_due(db, at=at)
+    assert first == {"status": "completed", "recipients": 1, "delivered": 1, "failed": 0}
+    assert second["status"] == "already_sent"
+    assert sent == ["yes@example.com"]
+    assert db.query(NewsletterRun).count() == 1

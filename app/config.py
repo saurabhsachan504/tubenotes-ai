@@ -453,6 +453,14 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     SMTP_STARTTLS: bool = True
 
+    # Explicit opt-in newsletter.  The host cron invokes the job every minute;
+    # it sends only at 09:00 Asia/Kolkata on Wednesday and Sunday.
+    NEWSLETTER_ENABLED: bool = False
+    NEWSLETTER_MAX_VIDEOS: int = 3
+    # Required sender postal/contact line for commercial email.  Set this to
+    # the business address used in your legal notices before enabling sends.
+    MARKETING_ADDRESS: str = ""
+
     APP_BASE_URL: str = "http://localhost:8000"
 
     # Old integrations may still use this header key.  The browser dashboard

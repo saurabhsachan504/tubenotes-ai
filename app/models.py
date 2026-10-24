@@ -99,6 +99,11 @@ class User(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Marketing mail is strictly opt-in.  Keeping the timestamps lets support
+    # answer consent questions without retaining a separate tracking profile.
+    newsletter_opt_in: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    newsletter_opted_in_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    newsletter_unsubscribed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     trials_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # Optional per-account override of the global free limit (support/grants).
@@ -263,6 +268,25 @@ class EmailNotification(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class NewsletterRun(TimestampMixin, Base):
+    """One scheduled marketing-email run.
+
+    ``schedule_key`` is unique so a retrying host cron job cannot send the
+    Wednesday/Sunday issue twice.
+    """
+
+    __tablename__ = "newsletter_runs"
+    __table_args__ = (UniqueConstraint("schedule_key", name="uq_newsletter_runs_schedule_key"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    schedule_key: Mapped[str] = mapped_column(String(48), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="running", nullable=False)
+    recipient_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    delivered_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class WebPushSubscription(Base):
