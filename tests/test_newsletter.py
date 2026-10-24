@@ -95,8 +95,9 @@ def test_newsletter_card_uses_full_width_image_and_decodes_youtube_title():
     assert 'Daniel "Podcast"' in plain
     assert "Daniel &amp;quot;" not in rendered
     assert "1.3K views" in rendered
-    assert "Duration: 48m 21s" in rendered
+    assert "24 Oct 2026 &middot; 48m 21s" in rendered
     assert "YouTube Summarizer &amp; PDF Generator" in rendered
+    assert "Top Trending Video" in rendered
     assert "Summarize Video" in rendered
     assert "youtube_url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3Dvideo-id" in rendered
     assert "text-align:center" in rendered
@@ -115,6 +116,8 @@ def test_newsletter_groups_six_cards_into_two_three_column_rows():
     _, _, rendered = newsletter.newsletter_content(user, videos)
     assert rendered.count('class="podcast-column"') == 6
     assert rendered.count('width="33.33%"') == 6
+    assert rendered.count('height="278"') == 6
+    assert rendered.count('height="92"') == 6
 
 
 def test_newsletter_preview_sends_only_requested_address(monkeypatch):
