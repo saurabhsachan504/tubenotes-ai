@@ -203,7 +203,10 @@ async def _prepare_video(payload: VideoRequest, video_id: str):
         value = await youtube.fetch_metadata(video_id)
         return value, (time.perf_counter() - started) * 1000
 
-    meta, metadata_ms = await metadata()
+    (meta, metadata_ms), duration_seconds = await asyncio.gather(
+        metadata(), youtube.fetch_duration_seconds(video_id)
+    )
+    meta.duration_seconds = duration_seconds
     preferred_language = youtube.title_language_hint(meta.title)
 
     async def transcript():
@@ -549,6 +552,7 @@ async def summarize(
     )
     if cached_row is not None:
         meta = await youtube.fetch_metadata(video_id)
+        meta.duration_seconds = await youtube.fetch_duration_seconds(video_id)
         await run_in_threadpool(
             job_audit.finish, job_id, status="success", title=meta.title,
             language=cached_target, cached=True, output_text=cached_row.text,
@@ -753,6 +757,7 @@ async def notes(
     )
     if cached_row is not None:
         meta = await youtube.fetch_metadata(video_id)
+        meta.duration_seconds = await youtube.fetch_duration_seconds(video_id)
         await run_in_threadpool(
             job_audit.finish, job_id, status="success", title=meta.title,
             language=cached_target, cached=True, output_text=cached_row.text,

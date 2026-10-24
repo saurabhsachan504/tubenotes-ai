@@ -10,7 +10,7 @@
   const DEV = "tn_device";
 
   let mode = "summary";
-  let lastNotes = null;   // { videoId, title, url, markdown, lang }
+  let lastNotes = null;   // { videoId, title, url, markdown, lang, durationSeconds }
   let lastTranscript = null; // { videoId, text, lang }; reused by Full Notes
   let videoChat = { context: null, history: [], busy: false };
   let busy = false;
@@ -285,6 +285,16 @@
     if (hours) return `${hours}h ${minutes}m`;
     if (minutes) return `${minutes}m ${seconds}s`;
     return `${seconds}s`;
+  }
+
+  function formatSavedTime(seconds) {
+    const total = Math.floor(Number(seconds));
+    if (!Number.isFinite(total) || total <= 0) return "";
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    if (hours) return `${hours}h ${minutes}m`;
+    if (minutes) return `${minutes}m`;
+    return `${total}s`;
   }
 
   function renderTrending(data, { append = false } = {}) {
@@ -1218,6 +1228,7 @@
         lastNotes = {
           videoId: ev.video.video_id, title: ev.video.title, url: ev.video.url,
           markdown: "", lang: ev.language, jobId: ev.job_id || null,
+          durationSeconds: ev.video.duration_seconds,
         };
         const translated = ev.detected_language && ev.detected_language !== ev.language;
         $("rMeta").innerHTML =
@@ -1298,6 +1309,7 @@
         lastNotes = {
           videoId: ev.video.video_id, title: ev.video.title, url: ev.video.url,
           markdown: "", lang: ev.language, jobId: ev.job_id || null,
+          durationSeconds: ev.video.duration_seconds,
         };
         if (inPdfFlow) {
           updatePdfProgress(2, 24, "Analyzing content…", "Transcript is ready. Planning the detailed notes in the video’s language.");
@@ -1475,6 +1487,16 @@
       </div>`;
   }
 
+  function timeSavedBadge() {
+    const duration = formatSavedTime(lastNotes?.durationSeconds);
+    if (!duration) return "";
+    return `
+      <div class="time-saved" role="status" aria-label="You saved ${duration} today">
+        <svg class="time-saved-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.2 2"/></svg>
+        <span>You saved</span><strong>${duration}</strong><span>today</span>
+      </div>`;
+  }
+
   function bindChatSuggestions() {
     document.querySelectorAll("[data-chat-question]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -1491,6 +1513,7 @@
     const copy = CHAT_STARTER_COPY[lastNotes?.lang] || CHAT_STARTER_COPY.en;
     return `
       <section class="video-chat" id="videoChat" aria-label="Ask questions about this video">
+        ${timeSavedBadge()}
         ${chatStarter()}
         <div class="chat-messages" id="chatMessages" aria-live="polite"></div>
         <form class="chat-form" id="videoChatForm">

@@ -34,6 +34,7 @@ from app.config import settings
 logger = logging.getLogger("trialguard.youtube")
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+_ISO_DURATION_RE = re.compile(r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$")
 
 
 class TranscriptUnavailable(Exception):
@@ -56,6 +57,9 @@ class VideoMeta:
     # the title and thumbnail. Measured: 200 for public, 400 for private and
     # deleted alike.
     public: bool | None = None
+    # The official Data API returns this only when its server-side key is
+    # configured.  It is used for the "You saved ... today" summary cue.
+    duration_seconds: int | None = None
 
 
 @dataclass(slots=True)
@@ -121,6 +125,7 @@ def watch_url(video_id: str) -> str:
 # ---------------------------------------------------------------------------
 _metadata_cache: dict[str, VideoMeta] = {}
 _METADATA_CACHE_MAX = 5000
+_duration_cache: dict[str, int | None] = {}
 _oembed_client: httpx.AsyncClient | None = None
 
 
@@ -183,6 +188,52 @@ async def fetch_metadata(video_id: str) -> VideoMeta:
         for stale in list(_metadata_cache)[: len(_metadata_cache) - _METADATA_CACHE_MAX]:
             _metadata_cache.pop(stale, None)
     return meta
+
+
+def _duration_seconds(value: str | None) -> int | None:
+    """Convert a YouTube ``PT#H#M#S`` duration to seconds."""
+    match = _ISO_DURATION_RE.fullmatch(value or "")
+    if not match:
+        return None
+    hours, minutes, seconds = (int(part or 0) for part in match.groups())
+    total = hours * 3600 + minutes * 60 + seconds
+    return total if total > 0 else None
+
+
+async def fetch_duration_seconds(video_id: str) -> int | None:
+    """Return a video's duration without ever exposing the API key to the UI."""
+    if video_id in _duration_cache:
+        return _duration_cache[video_id]
+
+    api_key = settings.YOUTUBE_DATA_API_KEY.strip()
+    if not api_key:
+        return None
+
+    duration: int | None = None
+    try:
+        response = await _get_oembed_client().get(
+            "https://www.googleapis.com/youtube/v3/videos",
+            params={
+                "part": "contentDetails",
+                "id": video_id,
+                "fields": "items(contentDetails/duration)",
+                "key": api_key,
+            },
+        )
+        if response.status_code == 200:
+            items = response.json().get("items") or []
+            if items:
+                duration = _duration_seconds((items[0].get("contentDetails") or {}).get("duration"))
+        else:
+            logger.info("YouTube duration lookup returned %s for %s", response.status_code, video_id)
+    except Exception as exc:  # pragma: no cover - network
+        logger.info("YouTube duration lookup failed for %s: %s", video_id, exc)
+
+    _duration_cache[video_id] = duration
+    if len(_duration_cache) > _METADATA_CACHE_MAX:
+        for stale in list(_duration_cache)[: len(_duration_cache) - _METADATA_CACHE_MAX]:
+            _duration_cache.pop(stale, None)
+    return duration
 
 
 # ---------------------------------------------------------------------------
