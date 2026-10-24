@@ -70,17 +70,13 @@
   .a2hs-fab:not(.hidden){display:inline-flex}.a2hs-fab svg{width:18px;height:18px;flex:none}.a2hs-fab:hover{filter:brightness(1.06)}
   .a2hs-sheet{position:fixed;z-index:80;left:14px;right:14px;bottom:max(14px,env(safe-area-inset-bottom));max-width:390px;margin:auto;padding:18px 17px 16px;border:1px solid var(--line);border-radius:18px;background:var(--panel);box-shadow:var(--shadow)}
   .a2hs-sheet h2{margin:0 28px 6px 0;font-size:18px;line-height:1.25}.a2hs-sheet p{margin:0;color:var(--muted);font-size:13px;line-height:1.5}.a2hs-sheet .close{position:absolute;right:10px;top:9px;width:32px;height:32px;padding:0;border:0;border-radius:50%;background:var(--chip);color:var(--ink);font-size:21px}.a2hs-steps{display:grid;gap:7px;margin:13px 0}.a2hs-steps span{display:flex;gap:8px;align-items:flex-start;font-size:12.5px}.a2hs-steps b{display:grid;place-items:center;flex:0 0 20px;height:20px;border-radius:50%;background:rgba(124,58,237,.12);color:var(--brand1);font-size:11px}.a2hs-done{width:100%;border:0;border-radius:10px;padding:10px 12px;background:var(--brand1);color:#fff;font-weight:800}
-  .legal-menu,.faq-menu{position:relative}
-  .legal-trigger,.faq-trigger{display:inline-flex;align-items:center;gap:5px}
-  .legal-trigger::after,.faq-trigger::after{content:"⌄";font-size:13px;line-height:1;transition:transform .18s ease}
-  .legal-trigger[aria-expanded="true"]::after,.faq-trigger[aria-expanded="true"]::after{transform:rotate(180deg)}
+  .legal-menu{position:relative}
+  .legal-trigger{display:inline-flex;align-items:center;gap:5px}
+  .legal-trigger::after{content:"⌄";font-size:13px;line-height:1;transition:transform .18s ease}
+  .legal-trigger[aria-expanded="true"]::after{transform:rotate(180deg)}
   .legal-popover{position:absolute;z-index:55;right:0;top:calc(100% + 8px);width:218px;padding:7px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:var(--shadow)}
   .legal-popover a{display:block;padding:9px 10px;border-radius:8px;color:var(--ink);text-decoration:none;font-size:13px;font-weight:600}
   .legal-popover a:hover,.legal-popover a:focus-visible{background:var(--chip);color:var(--brand1);outline:0}
-  .faq-popover{position:absolute;z-index:55;right:0;top:calc(100% + 8px);width:min(310px,calc(100vw - 28px));max-height:min(70dvh,520px);overflow-y:auto;padding:7px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:var(--shadow)}
-  .faq-popover details,.faq-popover details[open]{margin:0;padding:0;border:0;border-radius:8px;background:transparent;box-shadow:none}.faq-popover details+details{border-top:1px solid var(--line)}
-  .faq-popover details summary{padding:9px 30px 9px 10px;color:var(--ink);font-size:13px;line-height:1.32}.faq-popover details summary::after{right:10px;top:5px}
-  .faq-popover details:hover summary,.faq-popover details summary:focus-visible{background:var(--chip);color:var(--brand1);outline:0}.faq-popover details p{margin:0;padding:0 10px 11px;color:var(--muted);font-size:12px;line-height:1.48}
   .chip-trials{
     display:inline-flex;align-items:center;gap:6px;
     background:var(--chip);border:1px solid var(--line);
@@ -701,7 +697,6 @@
   <div class="nav-right">
     <span id="trialChip" class="chip-trials hidden"></span>
     <div class="legal-menu"><button class="nav-btn legal-trigger" id="legalMenuBtn" type="button" aria-expanded="false" aria-controls="legalMenu">Legal</button><nav class="legal-popover hidden" id="legalMenu" aria-label="Legal pages"><a href="/about">About Us</a><a href="/terms">Terms &amp; Conditions</a><a href="/privacy">Privacy Policy</a><a href="/refund-policy">Refund Policy</a><a href="/contact">Contact Us</a></nav></div>
-    <div class="faq-menu"><button class="nav-btn faq-trigger" id="faqMenuBtn" type="button" aria-expanded="false" aria-controls="faqMenu">FAQ</button><div class="faq-popover hidden" id="faqMenu" aria-label="Frequently asked questions"><details><summary>Which languages work?</summary><p>Whatever the video is spoken in. Hindi, English, Marathi, Gujarati, Tamil, Telugu, Kannada, Malayalam, Bengali, Punjabi, Urdu, plus Spanish, French, German, Arabic and more. Regional Indian languages are routed to an Indic-tuned model, because general models drift back into English on those.</p></details><details><summary>Why does a video sometimes fail?</summary><p>The video has no subtitle track at all (some music and vlog uploads), subtitles are disabled by the creator, or the video is private/age-restricted. Occasionally YouTube rate-limits the server, in which case waiting a minute usually fixes it.</p></details><details><summary>How does the free trial count?</summary><p>One video = one credit. The summary, the key points and the PDF notes for that same video are all covered by it, and re-opening a video you already did is free forever. Free accounts get 20 videos.</p></details><details><summary>Do you store my videos?</summary><p>We store the video id and when you summarized it, so re-runs stay free and so we can count credits. Transcripts and summaries are not kept on the server after the response is sent.</p></details><details><summary>Long videos?</summary><p>Yes. For the on-screen summary a long transcript is sampled across the whole video so the beginning, middle and end are all represented. "Full Notes" reads the entire transcript chunk by chunk &mdash; slower, but nothing is dropped.</p></details></div></div>
     <button class="nav-btn" id="themeBtn" title="Toggle theme">🌙</button>
     <button class="nav-btn" id="accountBtn" type="button">Sign in</button>
     <a class="nav-btn extension-btn" id="extensionStoreLink" aria-disabled="true" title="Install TubeNotes from the Chrome Web Store">

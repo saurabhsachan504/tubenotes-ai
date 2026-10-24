@@ -2529,36 +2529,21 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
 
   const legalMenu = $("legalMenu");
   const legalMenuBtn = $("legalMenuBtn");
-  const faqMenu = $("faqMenu");
-  const faqMenuBtn = $("faqMenuBtn");
   function closeLegalMenu() {
     legalMenu.classList.add("hidden");
     legalMenuBtn.setAttribute("aria-expanded", "false");
-  }
-  function closeFaqMenu() {
-    faqMenu.classList.add("hidden");
-    faqMenuBtn.setAttribute("aria-expanded", "false");
   }
   legalMenuBtn.onclick = (event) => {
     event.stopPropagation();
     const willOpen = legalMenu.classList.contains("hidden");
     legalMenu.classList.toggle("hidden", !willOpen);
     legalMenuBtn.setAttribute("aria-expanded", String(willOpen));
-    if (willOpen) closeFaqMenu();
-  };
-  faqMenuBtn.onclick = (event) => {
-    event.stopPropagation();
-    const willOpen = faqMenu.classList.contains("hidden");
-    faqMenu.classList.toggle("hidden", !willOpen);
-    faqMenuBtn.setAttribute("aria-expanded", String(willOpen));
-    if (willOpen) closeLegalMenu();
   };
   document.addEventListener("click", (event) => {
     if (!event.target.closest(".legal-menu")) closeLegalMenu();
-    if (!event.target.closest(".faq-menu")) closeFaqMenu();
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") { closeLegalMenu(); closeFaqMenu(); }
+    if (event.key === "Escape") closeLegalMenu();
   });
 
   $("accountBtn").onclick = () => (signedIn() ? openAccount() : openAuth("login"));
