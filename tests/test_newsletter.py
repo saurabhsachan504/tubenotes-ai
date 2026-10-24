@@ -2,6 +2,7 @@ from datetime import datetime
 
 from app.models import NewsletterRun, User
 from app.services import newsletter
+from app.services.trending import TrendingVideo
 
 
 def test_newsletter_schedule_is_wednesday_and_sunday_at_9am_ist():
@@ -75,3 +76,23 @@ def test_due_run_is_idempotent_and_targets_only_opted_in_users(db, monkeypatch):
     assert second["status"] == "already_sent"
     assert sent == ["yes@example.com"]
     assert db.query(NewsletterRun).count() == 1
+
+
+def test_newsletter_card_uses_full_width_image_and_decodes_youtube_title():
+    user = User(id="a3bf0e0d-fc74-4971-b8aa-c674c0a9efbf", email="reader@example.com", password_hash="x")
+    video = TrendingVideo(
+        video_id="video-id",
+        title="Daniel &quot;Podcast&quot;",
+        channel="Tube &amp; Co",
+        thumbnail="https://example.com/thumb.jpg",
+        views=1300,
+        published_at="2026-10-24T13:30:00Z",
+        duration="PT48M21S",
+        url="https://www.youtube.com/watch?v=video-id",
+    )
+    _, plain, rendered = newsletter.newsletter_content(user, (video,))
+    assert 'width="100%"' in rendered
+    assert 'Daniel "Podcast"' in plain
+    assert "Daniel &amp;quot;" not in rendered
+    assert "1.3K views" in rendered
+    assert "Duration: 48m 21s" in rendered

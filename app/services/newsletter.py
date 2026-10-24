@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import html
 import logging
+import re
 from datetime import datetime, timezone
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -71,33 +72,67 @@ def _published(value: str | None) -> str:
         return "Recently uploaded"
 
 
+_DURATION_RE = re.compile(r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$")
+
+
+def _duration(value: str | None) -> str | None:
+    """Render YouTube's ISO-8601 duration in the compact web-card format."""
+    if not value or not (match := _DURATION_RE.fullmatch(value)):
+        return None
+    hours, minutes, seconds = (int(part or 0) for part in match.groups())
+    parts = ([f"{hours}h"] if hours else []) + ([f"{minutes}m"] if minutes else [])
+    if seconds or not parts:
+        parts.append(f"{seconds}s")
+    return " ".join(parts)
+
+
+def _views(value: int | None) -> str | None:
+    if value is None:
+        return None
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}".rstrip("0").rstrip(".") + "M views"
+    if value >= 1_000:
+        return f"{value / 1_000:.1f}".rstrip("0").rstrip(".") + "K views"
+    return f"{value:,} views"
+
+
 def newsletter_content(user: User, videos: tuple[trending.TrendingVideo, ...]) -> tuple[str, str, str]:
     """Build an inbox-safe HTML issue plus a plain-text alternative."""
     name = " ".join((user.full_name or "").split()) or user.email.split("@", 1)[0]
     cards = ""
     plain_rows = []
-    for video in videos:
-        title = html.escape(video.title)
-        channel = html.escape(video.channel)
+    for index, video in enumerate(videos, start=1):
+        # YouTube API titles may already contain HTML entities. Decode once,
+        # then escape for our email so Gmail does not show literal &quot; text.
+        title_text = html.unescape(video.title)
+        channel_text = html.unescape(video.channel)
+        title = html.escape(title_text)
+        channel = html.escape(channel_text)
         url = html.escape(video.url, quote=True)
         image = html.escape(video.thumbnail, quote=True)
         thumbnail = (
-            f'<img src="{image}" alt="" width="138" style="display:block;width:138px;max-width:138px;height:78px;object-fit:cover;border:0;border-radius:8px;" />'
+            f'<img src="{image}" alt="" width="100%" style="display:block;width:100%;height:auto;border:0;" />'
             if image
             else ""
         )
+        views = _views(video.views)
+        published = _published(video.published_at)
+        duration = _duration(video.duration)
+        publish_line = f"Published: {published}" + (f" &middot; Duration: {duration}" if duration else "")
         cards += f"""
-        <tr><td style="padding:0 0 12px;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e6ddf5;border-radius:12px;background:#ffffff;"><tr>
-            <td width="150" valign="top" style="padding:10px 2px 10px 10px;">{thumbnail}</td>
-            <td valign="top" style="padding:11px 12px 10px 10px;">
-              <a href="{url}" style="color:#24123e;font-size:14px;line-height:1.35;font-weight:700;text-decoration:none;">{title}</a>
-              <div style="margin-top:5px;color:#746783;font-size:12px;line-height:1.35;">{channel} &middot; {_published(video.published_at)}</div>
-              <a href="{url}" style="display:inline-block;margin-top:8px;color:#7c3aed;font-size:12px;font-weight:700;text-decoration:none;">Open on YouTube &rarr;</a>
-            </td>
-          </tr></table>
+        <tr><td style="padding:0 0 15px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e6ddf5;border-radius:12px;background:#ffffff;overflow:hidden;">
+            <tr><td style="line-height:0;font-size:0;">{thumbnail}</td></tr>
+            <tr><td style="padding:15px 16px 16px;">
+              <div style="margin:0 0 7px;color:#7c3aed;font-size:11px;font-weight:800;letter-spacing:.04em;">New &middot; #{index} recent upload</div>
+              <a href="{url}" style="color:#24123e;font-size:17px;line-height:1.35;font-weight:750;text-decoration:none;">{title}</a>
+              <div style="margin-top:8px;color:#6f647c;font-size:13px;line-height:1.45;">{channel}{f' &middot; {views}' if views else ''}</div>
+              <div style="margin-top:4px;color:#85798e;font-size:12px;line-height:1.45;">{publish_line}</div>
+              <a href="{url}" style="display:inline-block;margin-top:11px;color:#7335d8;font-size:12px;font-weight:750;text-decoration:none;">Open on YouTube &rarr;</a>
+            </td></tr>
+          </table>
         </td></tr>"""
-        plain_rows.append(f"{video.title} — {video.channel} ({video.url})")
+        plain_rows.append(f"{title_text} — {channel_text} ({video.url})")
 
     unsubscribe = unsubscribe_url(user)
     subject = "Fresh podcast picks from TubeNotes"
