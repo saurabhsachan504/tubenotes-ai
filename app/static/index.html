@@ -417,6 +417,7 @@
   details{border:1px solid var(--line);border-radius:12px;padding:13px 16px;margin-bottom:9px;background:var(--panel)}
   details summary{cursor:pointer;font-weight:600;font-size:14.5px}
   details p{color:var(--muted);font-size:13.5px;margin:9px 0 2px}
+  .faq-section{margin-top:34px}.faq-panel,.faq-panel[open]{margin:0;padding:0;border:0;background:transparent;box-shadow:none}.faq-panel>summary{display:inline-flex;align-items:center;padding:0 25px 0 0;color:var(--ink);font-size:20px;font-weight:750}.faq-panel>summary::after{content:"⌄";top:-5px;font-size:22px}.faq-panel[open]>summary::after{transform:rotate(180deg)}.faq-items{margin-top:14px}.faq-items details:last-child{margin-bottom:0}
   footer{border-top:1px solid var(--line);padding:22px 0;color:var(--muted);font-size:12.5px;text-align:center}
   .site-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left}.footer-links{display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end}.footer-links a{color:var(--muted);text-decoration:none}.footer-links a:hover{color:var(--brand1);text-decoration:underline}
 
@@ -785,6 +786,18 @@
     </div>
   </section>
 
+  <section id="faq" class="faq-section" aria-label="Frequently asked questions">
+    <details id="faqPanel" class="faq-panel">
+      <summary>FAQ</summary>
+      <div class="faq-items">
+        <details><summary>Which languages work?</summary><p>Whatever the video is spoken in. Hindi, English, Marathi, Gujarati, Tamil, Telugu, Kannada, Malayalam, Bengali, Punjabi, Urdu, plus Spanish, French, German, Arabic and more. Regional Indian languages are routed to an Indic-tuned model, because general models drift back into English on those.</p></details>
+        <details><summary>Why does a video sometimes fail?</summary><p>The video has no subtitle track at all (some music and vlog uploads), subtitles are disabled by the creator, or the video is private/age-restricted. Occasionally YouTube rate-limits the server, in which case waiting a minute usually fixes it.</p></details>
+        <details><summary>How does the free trial count?</summary><p>One video = one credit. The summary, the key points and the PDF notes for that same video are all covered by it, and re-opening a video you already did is free forever. Free accounts get 20 videos.</p></details>
+        <details><summary>Do you store my videos?</summary><p>We store the video id and when you summarized it, so re-runs stay free and so we can count credits. Transcripts and summaries are not kept on the server after the response is sent.</p></details>
+        <details><summary>Long videos?</summary><p>Yes. For the on-screen summary a long transcript is sampled across the whole video so the beginning, middle and end are all represented. "Full Notes" reads the entire transcript chunk by chunk &mdash; slower, but nothing is dropped.</p></details>
+      </div>
+    </details>
+  </section>
 </main>
 
 <footer class="wrap site-footer"><span>TubeNotes — YouTube summaries in your language.</span><nav class="footer-links" aria-label="Legal links"><a href="/about">About Us</a><a href="/terms">Terms &amp; Conditions</a><a href="/privacy">Privacy Policy</a><a href="/refund-policy">Refund Policy</a><a href="/contact">Contact Us</a></nav></footer>

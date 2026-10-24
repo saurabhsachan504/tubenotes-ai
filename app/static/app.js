@@ -597,7 +597,7 @@
 
   function initMotionReveals() {
     if (!motionAllowed() || !("IntersectionObserver" in window)) return;
-    const items = [...document.querySelectorAll("#how .step, #faq details")];
+    const items = [...document.querySelectorAll("#how .step, #faq .faq-panel")];
     if (!items.length) return;
     items.forEach((item, index) => {
       item.classList.add("motion-reveal");
