@@ -127,6 +127,7 @@ _metadata_cache: dict[str, VideoMeta] = {}
 _METADATA_CACHE_MAX = 5000
 _duration_cache: dict[str, int | None] = {}
 _oembed_client: httpx.AsyncClient | None = None
+_data_api_client: httpx.AsyncClient | None = None
 
 
 def _get_oembed_client() -> httpx.AsyncClient:
@@ -140,9 +141,27 @@ def _get_oembed_client() -> httpx.AsyncClient:
     return _oembed_client
 
 
+def _get_data_api_client() -> httpx.AsyncClient:
+    """Return a direct client for an IP-restricted YouTube Data API key.
+
+    Caption/oEmbed traffic may need ``YOUTUBE_PROXY`` on a datacenter host.
+    Google validates an IP-restricted API key against the caller's IP, so this
+    specific official API request must leave directly from the app server.
+    """
+    global _data_api_client
+    if _data_api_client is None or _data_api_client.is_closed:
+        _data_api_client = httpx.AsyncClient(
+            timeout=settings.YOUTUBE_REQUEST_TIMEOUT_SECONDS,
+        )
+    return _data_api_client
+
+
 async def close_oembed_client() -> None:
-    global _oembed_client
+    global _oembed_client, _data_api_client
     client, _oembed_client = _oembed_client, None
+    if client is not None and not client.is_closed:
+        await client.aclose()
+    client, _data_api_client = _data_api_client, None
     if client is not None and not client.is_closed:
         await client.aclose()
 
@@ -211,7 +230,7 @@ async def fetch_duration_seconds(video_id: str) -> int | None:
 
     duration: int | None = None
     try:
-        response = await _get_oembed_client().get(
+        response = await _get_data_api_client().get(
             "https://www.googleapis.com/youtube/v3/videos",
             params={
                 "part": "contentDetails",
