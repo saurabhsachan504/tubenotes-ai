@@ -104,7 +104,7 @@ def newsletter_content(
 ) -> tuple[str, str, str]:
     """Build an inbox-safe HTML issue plus a plain-text alternative."""
     name = " ".join((user.full_name or "").split()) or user.email.split("@", 1)[0]
-    cards = ""
+    card_cells: list[str] = []
     plain_rows = []
     for index, video in enumerate(videos, start=1):
         # YouTube API titles may already contain HTML entities. Decode once,
@@ -124,20 +124,30 @@ def newsletter_content(
         published = _published(video.published_at)
         duration = _duration(video.duration)
         publish_line = f"Published: {published}" + (f" &middot; Duration: {duration}" if duration else "")
-        cards += f"""
-        <tr><td style="padding:0 0 15px;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e6ddf5;border-radius:12px;background:#ffffff;overflow:hidden;">
+        card_cells.append(f"""
+        <td class="podcast-column" valign="top" width="33.33%" style="width:33.33%;padding:0 5px 12px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e6ddf5;border-radius:10px;background:#ffffff;overflow:hidden;">
             <tr><td style="line-height:0;font-size:0;">{thumbnail}</td></tr>
-            <tr><td style="padding:15px 16px 16px;">
-              <div style="margin:0 0 7px;color:#7c3aed;font-size:11px;font-weight:800;letter-spacing:.04em;">New &middot; #{index} recent upload</div>
-              <a href="{url}" style="color:#24123e;font-size:17px;line-height:1.35;font-weight:750;text-decoration:none;">{title}</a>
-              <div style="margin-top:8px;color:#6f647c;font-size:13px;line-height:1.45;">{channel}{f' &middot; {views}' if views else ''}</div>
-              <div style="margin-top:4px;color:#85798e;font-size:12px;line-height:1.45;">{publish_line}</div>
-              <a href="{url}" style="display:inline-block;margin-top:11px;color:#7335d8;font-size:12px;font-weight:750;text-decoration:none;">Open on YouTube &rarr;</a>
+            <tr><td style="padding:11px 11px 12px;">
+              <div style="margin:0 0 6px;color:#7c3aed;font-size:10px;font-weight:800;letter-spacing:.03em;">New &middot; #{index} recent upload</div>
+              <a href="{url}" style="color:#24123e;font-size:13px;line-height:1.35;font-weight:750;text-decoration:none;">{title}</a>
+              <div style="margin-top:7px;color:#6f647c;font-size:11px;line-height:1.4;">{channel}{f' &middot; {views}' if views else ''}</div>
+              <div style="margin-top:4px;color:#85798e;font-size:10.5px;line-height:1.4;">{publish_line}</div>
+              <a href="{url}" style="display:inline-block;margin-top:9px;color:#7335d8;font-size:11px;font-weight:750;text-decoration:none;">Open on YouTube &rarr;</a>
             </td></tr>
           </table>
-        </td></tr>"""
+        </td>""")
         plain_rows.append(f"{title_text} — {channel_text} ({video.url})")
+
+    # Email clients do not reliably support CSS Grid. A presentation table is
+    # intentionally used for three desktop cards per row, with a media-query
+    # fallback that makes each card readable on a narrow phone screen.
+    rows: list[str] = []
+    for start in range(0, len(card_cells), 3):
+        row = card_cells[start : start + 3]
+        row.extend(['<td class="podcast-column podcast-empty" width="33.33%" style="width:33.33%;padding:0 5px 12px;">&nbsp;</td>'] * (3 - len(row)))
+        rows.append("<tr>" + "".join(row) + "</tr>")
+    cards = "".join(rows)
 
     unsubscribe = unsubscribe_url(user)
     subject = "Fresh podcast picks from TubeNotes"
@@ -161,12 +171,12 @@ def newsletter_content(
         + (f"\n{settings.MARKETING_ADDRESS}\n" if settings.MARKETING_ADDRESS.strip() else "")
     )
     address = html.escape(settings.MARKETING_ADDRESS.strip())
-    html_body = f"""<!doctype html><html><body style="margin:0;padding:0;background:#f6f2fb;font-family:Arial,sans-serif;color:#281b3d;">
+    html_body = f"""<!doctype html><html><head><style>@media screen and (max-width:600px){{.podcast-column{{display:block!important;width:100%!important;box-sizing:border-box!important;padding:0 0 12px!important}}.podcast-empty{{display:none!important}}}}</style></head><body style="margin:0;padding:0;background:#f6f2fb;font-family:Arial,sans-serif;color:#281b3d;">
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:26px 10px;background:#f6f2fb;"><tr><td align="center">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#fff;border:1px solid #e6ddf5;border-radius:16px;overflow:hidden;">
           <tr><td style="padding:20px 28px;background:linear-gradient(120deg,#7135e8,#d735b2);color:#fff;"><div style="font-size:24px;font-weight:800;">&#9654; TubeNotes</div><div style="margin-top:4px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">New on YouTube</div></td></tr>
           <tr><td style="padding:27px 28px 16px;"><h1 style="margin:0 0 8px;color:#2b1748;font-size:24px;line-height:1.25;">Fresh podcast picks</h1><p style="margin:0 0 20px;color:#685d78;font-size:15px;line-height:1.55;">Hi {html.escape(name)}, here are a few recent long-form podcasts to explore this week.</p>
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">{cards}</table>
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 -5px;width:calc(100% + 10px);">{cards}</table>
             <p style="margin:8px 0 10px;"><a href="{html.escape(settings.APP_BASE_URL, quote=True)}" style="display:inline-block;padding:12px 16px;border-radius:9px;background:#7135e8;color:#fff;font-size:13px;font-weight:700;text-decoration:none;">Summarize a video</a></p>
           </td></tr>
           <tr><td style="padding:16px 28px;background:#faf8ff;border-top:1px solid #eee8f8;color:#746783;font-size:11px;line-height:1.55;">{footer_html}{f'<br>{address}' if address else ''}</td></tr>
@@ -184,7 +194,7 @@ def _latest_videos() -> tuple[trending.TrendingVideo, ...]:
         try:
             return await trending.fetch(
                 settings.YOUTUBE_TRENDING_DEFAULT_REGION,
-                limit=max(1, min(settings.NEWSLETTER_MAX_VIDEOS, 10)),
+                limit=max(6, min(settings.NEWSLETTER_MAX_VIDEOS, 10)),
                 sort="latest",
             )
         finally:

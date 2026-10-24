@@ -98,6 +98,21 @@ def test_newsletter_card_uses_full_width_image_and_decodes_youtube_title():
     assert "Duration: 48m 21s" in rendered
 
 
+def test_newsletter_groups_six_cards_into_two_three_column_rows():
+    user = User(id="f8b94a75-6dac-4e55-b506-790165241a36", email="reader@example.com", password_hash="x")
+    videos = tuple(
+        TrendingVideo(
+            video_id=f"video-{number}", title=f"Podcast {number}", channel="TubeNotes",
+            thumbnail="https://example.com/thumb.jpg", views=100, published_at=None,
+            duration="PT30M", url=f"https://www.youtube.com/watch?v=video-{number}",
+        )
+        for number in range(1, 7)
+    )
+    _, _, rendered = newsletter.newsletter_content(user, videos)
+    assert rendered.count('class="podcast-column"') == 6
+    assert rendered.count('width="33.33%"') == 6
+
+
 def test_newsletter_preview_sends_only_requested_address(monkeypatch):
     monkeypatch.setattr(newsletter.settings, "EMAIL_BACKEND", "smtp")
     monkeypatch.setattr(newsletter.settings, "SMTP_HOST", "smtp.example.com")
