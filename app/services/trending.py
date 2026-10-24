@@ -20,7 +20,7 @@ logger = logging.getLogger("trialguard.trending")
 _REGION_RE = re.compile(r"^[A-Z]{2}$")
 _SEARCH_API_URL = "https://www.googleapis.com/youtube/v3/search"
 _VIDEOS_API_URL = "https://www.googleapis.com/youtube/v3/videos"
-_cache: dict[tuple[str, int, str, str], tuple[float, "TrendingPage"]] = {}
+_cache: dict[tuple[str, int, str, str, str], tuple[float, "TrendingPage"]] = {}
 _client: httpx.AsyncClient | None = None
 
 
@@ -79,13 +79,14 @@ async def fetch(
     limit: int = 10,
     page_token: str | None = None,
     search: str | None = None,
+    sort: str = "popular",
 ) -> TrendingPage:
-    """Fetch recent, highest-viewed podcast videos available in one country.
+    """Fetch popular or latest podcast videos available in one country.
 
     YouTube does not expose a separate podcast ``mostPopular`` chart.  Its
     ``search.list`` endpoint can, however, restrict videos by country and sort
-    matching podcasts by view count.  A recent time window prevents a list of
-    all-time classics from being presented as current trending podcasts.
+    matching podcasts by view count or upload date. A recent time window keeps
+    both views focused on podcasts that are still current.
     """
     region = normalise_region(region)
     if not region:
@@ -97,10 +98,13 @@ async def fetch(
     limit = max(1, min(int(limit), 50))
     page_token = (page_token or "").strip()
     search = " ".join((search or "").split())
+    sort = (sort or "popular").strip().lower()
+    if sort not in {"popular", "latest"}:
+        raise TrendingUnavailable("Choose a valid podcast sort order.")
     # Retain the podcast qualifier so a search for a creator or topic does not
     # unexpectedly fill this area with music videos, clips, or Shorts.
     search_phrase = f"{search} podcast" if search else "podcast"
-    key = (region, limit, page_token, search_phrase.casefold())
+    key = (region, limit, page_token, search_phrase.casefold(), sort)
     now = time.monotonic()
     cached = _cache.get(key)
     if cached and now - cached[0] < settings.YOUTUBE_TRENDING_CACHE_SECONDS:
@@ -113,7 +117,7 @@ async def fetch(
                 "part": "snippet",
                 "q": search_phrase,
                 "type": "video",
-                "order": "viewCount",
+                "order": "date" if sort == "latest" else "viewCount",
                 "regionCode": region,
                 "videoDuration": "long",
                 "publishedAfter": _published_after(),

@@ -20,6 +20,7 @@
   let trendingLoadedRegion = "";
   let trendingLoading = false;
   let trendingSearchQuery = "";
+  let trendingOrder = "popular";
   // Empty on the primary site. A legacy domain can set this through /meta so
   // its Subscribe button takes users to the canonical checkout domain.
   let billingPrimarySiteUrl = "";
@@ -299,14 +300,19 @@
 
   function renderTrending(data, { append = false } = {}) {
     const section = $("trending"), list = $("trendingList"), hint = $("trendingHint");
-    const selector = $("trendingRegion"), next = $("trendingNext");
+    const selector = $("trendingRegion"), orderSelector = $("trendingOrder"), next = $("trendingNext");
     if (!append) list.replaceChildren();
     const rankOffset = append ? list.querySelectorAll(".trending-card").length : 0;
     if (Array.from(selector.options).some((option) => option.value === data.region)) selector.value = data.region;
+    trendingOrder = data.sort === "latest" ? "latest" : "popular";
+    orderSelector.value = trendingOrder;
     trendingLoadedRegion = data.region;
     trendingNextPageToken = data.next_page_token || null;
-    const searchLabel = trendingSearchQuery ? `Podcast results for “${trendingSearchQuery}” in` : "Top popular podcasts in";
-    hint.textContent = `${searchLabel} ${countryName(data.region)}. Click to Summarize`;
+    const isLatest = trendingOrder === "latest";
+    $("trendingTitle").textContent = isLatest ? "Latest podcasts" : "Trending podcasts";
+    $("trendingKicker").textContent = isLatest ? "New on YouTube" : "Popular on YouTube";
+    const searchLabel = trendingSearchQuery ? `Podcast results for “${trendingSearchQuery}” in` : (isLatest ? "Latest podcast uploads in" : "Top popular podcasts in");
+    hint.textContent = `${searchLabel} ${countryName(data.region)}. Updated automatically. Click to Summarize`;
 
     data.videos.forEach((video, index) => {
       const button = document.createElement("button");
@@ -325,7 +331,8 @@
       copy.className = "trending-copy";
       const rank = document.createElement("span");
       rank.className = "trending-rank";
-      rank.textContent = `#${rankOffset + index + 1} popular podcast`;
+      const newUpload = isLatest && (Date.now() - Date.parse(video.published_at || "")) < 7 * 24 * 60 * 60 * 1000;
+      rank.textContent = `${newUpload ? "New · " : ""}#${rankOffset + index + 1} ${isLatest ? "recent upload" : "popular podcast"}`;
       const title = document.createElement("span");
       title.className = "trending-title";
       title.textContent = video.title;
@@ -351,11 +358,12 @@
     section.classList.remove("hidden");
   }
 
-  async function loadTrending(region = "", pageToken = "", searchQuery = trendingSearchQuery) {
+  async function loadTrending(region = "", pageToken = "", searchQuery = trendingSearchQuery, sort = trendingOrder) {
     const section = $("trending"), list = $("trendingList"), next = $("trendingNext"), searchButton = $("trendingSearchBtn");
     if (!section || !list || trendingLoading) return;
     trendingLoading = true;
     trendingSearchQuery = searchQuery.trim();
+    trendingOrder = sort === "latest" ? "latest" : "popular";
     const append = Boolean(pageToken);
     if (append) { next.disabled = true; next.textContent = "Loading…"; }
     else if (searchButton) { searchButton.disabled = true; searchButton.textContent = "Searching…"; }
@@ -364,6 +372,7 @@
       if (region) params.set("region", region);
       if (pageToken) params.set("page_token", pageToken);
       if (trendingSearchQuery) params.set("search", trendingSearchQuery);
+      params.set("sort", trendingOrder);
       const query = params.size ? `?${params}` : "";
       const data = await api(`/trending${query}`, { auth: false, cache: "no-store" });
       if (!data || !Array.isArray(data.videos) || !data.videos.length) throw new Error("No trending podcasts available.");
@@ -2524,13 +2533,14 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   // selected output tab or an existing on-screen summary.
   $("pdfBtn").onclick = () => pdfFlow({ full: true });
   $("url").addEventListener("keydown", (e) => { if (e.key === "Enter") run(mode); });
-  $("trendingRegion").addEventListener("change", (event) => loadTrending(event.target.value, "", $("trendingSearch").value));
+  $("trendingRegion").addEventListener("change", (event) => loadTrending(event.target.value, "", $("trendingSearch").value, trendingOrder));
+  $("trendingOrder").addEventListener("change", (event) => loadTrending($("trendingRegion").value, "", $("trendingSearch").value, event.target.value));
   $("trendingSearchForm").addEventListener("submit", (event) => {
     event.preventDefault();
-    loadTrending($("trendingRegion").value, "", $("trendingSearch").value);
+    loadTrending($("trendingRegion").value, "", $("trendingSearch").value, trendingOrder);
   });
   $("trendingNext").addEventListener("click", () => {
-    if (trendingNextPageToken) loadTrending(trendingLoadedRegion || $("trendingRegion").value, trendingNextPageToken, trendingSearchQuery);
+    if (trendingNextPageToken) loadTrending(trendingLoadedRegion || $("trendingRegion").value, trendingNextPageToken, trendingSearchQuery, trendingOrder);
   });
 
   $("pasteBtn").onclick = async () => {

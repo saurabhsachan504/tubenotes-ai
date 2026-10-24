@@ -180,6 +180,7 @@ class TrendingVideoOut(BaseModel):
 class TrendingOut(BaseModel):
     region: str
     source: Literal["selected", "detected", "fallback"]
+    sort: Literal["popular", "latest"] = "popular"
     next_page_token: str | None = None
     videos: list[TrendingVideoOut]
 

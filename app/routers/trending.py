@@ -1,6 +1,8 @@
 """Public, geo-aware YouTube trending endpoint for the TubeNotes home page."""
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.config import settings
@@ -15,6 +17,7 @@ async def list_trending(
     request: Request,
     region: str | None = Query(default=None, min_length=2, max_length=2),
     search: str | None = Query(default=None, max_length=120),
+    sort: Literal["popular", "latest"] = Query(default="popular"),
     limit: int = Query(default=10, ge=5, le=10),
     page_token: str | None = Query(default=None, min_length=1, max_length=256),
 ):
@@ -28,13 +31,14 @@ async def list_trending(
     chosen = selected or detected or fallback
     source = "selected" if selected else ("detected" if detected else "fallback")
     try:
-        page = await trending.fetch(chosen, limit, page_token, search)
+        page = await trending.fetch(chosen, limit, page_token, search, sort)
     except trending.TrendingUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     return TrendingOut(
         region=chosen,
         source=source,
+        sort=sort,
         next_page_token=page.next_page_token,
         videos=[
             TrendingVideoOut(
