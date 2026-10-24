@@ -157,15 +157,6 @@ def run_due(db: Session, *, at: datetime | None = None, force: bool = False) -> 
         logger.error("Newsletter is enabled but MARKETING_ADDRESS is blank; nothing sent.")
         return {"status": "marketing_address_missing", "recipients": 0, "delivered": 0, "failed": 0}
 
-    key = schedule_key(current)
-    run = NewsletterRun(schedule_key=key)
-    db.add(run)
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        return {"status": "already_sent", "recipients": 0, "delivered": 0, "failed": 0}
-
     users = db.execute(
         select(User).where(
             User.is_active.is_(True),
@@ -173,15 +164,24 @@ def run_due(db: Session, *, at: datetime | None = None, force: bool = False) -> 
             User.newsletter_unsubscribed_at.is_(None),
         )
     ).scalars().all()
-    run.recipient_count = len(users)
     try:
         videos = _latest_videos() if users else ()
     except trending.TrendingUnavailable as exc:
         logger.warning("Newsletter content unavailable: %s", exc)
-        run.status = "content_unavailable"
-        run.completed_at = datetime.now(timezone.utc)
+        # Do not claim this schedule key when the content provider is down:
+        # an operator can safely retry while the issue is still relevant.
+        return {"status": "content_unavailable", "recipients": len(users), "delivered": 0, "failed": 0}
+
+    # Claim only after the external content request succeeds.  A duplicate
+    # cron process may do the same harmless fetch, but only one can send.
+    key = schedule_key(current)
+    run = NewsletterRun(schedule_key=key, recipient_count=len(users))
+    db.add(run)
+    try:
         db.commit()
-        return {"status": run.status, "recipients": len(users), "delivered": 0, "failed": 0}
+    except IntegrityError:
+        db.rollback()
+        return {"status": "already_sent", "recipients": 0, "delivered": 0, "failed": 0}
 
     for user in users:
         subject, plain, html_body = newsletter_content(user, videos)
