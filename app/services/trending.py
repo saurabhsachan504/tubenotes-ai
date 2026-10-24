@@ -20,7 +20,7 @@ logger = logging.getLogger("trialguard.trending")
 _REGION_RE = re.compile(r"^[A-Z]{2}$")
 _SEARCH_API_URL = "https://www.googleapis.com/youtube/v3/search"
 _VIDEOS_API_URL = "https://www.googleapis.com/youtube/v3/videos"
-_cache: dict[tuple[str, int, str], tuple[float, "TrendingPage"]] = {}
+_cache: dict[tuple[str, int, str, str], tuple[float, "TrendingPage"]] = {}
 _client: httpx.AsyncClient | None = None
 
 
@@ -78,6 +78,7 @@ async def fetch(
     region: str,
     limit: int = 10,
     page_token: str | None = None,
+    search: str | None = None,
 ) -> TrendingPage:
     """Fetch recent, highest-viewed podcast videos available in one country.
 
@@ -95,7 +96,11 @@ async def fetch(
 
     limit = max(1, min(int(limit), 50))
     page_token = (page_token or "").strip()
-    key = (region, limit, page_token)
+    search = " ".join((search or "").split())
+    # Retain the podcast qualifier so a search for a creator or topic does not
+    # unexpectedly fill this area with music videos, clips, or Shorts.
+    search_phrase = f"{search} podcast" if search else "podcast"
+    key = (region, limit, page_token, search_phrase.casefold())
     now = time.monotonic()
     cached = _cache.get(key)
     if cached and now - cached[0] < settings.YOUTUBE_TRENDING_CACHE_SECONDS:
@@ -106,7 +111,7 @@ async def fetch(
             _SEARCH_API_URL,
             params={
                 "part": "snippet",
-                "q": "podcast",
+                "q": search_phrase,
                 "type": "video",
                 "order": "viewCount",
                 "regionCode": region,

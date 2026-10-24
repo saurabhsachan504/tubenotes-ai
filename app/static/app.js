@@ -19,6 +19,7 @@
   let trendingNextPageToken = null;
   let trendingLoadedRegion = "";
   let trendingLoading = false;
+  let trendingSearchQuery = "";
   // Empty on the primary site. A legacy domain can set this through /meta so
   // its Subscribe button takes users to the canonical checkout domain.
   let billingPrimarySiteUrl = "";
@@ -294,7 +295,8 @@
     if (Array.from(selector.options).some((option) => option.value === data.region)) selector.value = data.region;
     trendingLoadedRegion = data.region;
     trendingNextPageToken = data.next_page_token || null;
-    hint.textContent = `Top popular podcasts in ${countryName(data.region)}. Click to Summarize`;
+    const searchLabel = trendingSearchQuery ? `Podcast results for “${trendingSearchQuery}” in` : "Top popular podcasts in";
+    hint.textContent = `${searchLabel} ${countryName(data.region)}. Click to Summarize`;
 
     data.videos.forEach((video, index) => {
       const button = document.createElement("button");
@@ -339,16 +341,19 @@
     section.classList.remove("hidden");
   }
 
-  async function loadTrending(region = "", pageToken = "") {
-    const section = $("trending"), list = $("trendingList"), next = $("trendingNext");
+  async function loadTrending(region = "", pageToken = "", searchQuery = trendingSearchQuery) {
+    const section = $("trending"), list = $("trendingList"), next = $("trendingNext"), searchButton = $("trendingSearchBtn");
     if (!section || !list || trendingLoading) return;
     trendingLoading = true;
+    trendingSearchQuery = searchQuery.trim();
     const append = Boolean(pageToken);
     if (append) { next.disabled = true; next.textContent = "Loading…"; }
+    else if (searchButton) { searchButton.disabled = true; searchButton.textContent = "Searching…"; }
     try {
       const params = new URLSearchParams();
       if (region) params.set("region", region);
       if (pageToken) params.set("page_token", pageToken);
+      if (trendingSearchQuery) params.set("search", trendingSearchQuery);
       const query = params.size ? `?${params}` : "";
       const data = await api(`/trending${query}`, { auth: false, cache: "no-store" });
       if (!data || !Array.isArray(data.videos) || !data.videos.length) throw new Error("No trending podcasts available.");
@@ -365,6 +370,7 @@
       }
     } finally {
       trendingLoading = false;
+      if (searchButton) { searchButton.disabled = false; searchButton.textContent = "Search"; }
     }
   }
 
@@ -2495,9 +2501,13 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   // selected output tab or an existing on-screen summary.
   $("pdfBtn").onclick = () => pdfFlow({ full: true });
   $("url").addEventListener("keydown", (e) => { if (e.key === "Enter") run(mode); });
-  $("trendingRegion").addEventListener("change", (event) => loadTrending(event.target.value));
+  $("trendingRegion").addEventListener("change", (event) => loadTrending(event.target.value, "", $("trendingSearch").value));
+  $("trendingSearchForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    loadTrending($("trendingRegion").value, "", $("trendingSearch").value);
+  });
   $("trendingNext").addEventListener("click", () => {
-    if (trendingNextPageToken) loadTrending(trendingLoadedRegion || $("trendingRegion").value, trendingNextPageToken);
+    if (trendingNextPageToken) loadTrending(trendingLoadedRegion || $("trendingRegion").value, trendingNextPageToken, trendingSearchQuery);
   });
 
   $("pasteBtn").onclick = async () => {

@@ -58,11 +58,36 @@ def test_podcast_search_is_country_scoped_and_recent(monkeypatch):
     assert "publishedAfter" in search_params
 
 
+def test_podcast_search_uses_the_requested_phrase(monkeypatch):
+    requests = []
+
+    async def handler(request):
+        requests.append(request)
+        if request.url.path.endswith("/search"):
+            return httpx.Response(200, json={"items": []})
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(trending_service, "_http_client", lambda: client)
+    monkeypatch.setattr(trending_service.settings, "YOUTUBE_DATA_API_KEY", "test-key")
+    trending_service._cache.clear()
+    try:
+        try:
+            asyncio.run(trending_service.fetch("US", search="Lex Fridman"))
+        except trending_service.TrendingUnavailable:
+            pass
+    finally:
+        asyncio.run(client.aclose())
+        trending_service._cache.clear()
+
+    assert dict(requests[0].url.params)["q"] == "Lex Fridman podcast"
+
+
 def test_trending_podcasts_use_trusted_cloudflare_country(client, monkeypatch):
     seen = {}
 
-    async def fake_fetch(region, limit, page_token=None):
-        seen.update(region=region, limit=limit, page_token=page_token)
+    async def fake_fetch(region, limit, page_token=None, search=None):
+        seen.update(region=region, limit=limit, page_token=page_token, search=search)
         return TrendingPage(videos=(
             TrendingVideo(
                 video_id="dQw4w9WgXcQ",
@@ -80,7 +105,7 @@ def test_trending_podcasts_use_trusted_cloudflare_country(client, monkeypatch):
     response = client.get("/api/v1/trending", headers={"CF-IPCountry": "US"})
 
     assert response.status_code == 200, response.text
-    assert seen == {"region": "US", "limit": 10, "page_token": None}
+    assert seen == {"region": "US", "limit": 10, "page_token": None, "search": None}
     assert response.json()["source"] == "detected"
     assert response.json()["next_page_token"] == "NEXT_TOKEN"
     assert response.json()["videos"][0]["published_at"] == "2026-10-20T12:00:00Z"
@@ -89,7 +114,7 @@ def test_trending_podcasts_use_trusted_cloudflare_country(client, monkeypatch):
 
 
 def test_trending_region_override_and_validation(client, monkeypatch):
-    async def fake_fetch(region, limit, page_token=None):
+    async def fake_fetch(region, limit, page_token=None, search=None):
         return TrendingPage(videos=(
             TrendingVideo(
                 video_id="dQw4w9WgXcQ", title="Video", channel="Channel",

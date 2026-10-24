@@ -14,6 +14,7 @@ router = APIRouter(tags=["trending"])
 async def list_trending(
     request: Request,
     region: str | None = Query(default=None, min_length=2, max_length=2),
+    search: str | None = Query(default=None, max_length=120),
     limit: int = Query(default=10, ge=5, le=10),
     page_token: str | None = Query(default=None, min_length=1, max_length=256),
 ):
@@ -27,7 +28,7 @@ async def list_trending(
     chosen = selected or detected or fallback
     source = "selected" if selected else ("detected" if detected else "fallback")
     try:
-        page = await trending.fetch(chosen, limit, page_token)
+        page = await trending.fetch(chosen, limit, page_token, search)
     except trending.TrendingUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
