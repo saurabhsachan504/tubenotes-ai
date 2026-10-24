@@ -70,13 +70,6 @@
   .a2hs-fab:not(.hidden){display:inline-flex}.a2hs-fab svg{width:18px;height:18px;flex:none}.a2hs-fab:hover{filter:brightness(1.06)}
   .a2hs-sheet{position:fixed;z-index:80;left:14px;right:14px;bottom:max(14px,env(safe-area-inset-bottom));max-width:390px;margin:auto;padding:18px 17px 16px;border:1px solid var(--line);border-radius:18px;background:var(--panel);box-shadow:var(--shadow)}
   .a2hs-sheet h2{margin:0 28px 6px 0;font-size:18px;line-height:1.25}.a2hs-sheet p{margin:0;color:var(--muted);font-size:13px;line-height:1.5}.a2hs-sheet .close{position:absolute;right:10px;top:9px;width:32px;height:32px;padding:0;border:0;border-radius:50%;background:var(--chip);color:var(--ink);font-size:21px}.a2hs-steps{display:grid;gap:7px;margin:13px 0}.a2hs-steps span{display:flex;gap:8px;align-items:flex-start;font-size:12.5px}.a2hs-steps b{display:grid;place-items:center;flex:0 0 20px;height:20px;border-radius:50%;background:rgba(124,58,237,.12);color:var(--brand1);font-size:11px}.a2hs-done{width:100%;border:0;border-radius:10px;padding:10px 12px;background:var(--brand1);color:#fff;font-weight:800}
-  .legal-menu{position:relative}
-  .legal-trigger{display:inline-flex;align-items:center;gap:5px}
-  .legal-trigger::after{content:"⌄";font-size:13px;line-height:1;transition:transform .18s ease}
-  .legal-trigger[aria-expanded="true"]::after{transform:rotate(180deg)}
-  .legal-popover{position:absolute;z-index:55;right:0;top:calc(100% + 8px);width:218px;padding:7px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:var(--shadow)}
-  .legal-popover a{display:block;padding:9px 10px;border-radius:8px;color:var(--ink);text-decoration:none;font-size:13px;font-weight:600}
-  .legal-popover a:hover,.legal-popover a:focus-visible{background:var(--chip);color:var(--brand1);outline:0}
   .chip-trials{
     display:inline-flex;align-items:center;gap:6px;
     background:var(--chip);border:1px solid var(--line);
@@ -601,7 +594,6 @@
     .logo{font-size:18px;gap:7px}
     .nav-right{gap:2px}
     .nav-btn{padding:7px 8px;font-size:13px}
-    .legal-popover{width:205px}
     .chip-trials{padding:6px 9px;font-size:12px}
 
     .pills{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-bottom:24px}
@@ -648,7 +640,6 @@
   @media(max-width:430px){
     .nav-right .nav-btn[onclick]{display:none}
     .nav-btn{padding:7px 6px}
-    .legal-trigger{font-size:12px}
     .chip-trials{padding:6px 8px}
     .hero{padding-top:18px;padding-bottom:38px}
     .pills{gap:6px;margin-bottom:20px}
@@ -704,7 +695,6 @@
   </a>
   <div class="nav-right">
     <span id="trialChip" class="chip-trials hidden"></span>
-    <div class="legal-menu"><button class="nav-btn legal-trigger" id="legalMenuBtn" type="button" aria-expanded="false" aria-controls="legalMenu">Legal</button><nav class="legal-popover hidden" id="legalMenu" aria-label="Legal pages"><a href="/about">About Us</a><a href="/terms">Terms &amp; Conditions</a><a href="/privacy">Privacy Policy</a><a href="/refund-policy">Refund Policy</a><a href="/contact">Contact Us</a></nav></div>
     <button class="nav-btn" id="themeBtn" title="Toggle theme">🌙</button>
     <button class="nav-btn" id="accountBtn" type="button">Sign in</button>
     <a class="nav-btn extension-btn" id="extensionStoreLink" aria-disabled="true" title="Install TubeNotes from the Chrome Web Store">
