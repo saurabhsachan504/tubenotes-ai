@@ -2748,6 +2748,13 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
 
   // ---- boot ----
   if ($("outLang")) fillLangSelect($("outLang"), { includeAuto: true });
+  // Newsletter card links land on the app with their chosen YouTube video
+  // already in the summarizer field. We never auto-run it: the visitor stays
+  // in control of language and any sign-in requirement.
+  try {
+    const sharedVideo = new URLSearchParams(window.location.search).get("youtube_url");
+    if (sharedVideo && videoIdFrom(sharedVideo)) $("url").value = sharedVideo;
+  } catch (_) {}
   initAddToHomeScreen();
   initMotionReveals();
   initGoogle();

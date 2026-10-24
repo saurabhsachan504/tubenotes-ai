@@ -96,6 +96,20 @@ def _views(value: int | None) -> str | None:
     return f"{value:,} views"
 
 
+def _card_text(value: str, limit: int) -> str:
+    """Keep email-grid card heights consistent without cutting a word midway."""
+    text = " ".join(value.split())
+    if len(text) <= limit:
+        return text
+    shortened = text[: limit - 1].rsplit(" ", 1)[0].rstrip()
+    return (shortened or text[: limit - 1]).rstrip() + "…"
+
+
+def _summarize_url(video_url: str) -> str:
+    """Open the web app with this YouTube URL already filled in."""
+    return f"{settings.APP_BASE_URL.rstrip('/')}/?youtube_url={quote(video_url, safe='')}"
+
+
 def newsletter_content(
     user: User,
     videos: tuple[trending.TrendingVideo, ...],
@@ -111,9 +125,9 @@ def newsletter_content(
         # then escape for our email so Gmail does not show literal &quot; text.
         title_text = html.unescape(video.title)
         channel_text = html.unescape(video.channel)
-        title = html.escape(title_text)
-        channel = html.escape(channel_text)
-        url = html.escape(video.url, quote=True)
+        title = html.escape(_card_text(title_text, 78))
+        channel = html.escape(_card_text(channel_text, 42))
+        summary_url = html.escape(_summarize_url(video.url), quote=True)
         image = html.escape(video.thumbnail, quote=True)
         thumbnail = (
             f'<img src="{image}" alt="" width="100%" style="display:block;width:100%;height:auto;border:0;" />'
@@ -126,14 +140,14 @@ def newsletter_content(
         publish_line = f"Published: {published}" + (f" &middot; Duration: {duration}" if duration else "")
         card_cells.append(f"""
         <td class="podcast-column" valign="top" width="33.33%" style="width:33.33%;padding:0 5px 12px;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e6ddf5;border-radius:10px;background:#ffffff;overflow:hidden;">
+          <table role="presentation" width="100%" height="300" cellspacing="0" cellpadding="0" style="height:300px;border:1px solid #e6ddf5;border-radius:10px;background:#ffffff;overflow:hidden;">
             <tr><td style="line-height:0;font-size:0;">{thumbnail}</td></tr>
-            <tr><td style="padding:11px 11px 12px;">
+            <tr><td height="184" valign="top" style="height:184px;padding:11px 11px 12px;">
               <div style="margin:0 0 6px;color:#7c3aed;font-size:10px;font-weight:800;letter-spacing:.03em;">New &middot; #{index} recent upload</div>
-              <a href="{url}" style="color:#24123e;font-size:13px;line-height:1.35;font-weight:750;text-decoration:none;">{title}</a>
+              <a href="{summary_url}" style="color:#24123e;font-size:13px;line-height:1.35;font-weight:750;text-decoration:none;">{title}</a>
               <div style="margin-top:7px;color:#6f647c;font-size:11px;line-height:1.4;">{channel}{f' &middot; {views}' if views else ''}</div>
               <div style="margin-top:4px;color:#85798e;font-size:10.5px;line-height:1.4;">{publish_line}</div>
-              <a href="{url}" style="display:inline-block;margin-top:9px;color:#7335d8;font-size:11px;font-weight:750;text-decoration:none;">Open on YouTube &rarr;</a>
+              <a href="{summary_url}" style="display:inline-block;margin-top:9px;color:#7335d8;font-size:11px;font-weight:750;text-decoration:none;">Summarize Video</a>
             </td></tr>
           </table>
         </td>""")
@@ -174,10 +188,10 @@ def newsletter_content(
     html_body = f"""<!doctype html><html><head><style>@media screen and (max-width:600px){{.podcast-column{{display:block!important;width:100%!important;box-sizing:border-box!important;padding:0 0 12px!important}}.podcast-empty{{display:none!important}}}}</style></head><body style="margin:0;padding:0;background:#f6f2fb;font-family:Arial,sans-serif;color:#281b3d;">
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:26px 10px;background:#f6f2fb;"><tr><td align="center">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#fff;border:1px solid #e6ddf5;border-radius:16px;overflow:hidden;">
-          <tr><td style="padding:20px 28px;background:linear-gradient(120deg,#7135e8,#d735b2);color:#fff;"><div style="font-size:24px;font-weight:800;">&#9654; TubeNotes</div><div style="margin-top:4px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">New on YouTube</div></td></tr>
+          <tr><td style="padding:20px 28px;background:linear-gradient(120deg,#7135e8,#d735b2);color:#fff;"><div style="font-size:24px;font-weight:800;">&#9654; TubeNotes</div><div style="margin-top:4px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">YouTube Summarizer &amp; PDF Generator</div></td></tr>
           <tr><td style="padding:27px 28px 16px;"><h1 style="margin:0 0 8px;color:#2b1748;font-size:24px;line-height:1.25;">Fresh podcast picks</h1><p style="margin:0 0 20px;color:#685d78;font-size:15px;line-height:1.55;">Hi {html.escape(name)}, here are a few recent long-form podcasts to explore this week.</p>
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 -5px;width:calc(100% + 10px);">{cards}</table>
-            <p style="margin:8px 0 10px;"><a href="{html.escape(settings.APP_BASE_URL, quote=True)}" style="display:inline-block;padding:12px 16px;border-radius:9px;background:#7135e8;color:#fff;font-size:13px;font-weight:700;text-decoration:none;">Summarize a video</a></p>
+            <p style="margin:8px 0 10px;text-align:center;"><a href="{html.escape(settings.APP_BASE_URL, quote=True)}" style="display:inline-block;padding:12px 16px;border-radius:9px;background:#7135e8;color:#fff;font-size:13px;font-weight:700;text-decoration:none;">Summarize a video</a></p>
           </td></tr>
           <tr><td style="padding:16px 28px;background:#faf8ff;border-top:1px solid #eee8f8;color:#746783;font-size:11px;line-height:1.55;">{footer_html}{f'<br>{address}' if address else ''}</td></tr>
         </table>

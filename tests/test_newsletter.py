@@ -96,6 +96,10 @@ def test_newsletter_card_uses_full_width_image_and_decodes_youtube_title():
     assert "Daniel &amp;quot;" not in rendered
     assert "1.3K views" in rendered
     assert "Duration: 48m 21s" in rendered
+    assert "YouTube Summarizer &amp; PDF Generator" in rendered
+    assert "Summarize Video" in rendered
+    assert "youtube_url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3Dvideo-id" in rendered
+    assert "text-align:center" in rendered
 
 
 def test_newsletter_groups_six_cards_into_two_three_column_rows():
