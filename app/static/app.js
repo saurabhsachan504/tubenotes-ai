@@ -17,7 +17,6 @@
   let offerCountdownTimer = null;
   let activeLaunchOffer = null;
   let trendingNextPageToken = null;
-  let trendingLoadedRegion = "";
   let trendingLoading = false;
   let trendingSearchQuery = "";
   let trendingOrder = "popular";
@@ -260,12 +259,6 @@
 
   // Trending podcast data comes from our backend so the YouTube Data API key
   // never reaches the page. Each card uses the same flow as a pasted URL.
-  function countryName(code) {
-    try {
-      return new Intl.DisplayNames([navigator.language || "en"], { type: "region" }).of(code) || code;
-    } catch (_) { return code; }
-  }
-
   function formatViews(value) {
     if (!Number.isFinite(Number(value))) return "Views unavailable";
     return `${new Intl.NumberFormat(navigator.language || "en", { notation: "compact", maximumFractionDigits: 1 }).format(Number(value))} views`;
@@ -300,19 +293,17 @@
 
   function renderTrending(data, { append = false } = {}) {
     const section = $("trending"), list = $("trendingList"), hint = $("trendingHint");
-    const selector = $("trendingRegion"), orderSelector = $("trendingOrder"), next = $("trendingNext");
+    const orderSelector = $("trendingOrder"), next = $("trendingNext");
     if (!append) list.replaceChildren();
     const rankOffset = append ? list.querySelectorAll(".trending-card").length : 0;
-    if (Array.from(selector.options).some((option) => option.value === data.region)) selector.value = data.region;
     trendingOrder = data.sort === "latest" ? "latest" : "popular";
     orderSelector.value = trendingOrder;
-    trendingLoadedRegion = data.region;
     trendingNextPageToken = data.next_page_token || null;
     const isLatest = trendingOrder === "latest";
     $("trendingTitle").textContent = isLatest ? "Latest podcasts" : "Trending podcasts";
     $("trendingKicker").textContent = isLatest ? "New on YouTube" : "Popular on YouTube";
-    const searchLabel = trendingSearchQuery ? `Podcast results for “${trendingSearchQuery}” in` : (isLatest ? "Latest podcast uploads in" : "Top popular podcasts in");
-    hint.textContent = `${searchLabel} ${countryName(data.region)}. Updated automatically. Click to Summarize`;
+    const searchLabel = trendingSearchQuery ? `Podcast results for “${trendingSearchQuery}”` : (isLatest ? "Latest podcast uploads on YouTube" : "Top popular podcasts on YouTube");
+    hint.textContent = `${searchLabel}. Updated automatically. Click to Summarize`;
 
     data.videos.forEach((video, index) => {
       const button = document.createElement("button");
@@ -2533,14 +2524,13 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
   // selected output tab or an existing on-screen summary.
   $("pdfBtn").onclick = () => pdfFlow({ full: true });
   $("url").addEventListener("keydown", (e) => { if (e.key === "Enter") run(mode); });
-  $("trendingRegion").addEventListener("change", (event) => loadTrending(event.target.value, "", $("trendingSearch").value, trendingOrder));
-  $("trendingOrder").addEventListener("change", (event) => loadTrending($("trendingRegion").value, "", $("trendingSearch").value, event.target.value));
+  $("trendingOrder").addEventListener("change", (event) => loadTrending("", "", $("trendingSearch").value, event.target.value));
   $("trendingSearchForm").addEventListener("submit", (event) => {
     event.preventDefault();
-    loadTrending($("trendingRegion").value, "", $("trendingSearch").value, trendingOrder);
+    loadTrending("", "", $("trendingSearch").value, trendingOrder);
   });
   $("trendingNext").addEventListener("click", () => {
-    if (trendingNextPageToken) loadTrending(trendingLoadedRegion || $("trendingRegion").value, trendingNextPageToken, trendingSearchQuery, trendingOrder);
+    if (trendingNextPageToken) loadTrending("", trendingNextPageToken, trendingSearchQuery, trendingOrder);
   });
 
   $("pasteBtn").onclick = async () => {
