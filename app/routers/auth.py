@@ -251,6 +251,8 @@ def google_login(
                 google_sub=identity.sub,
                 auth_provider="google",
                 email_verified=True,
+                newsletter_opt_in=payload.newsletter_opt_in,
+                newsletter_opted_in_at=_now() if payload.newsletter_opt_in else None,
             )
             db.add(user)
             new_account = True

@@ -72,6 +72,9 @@ class GoogleLoginRequest(BaseModel):
     credential: str = Field(min_length=20, max_length=8192)
     device: DeviceFingerprint
     signup_source: Literal["web", "extension"] = "web"
+    # Consent is collected in the web UI before the Google credential flow.
+    # It only applies when this request creates a brand-new account.
+    newsletter_opt_in: bool = False
 
 
 class LoginRequest(BaseModel):

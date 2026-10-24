@@ -2724,6 +2724,7 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
         body: {
           credential: resp.credential,
           device: device(),
+          newsletter_opt_in: $("googleNewsletterOptIn").checked,
         },
       });
       await finishAuthenticatedLogin(data);
