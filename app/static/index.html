@@ -342,10 +342,14 @@
   /* ---------------- follow-up video chat ---------------- */
   /* The chat lives inside the result card, directly below the summary. */
   .video-chat{margin-top:18px;background:transparent}
-  .time-saved{display:flex;align-items:center;justify-content:center;gap:6px;width:max-content;max-width:100%;margin:14px auto 24px;padding:8px 13px;border:1px solid color-mix(in srgb,var(--brand2) 35%,var(--line));border-radius:999px;background:linear-gradient(135deg,color-mix(in srgb,var(--brand1) 11%,var(--panel)),color-mix(in srgb,var(--brand3) 12%,var(--panel)));box-shadow:0 5px 14px rgba(133,57,202,.12);color:var(--ink);font-size:12.5px;font-weight:700;letter-spacing:.005em}
-  .time-saved-icon{flex:0 0 auto;width:17px;height:17px;color:var(--brand1)}
+  .time-saved{display:flex;align-items:center;justify-content:center;gap:6px;width:max-content;max-width:100%;margin:14px 0 24px auto;padding:8px 13px;border:1px solid color-mix(in srgb,var(--brand2) 35%,var(--line));border-radius:999px;background:linear-gradient(135deg,color-mix(in srgb,var(--brand1) 11%,var(--panel)),color-mix(in srgb,var(--brand3) 12%,var(--panel)));box-shadow:0 5px 14px rgba(133,57,202,.12);color:var(--ink);font-size:12.5px;font-weight:700;letter-spacing:.005em;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,filter .18s ease}
+  .time-saved:hover{transform:translateY(-2px) scale(1.025);border-color:var(--brand2);box-shadow:0 9px 22px rgba(133,57,202,.25);filter:saturate(1.12)}
+  .time-saved-icon{flex:0 0 auto;width:18px;height:18px;color:var(--brand1);filter:drop-shadow(0 2px 3px rgba(124,58,237,.2))}
+  .time-saved:hover .time-saved-icon{animation:time-saved-tick .7s ease-in-out}
+  .time-saved-spark{fill:currentColor;stroke:none}
   .time-saved strong{color:var(--brand1);font-size:14px;font-weight:900;font-style:italic;letter-spacing:.025em}
   .time-saved + .chat-starter{margin-top:0}
+  @keyframes time-saved-tick{50%{transform:rotate(12deg) scale(1.12)}}
   .chat-starter{margin:20px 0 13px;text-align:center}
   .chat-starter p{margin:0 0 10px;color:var(--muted);font-size:12.5px;line-height:1.45}
   .chat-suggestions{display:flex;flex-wrap:wrap;justify-content:center;gap:7px}

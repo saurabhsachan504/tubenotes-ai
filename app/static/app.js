@@ -1492,7 +1492,7 @@
     if (!duration) return "";
     return `
       <div class="time-saved" role="status" aria-label="You saved ${duration} today">
-        <svg class="time-saved-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.2 2"/></svg>
+        <svg class="time-saved-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="13" r="6.5"/><path d="M11 9.5V13l2.5 1.7M8.5 3h5M11 3v3.5M5.8 6.7 4.4 5.3M16.2 6.7l1.4-1.4"/><path class="time-saved-spark" d="m19.2 12 .5 1.3L21 14l-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5Z"/></svg>
         <span>You saved</span><strong>${duration}</strong><span>today</span>
       </div>`;
   }
