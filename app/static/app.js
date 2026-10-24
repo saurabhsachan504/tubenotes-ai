@@ -2553,16 +2553,6 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     faqMenuBtn.setAttribute("aria-expanded", String(willOpen));
     if (willOpen) closeLegalMenu();
   };
-  faqMenu.querySelectorAll("[data-faq-index]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const item = document.querySelectorAll("#faq details")[Number(button.dataset.faqIndex)];
-      if (item) {
-        item.open = true;
-        item.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-      closeFaqMenu();
-    });
-  });
   document.addEventListener("click", (event) => {
     if (!event.target.closest(".legal-menu")) closeLegalMenu();
     if (!event.target.closest(".faq-menu")) closeFaqMenu();
