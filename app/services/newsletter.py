@@ -126,18 +126,21 @@ def newsletter_content(user: User, videos: tuple[trending.TrendingVideo, ...]) -
 
 def _latest_videos() -> tuple[trending.TrendingVideo, ...]:
     async def fetch_latest() -> trending.TrendingPage:
-        return await trending.fetch(
-            settings.YOUTUBE_TRENDING_DEFAULT_REGION,
-            limit=max(1, min(settings.NEWSLETTER_MAX_VIDEOS, 10)),
-            sort="latest",
-        )
+        # The shared HTTPX client belongs to this asyncio event loop.  Fetch
+        # and close it in the same run; closing in a second ``asyncio.run``
+        # tries to touch the first, already-closed loop.
+        try:
+            return await trending.fetch(
+                settings.YOUTUBE_TRENDING_DEFAULT_REGION,
+                limit=max(1, min(settings.NEWSLETTER_MAX_VIDEOS, 10)),
+                sort="latest",
+            )
+        finally:
+            # The command is a one-shot process, but closing avoids noisy
+            # resource warnings when it is run manually or in tests.
+            await trending.close_client()
 
-    try:
-        return asyncio.run(fetch_latest()).videos
-    finally:
-        # The command is a one-shot process, but closing avoids noisy resource
-        # warnings when it is run manually or in tests.
-        asyncio.run(trending.close_client())
+    return asyncio.run(fetch_latest()).videos
 
 
 def run_due(db: Session, *, at: datetime | None = None, force: bool = False) -> dict[str, int | str]:
