@@ -96,7 +96,12 @@ def _views(value: int | None) -> str | None:
     return f"{value:,} views"
 
 
-def newsletter_content(user: User, videos: tuple[trending.TrendingVideo, ...]) -> tuple[str, str, str]:
+def newsletter_content(
+    user: User,
+    videos: tuple[trending.TrendingVideo, ...],
+    *,
+    preview: bool = False,
+) -> tuple[str, str, str]:
     """Build an inbox-safe HTML issue plus a plain-text alternative."""
     name = " ".join((user.full_name or "").split()) or user.email.split("@", 1)[0]
     cards = ""
@@ -136,11 +141,23 @@ def newsletter_content(user: User, videos: tuple[trending.TrendingVideo, ...]) -
 
     unsubscribe = unsubscribe_url(user)
     subject = "Fresh podcast picks from TubeNotes"
+    footer_plain = (
+        "This is a TubeNotes newsletter preview; no subscription preference was changed."
+        if preview
+        else "You are receiving this because you opted in to TubeNotes updates. "
+        f"Unsubscribe: {unsubscribe}"
+    )
+    footer_html = (
+        "This is a TubeNotes newsletter preview; no subscription preference was changed."
+        if preview
+        else 'You are receiving this because you chose TubeNotes podcast updates. '
+        f'<a href="{html.escape(unsubscribe, quote=True)}" style="color:#6730c5;">Unsubscribe</a> anytime.'
+    )
     plain = (
         f"Hi {name},\n\nHere are fresh long-form podcast uploads picked for you:\n\n"
         + "\n".join(plain_rows)
         + f"\n\nSummarize any video with TubeNotes: {settings.APP_BASE_URL}\n"
-        + f"\nYou are receiving this because you opted in to TubeNotes updates. Unsubscribe: {unsubscribe}\n"
+        + f"\n{footer_plain}\n"
         + (f"\n{settings.MARKETING_ADDRESS}\n" if settings.MARKETING_ADDRESS.strip() else "")
     )
     address = html.escape(settings.MARKETING_ADDRESS.strip())
@@ -152,7 +169,7 @@ def newsletter_content(user: User, videos: tuple[trending.TrendingVideo, ...]) -
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0">{cards}</table>
             <p style="margin:8px 0 10px;"><a href="{html.escape(settings.APP_BASE_URL, quote=True)}" style="display:inline-block;padding:12px 16px;border-radius:9px;background:#7135e8;color:#fff;font-size:13px;font-weight:700;text-decoration:none;">Summarize a video</a></p>
           </td></tr>
-          <tr><td style="padding:16px 28px;background:#faf8ff;border-top:1px solid #eee8f8;color:#746783;font-size:11px;line-height:1.55;">You are receiving this because you chose TubeNotes podcast updates. <a href="{html.escape(unsubscribe, quote=True)}" style="color:#6730c5;">Unsubscribe</a> anytime.{f'<br>{address}' if address else ''}</td></tr>
+          <tr><td style="padding:16px 28px;background:#faf8ff;border-top:1px solid #eee8f8;color:#746783;font-size:11px;line-height:1.55;">{footer_html}{f'<br>{address}' if address else ''}</td></tr>
         </table>
       </td></tr></table>
     </body></html>"""
@@ -176,6 +193,36 @@ def _latest_videos() -> tuple[trending.TrendingVideo, ...]:
             await trending.close_client()
 
     return asyncio.run(fetch_latest()).videos
+
+
+def send_test_email(recipient: str) -> dict[str, int | str]:
+    """Send one operator-requested visual preview without changing audience state."""
+    recipient = recipient.strip().lower()
+    if "@" not in recipient or recipient.startswith("@") or recipient.endswith("@"):
+        return {"status": "invalid_recipient", "recipients": 0, "delivered": 0, "failed": 0}
+    if settings.EMAIL_BACKEND != "smtp" or not settings.SMTP_HOST:
+        logger.error("Newsletter preview requested but SMTP is not configured.")
+        return {"status": "smtp_not_configured", "recipients": 0, "delivered": 0, "failed": 0}
+    if not settings.MARKETING_ADDRESS.strip():
+        logger.error("Newsletter preview requested but MARKETING_ADDRESS is blank.")
+        return {"status": "marketing_address_missing", "recipients": 0, "delivered": 0, "failed": 0}
+    try:
+        videos = _latest_videos()
+    except trending.TrendingUnavailable as exc:
+        logger.warning("Newsletter preview content unavailable: %s", exc)
+        return {"status": "content_unavailable", "recipients": 0, "delivered": 0, "failed": 0}
+
+    # This in-memory user is deliberately never persisted: a preview does not
+    # create consent, alter an unsubscribe preference, or reserve a schedule.
+    preview_user = User(id="newsletter-preview", email=recipient, password_hash="")
+    subject, plain, html_body = newsletter_content(preview_user, videos, preview=True)
+    ok = email.send_email(recipient, f"[Preview] {subject}", plain, html_body=html_body, reply_to=settings.SUPPORT_EMAIL)
+    return {
+        "status": "test_sent" if ok else "test_failed",
+        "recipients": 1,
+        "delivered": int(ok),
+        "failed": int(not ok),
+    }
 
 
 def run_due(db: Session, *, at: datetime | None = None, force: bool = False) -> dict[str, int | str]:

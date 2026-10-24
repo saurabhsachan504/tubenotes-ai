@@ -15,11 +15,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run TubeNotes opt-in newsletter")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--due", action="store_true", help="Send only when the current IST minute is scheduled")
-    group.add_argument("--force", action="store_true", help="Send one issue now (for an operator test)")
+    group.add_argument("--force", action="store_true", help="Send one scheduled issue now to every opted-in recipient")
+    group.add_argument("--test-email", metavar="EMAIL", help="Send a visual preview only to one address")
     args = parser.parse_args()
     db = SessionLocal()
     try:
-        result = newsletter.run_due(db, force=args.force)
+        result = (
+            newsletter.send_test_email(args.test_email)
+            if args.test_email
+            else newsletter.run_due(db, force=args.force)
+        )
         print("newsletter", " ".join(f"{key}={value}" for key, value in result.items()))
         return 0
     finally:

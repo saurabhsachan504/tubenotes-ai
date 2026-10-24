@@ -96,3 +96,21 @@ def test_newsletter_card_uses_full_width_image_and_decodes_youtube_title():
     assert "Daniel &amp;quot;" not in rendered
     assert "1.3K views" in rendered
     assert "Duration: 48m 21s" in rendered
+
+
+def test_newsletter_preview_sends_only_requested_address(monkeypatch):
+    monkeypatch.setattr(newsletter.settings, "EMAIL_BACKEND", "smtp")
+    monkeypatch.setattr(newsletter.settings, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(newsletter.settings, "MARKETING_ADDRESS", "TubeNotes, India")
+    monkeypatch.setattr(newsletter, "_latest_videos", lambda: ())
+    sent = []
+    monkeypatch.setattr(
+        newsletter.email,
+        "send_email",
+        lambda to, subject, body, **kwargs: sent.append((to, subject, body, kwargs)) or True,
+    )
+    result = newsletter.send_test_email(" test@example.com ")
+    assert result == {"status": "test_sent", "recipients": 1, "delivered": 1, "failed": 0}
+    assert sent[0][0] == "test@example.com"
+    assert sent[0][1].startswith("[Preview]")
+    assert "no subscription preference was changed" in sent[0][2]
