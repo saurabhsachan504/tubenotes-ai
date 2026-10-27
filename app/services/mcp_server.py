@@ -5,6 +5,7 @@ and PDF services as the website.  The only surface-specific detail is a stable
 per-account virtual device used by the existing trial ledger.
 """
 import re
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from urllib.parse import urlencode
@@ -38,6 +39,62 @@ _LANGUAGE_OPTIONS = Literal[
     "ur", "ar", "de", "es", "fr", "id", "it", "ja", "ko", "nl", "pt", "ru", "tr", "vi", "zh",
 ]
 
+_MCP_TOOL_SECURITY = [{"type": "oauth2", "scopes": [MCP_SCOPE]}]
+
+
+def _tool_input_schema(*, video: bool = False) -> dict[str, Any]:
+    if not video:
+        return {"type": "object", "properties": {}, "additionalProperties": False}
+    return {
+        "type": "object",
+        "properties": {
+            "video_url": {"type": "string", "description": "Public YouTube video URL."},
+            "language": {
+                "type": "string",
+                "default": "auto",
+                "description": "Output language code, or auto to use the transcript language.",
+            },
+        },
+        "required": ["video_url"],
+        "additionalProperties": False,
+    }
+
+
+def mcp_tool_definitions() -> list[dict[str, Any]]:
+    """Return OAuth-aware tool descriptors for the public streamable endpoint.
+
+    FastMCP 1.x can serve our OAuth endpoints, but predates per-tool OAuth
+    metadata.  ChatGPT needs that metadata before it can show its account-link
+    UI, so the public transport publishes the current MCP descriptor directly.
+    """
+    return [
+        {
+            "name": "get_tubenotes_profile",
+            "title": "TubeNotes account",
+            "description": "Use this to confirm the connected TubeNotes account and remaining video trials.",
+            "inputSchema": _tool_input_schema(),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+            "securitySchemes": _MCP_TOOL_SECURITY,
+            "_meta": {"openai/profile": True},
+        },
+        {
+            "name": "summarize_youtube_video",
+            "title": "Summarize YouTube video",
+            "description": "Use this when the user wants a summary of a public YouTube video in a chosen language.",
+            "inputSchema": _tool_input_schema(video=True),
+            "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": True},
+            "securitySchemes": _MCP_TOOL_SECURITY,
+        },
+        {
+            "name": "create_video_pdf",
+            "title": "Create video notes PDF",
+            "description": "Use this when the user wants a downloadable PDF of complete YouTube video notes in a chosen language.",
+            "inputSchema": _tool_input_schema(video=True),
+            "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": True},
+            "securitySchemes": _MCP_TOOL_SECURITY,
+        },
+    ]
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -54,9 +111,7 @@ def _plugin_device(user_id: str) -> DeviceFingerprint:
     )
 
 
-def _current_user() -> User:
-    token = get_access_token()
-    user_id = getattr(token, "user_id", "") if token else ""
+def _active_user(user_id: str) -> User:
     if not user_id:
         raise PermissionError("Connect your TubeNotes account before using this tool.")
     db = SessionLocal()
@@ -68,6 +123,27 @@ def _current_user() -> User:
         # this module touches relationships after the session is closed.
         db.expunge(user)
         return user
+    finally:
+        db.close()
+
+
+def _current_user() -> User:
+    token = get_access_token()
+    return _active_user(str(getattr(token, "user_id", "") or ""))
+
+
+def _profile_payload(user: User) -> dict[str, Any]:
+    db = SessionLocal()
+    try:
+        entitlement, _device = entitlements.check(db, user, _plugin_device(user.id))
+        return {
+            "id": user.id,
+            "email": user.email,
+            "name": user.full_name or user.email,
+            "plan": entitlement.plan,
+            "trials_remaining": entitlement.trials_remaining,
+            "profile": {"id": user.id, "name": user.full_name or user.email},
+        }
     finally:
         db.close()
 
@@ -156,6 +232,92 @@ async def _create_text(user: User, video_url: str, language: str, mode: Literal[
     }
 
 
+async def _pdf_payload(user: User, video_url: str, language: str) -> dict[str, Any]:
+    if not settings.OUTPUT_CACHE_ENABLED:
+        raise RuntimeError("PDF export is unavailable until TubeNotes output caching is enabled.")
+    result = await _create_text(user, video_url, language, "notes")
+    token = create_pdf_download_token(
+        user_id=user.id,
+        video_id=result["video_id"],
+        language=result["language"],
+    )
+    return {
+        "video_id": result["video_id"],
+        "title": result["title"],
+        "language": result["language"],
+        "language_name": result["language_name"],
+        "pdf_download_url": f"{settings.APP_BASE_URL.rstrip('/')}/mcp/download/{token}",
+        "expires_in_minutes": settings.MCP_DOWNLOAD_TTL_MINUTES,
+        "message": "Your PDF is ready. Open the secure download link before it expires.",
+    }
+
+
+def _oauth_challenge() -> str:
+    metadata_url = f"{settings.mcp_public_url}/.well-known/oauth-protected-resource"
+    return (
+        f'Bearer resource_metadata="{metadata_url}", '
+        'error="invalid_token", error_description="Connect your TubeNotes account to continue"'
+    )
+
+
+def _tool_result(payload: dict[str, Any], *, is_error: bool = False, meta: dict[str, Any] | None = None) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}],
+        "structuredContent": payload,
+        "isError": is_error,
+    }
+    if meta:
+        result["_meta"] = meta
+    return result
+
+
+def _authentication_required_result() -> dict[str, Any]:
+    return _tool_result(
+        {"error": "authentication_required", "message": "Connect your TubeNotes account to continue."},
+        is_error=True,
+        meta={"mcp/www_authenticate": [_oauth_challenge()]},
+    )
+
+
+async def call_public_mcp_tool(
+    authorization: str | None,
+    tool_name: str,
+    arguments: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Call a tool after optional bearer-token verification for ChatGPT's MCP UI."""
+    raw_token = ""
+    if authorization and authorization.lower().startswith("bearer "):
+        raw_token = authorization[7:].strip()
+    token = await TubeNotesOAuthProvider().load_access_token(raw_token) if raw_token else None
+    if (
+        token is None
+        or MCP_SCOPE not in token.scopes
+        or str(token.resource or "").rstrip("/") != settings.mcp_public_url
+    ):
+        return _authentication_required_result()
+
+    try:
+        user = _active_user(token.user_id)
+        values = arguments or {}
+        if tool_name == "get_tubenotes_profile":
+            return _tool_result(_profile_payload(user))
+        video_url = str(values.get("video_url", "")).strip()
+        language = str(values.get("language", "auto")).strip() or "auto"
+        if tool_name == "summarize_youtube_video":
+            result = await _create_text(user, video_url, language, "summary")
+            payload = {
+                **{key: value for key, value in result.items() if key != "text"},
+                "summary": result["text"],
+                "open_in_tubenotes": f"{settings.APP_BASE_URL.rstrip('/')}/?{urlencode({'youtube_url': video_url})}",
+            }
+            return _tool_result(payload)
+        if tool_name == "create_video_pdf":
+            return _tool_result(await _pdf_payload(user, video_url, language))
+        return _tool_result({"error": "unknown_tool", "message": "Unknown TubeNotes tool."}, is_error=True)
+    except Exception as exc:
+        return _tool_result({"error": "tool_failed", "message": str(exc)}, is_error=True)
+
+
 def create_pdf_download_token(*, user_id: str, video_id: str, language: str) -> str:
     expiry = _now() + timedelta(minutes=settings.MCP_DOWNLOAD_TTL_MINUTES)
     return jwt.encode(
@@ -216,19 +378,7 @@ def build_mcp_server() -> FastMCP:
     )
     async def get_tubenotes_profile() -> dict[str, Any]:
         user = _current_user()
-        db = SessionLocal()
-        try:
-            entitlement, _device = entitlements.check(db, user, _plugin_device(user.id))
-            return {
-                "id": user.id,
-                "email": user.email,
-                "name": user.full_name or user.email,
-                "plan": entitlement.plan,
-                "trials_remaining": entitlement.trials_remaining,
-                "profile": {"id": user.id, "name": user.full_name or user.email},
-            }
-        finally:
-            db.close()
+        return _profile_payload(user)
 
     @server.tool(
         title="Summarize YouTube video",
@@ -256,24 +406,8 @@ def build_mcp_server() -> FastMCP:
         video_url: str,
         language: _LANGUAGE_OPTIONS = "auto",
     ) -> dict[str, Any]:
-        if not settings.OUTPUT_CACHE_ENABLED:
-            raise RuntimeError("PDF export is unavailable until TubeNotes output caching is enabled.")
         user = _current_user()
-        result = await _create_text(user, video_url, language, "notes")
-        token = create_pdf_download_token(
-            user_id=user.id,
-            video_id=result["video_id"],
-            language=result["language"],
-        )
-        return {
-            "video_id": result["video_id"],
-            "title": result["title"],
-            "language": result["language"],
-            "language_name": result["language_name"],
-            "pdf_download_url": f"{settings.APP_BASE_URL.rstrip('/')}/mcp/download/{token}",
-            "expires_in_minutes": settings.MCP_DOWNLOAD_TTL_MINUTES,
-            "message": "Your PDF is ready. Open the secure download link before it expires.",
-        }
+        return await _pdf_payload(user, video_url, language)
 
     return server
 

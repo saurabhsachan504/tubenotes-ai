@@ -1,0 +1,36 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "tubenotes",
+  "version": "1.0.4",
+  "description": "Summarize public YouTube videos and create multilingual video-notes PDFs with a TubeNotes account.",
+  "author": {
+    "name": "True Technologies",
+    "email": "support@tubenotes.ai",
+    "url": "https://tubenotes.ai"
+  },
+  "homepage": "https://tubenotes.ai",
+  "repository": "https://github.com/saurabhsachan504/tubenotes-ai",
+  "keywords": ["youtube", "video", "summary", "notes", "pdf", "learning"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "TubeNotes",
+        "shortDescription": "Summarize YouTube videos and create notes PDFs.",
+        "longDescription": "Connect your TubeNotes account to turn public YouTube videos into clear summaries or downloadable, multilingual notes PDFs.",
+        "developerName": "True Technologies",
+        "category": "Productivity",
+        "capabilities": ["Read", "Write"],
+        "websiteURL": "https://tubenotes.ai",
+        "privacyPolicyURL": "https://tubenotes.ai/privacy",
+        "termsOfServiceURL": "https://tubenotes.ai/terms",
+        "defaultPrompt": [
+          "Use TubeNotes to summarize this YouTube video: ",
+          "Use TubeNotes to create a Hindi PDF of notes for this YouTube video: "
+        ],
+        "brandColor": "#7C3AED",
+        "composerIcon": "./assets/tubenotes-logo.svg",
+        "logo": "./assets/tubenotes-logo.svg"
+      }
+    }
+  }
+}

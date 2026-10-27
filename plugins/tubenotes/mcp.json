@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "tubenotes": {
+      "type": "streamable-http",
+      "url": "https://tubenotes.ai/mcp/",
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "oauth",
+            "client": {
+              "mode": "dcr"
+            },
+            "resource": "https://tubenotes.ai/mcp",
+            "baseScopes": ["tubenotes:summary"]
+          }
+        }
+      }
+    }
+  }
+}

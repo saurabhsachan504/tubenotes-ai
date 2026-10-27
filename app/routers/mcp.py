@@ -4,15 +4,17 @@ from __future__ import annotations
 import jwt
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse, Response
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from app.deps import get_current_user
 from app.models import User
 from app.services import pdf
 from app.services.mcp_oauth import approve_authorization_request, authorization_request_details
-from app.services.mcp_server import render_plugin_pdf
+from app.services.mcp_server import call_public_mcp_tool, mcp_tool_definitions, render_plugin_pdf
 
 api_router = APIRouter(prefix="/mcp", tags=["mcp"])
 public_router = APIRouter(tags=["mcp"])
@@ -21,6 +23,54 @@ _STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 
 class ApproveMcpAuthorizationRequest(BaseModel):
     request_id: str = Field(min_length=24, max_length=128)
+
+
+def _rpc_result(request_id: Any, result: dict[str, Any]) -> JSONResponse:
+    return JSONResponse({"jsonrpc": "2.0", "id": request_id, "result": result})
+
+
+@public_router.post("/mcp/", include_in_schema=False)
+async def public_streamable_mcp(request: Request):
+    """OAuth-aware Streamable HTTP transport used by ChatGPT Plugins.
+
+    The installed FastMCP 1.x transport protects ``initialize`` and
+    ``tools/list`` behind OAuth. ChatGPT needs those two calls to be public in
+    order to discover a tool's ``securitySchemes`` and display account linking.
+    OAuth endpoints remain served by the mounted FastMCP application below.
+    """
+    try:
+        payload = await request.json()
+    except ValueError:
+        return JSONResponse({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Invalid JSON"}}, status_code=400)
+    if not isinstance(payload, dict):
+        return JSONResponse({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Batch requests are unsupported"}}, status_code=400)
+
+    request_id = payload.get("id")
+    method = payload.get("method")
+    params = payload.get("params") or {}
+    if not isinstance(params, dict):
+        return JSONResponse({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "params must be an object"}}, status_code=400)
+    if isinstance(method, str) and method.startswith("notifications/"):
+        return Response(status_code=status.HTTP_202_ACCEPTED)
+    if method == "initialize":
+        return _rpc_result(request_id, {
+            "protocolVersion": str(params.get("protocolVersion") or "2025-03-26"),
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": {"name": "TubeNotes", "version": "1.0.4"},
+            "instructions": "Use TubeNotes to summarize public YouTube videos or create a downloadable notes PDF.",
+        })
+    if method == "ping":
+        return _rpc_result(request_id, {})
+    if method == "tools/list":
+        return _rpc_result(request_id, {"tools": mcp_tool_definitions()})
+    if method == "tools/call":
+        tool_name = str(params.get("name", ""))
+        arguments = params.get("arguments")
+        if arguments is not None and not isinstance(arguments, dict):
+            return JSONResponse({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "arguments must be an object"}}, status_code=400)
+        result = await call_public_mcp_tool(request.headers.get("authorization"), tool_name, arguments)
+        return _rpc_result(request_id, result)
+    return JSONResponse({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "Method not found"}}, status_code=404)
 
 
 @api_router.get("/oauth/request/{request_id}")
