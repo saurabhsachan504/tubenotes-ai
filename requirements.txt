@@ -25,7 +25,10 @@ yt-dlp>=2025.1.1
 langdetect==1.0.9
 # ChatGPT/Codex plugin server.  FastMCP exposes the standard streamable HTTP
 # transport and OAuth-protected tools from this existing FastAPI deployment.
-mcp==1.27.1
+# 1.12.4 is the newest FastMCP 1.x release compatible with this application's
+# pinned Pydantic 2.10.x. Keeping that pin avoids a broad validation-runtime
+# upgrade merely to host the plugin transport.
+mcp==1.12.4
 
 # Server-side PDF rendering of the full notes. WeasyPrint gets its text shaping
 # from Pango, which is what makes Devanagari, Tamil and Arabic come out as

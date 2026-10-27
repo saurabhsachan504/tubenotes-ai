@@ -4,8 +4,6 @@ This deliberately calls the same entitlement, transcript, model, translation
 and PDF services as the website.  The only surface-specific detail is a stable
 per-account virtual device used by the existing trial ledger.
 """
-from __future__ import annotations
-
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
@@ -194,7 +192,6 @@ def build_mcp_server() -> FastMCP:
             "When they do not choose one, use auto so the result stays in the video's transcript language. "
             "Never claim a PDF is ready until create_video_pdf returns its download URL."
         ),
-        website_url=settings.APP_BASE_URL.rstrip("/"),
         auth_server_provider=provider,
         auth=AuthSettings(
             issuer_url=settings.mcp_public_url,
