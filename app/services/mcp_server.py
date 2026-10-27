@@ -40,6 +40,13 @@ _LANGUAGE_OPTIONS = Literal[
 ]
 
 _MCP_TOOL_SECURITY = [{"type": "oauth2", "scopes": [MCP_SCOPE]}]
+_MCP_TOOL_OUTPUT_SCHEMA = {
+    "type": "object",
+    # Results differ between the profile, summary, PDF, and error paths.  The
+    # schema still declares that every structured result is an object, which
+    # lets ChatGPT accept the `structuredContent` field on every path.
+    "additionalProperties": True,
+}
 
 
 def _tool_input_schema(*, video: bool = False) -> dict[str, Any]:
@@ -73,6 +80,7 @@ def mcp_tool_definitions() -> list[dict[str, Any]]:
             "title": "TubeNotes account",
             "description": "Use this to confirm the connected TubeNotes account and remaining video trials.",
             "inputSchema": _tool_input_schema(),
+            "outputSchema": _MCP_TOOL_OUTPUT_SCHEMA,
             "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
             "securitySchemes": _MCP_TOOL_SECURITY,
             "_meta": {"openai/profile": True},
@@ -82,6 +90,7 @@ def mcp_tool_definitions() -> list[dict[str, Any]]:
             "title": "Summarize YouTube video",
             "description": "Use this when the user wants a summary of a public YouTube video in a chosen language.",
             "inputSchema": _tool_input_schema(video=True),
+            "outputSchema": _MCP_TOOL_OUTPUT_SCHEMA,
             "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": True},
             "securitySchemes": _MCP_TOOL_SECURITY,
         },
@@ -90,6 +99,7 @@ def mcp_tool_definitions() -> list[dict[str, Any]]:
             "title": "Create video notes PDF",
             "description": "Use this when the user wants a downloadable PDF of complete YouTube video notes in a chosen language.",
             "inputSchema": _tool_input_schema(video=True),
+            "outputSchema": _MCP_TOOL_OUTPUT_SCHEMA,
             "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": True},
             "securitySchemes": _MCP_TOOL_SECURITY,
         },
