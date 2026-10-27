@@ -34,6 +34,8 @@ def test_public_mcp_tool_call_requests_oauth_login(client):
     assert response.status_code == 200
     result = response.json()["result"]
     assert result["isError"] is True
+    assert "Connect your TubeNotes account" in result["content"][0]["text"]
+    assert "structuredContent" not in result
     challenge = result["_meta"]["mcp/www_authenticate"][0]
     assert "resource_metadata=" in challenge
     assert "Connect your TubeNotes account" in challenge

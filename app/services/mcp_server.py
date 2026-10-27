@@ -6,6 +6,7 @@ per-account virtual device used by the existing trial ledger.
 """
 import re
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from urllib.parse import urlencode
@@ -16,6 +17,7 @@ from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from starlette.concurrency import run_in_threadpool
+from fastapi import HTTPException
 
 from app.config import settings
 from app.database import SessionLocal
@@ -28,6 +30,7 @@ from app.routers.summarize import (
     _prepare_video,
     _resolve_target,
     _store_cached,
+    _friendly,
     _video_id_or_400,
 )
 from app.schemas import DeviceFingerprint
@@ -40,6 +43,7 @@ _LANGUAGE_OPTIONS = Literal[
 ]
 
 _MCP_TOOL_SECURITY = [{"type": "oauth2", "scopes": [MCP_SCOPE]}]
+logger = logging.getLogger("trialguard.mcp")
 _MCP_TOOL_OUTPUT_SCHEMA = {
     "type": "object",
     # Results differ between the profile, summary, PDF, and error paths.  The
@@ -271,14 +275,34 @@ def _oauth_challenge() -> str:
 
 
 def _tool_result(payload: dict[str, Any], *, is_error: bool = False, meta: dict[str, Any] | None = None) -> dict[str, Any]:
+    # ChatGPT displays error content directly. A plain, useful sentence is more
+    # reliable than asking it to decode an error-shaped JSON object, and avoids
+    # the unhelpful "without an explanation" fallback for empty exceptions.
+    text = (
+        str(payload.get("message") or "TubeNotes could not complete this request. Please try again.")
+        if is_error
+        else json.dumps(payload, ensure_ascii=False)
+    )
     result: dict[str, Any] = {
-        "content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}],
-        "structuredContent": payload,
+        "content": [{"type": "text", "text": text}],
         "isError": is_error,
     }
+    if not is_error:
+        result["structuredContent"] = payload
     if meta:
         result["_meta"] = meta
     return result
+
+
+def _tool_failure_message(exc: Exception) -> str:
+    """Return the same kind of safe, human-readable failure as the web app."""
+    if isinstance(exc, HTTPException):
+        detail = exc.detail
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
+        return "TubeNotes could not process this request. Please try again."
+    message = _friendly(exc).strip()
+    return message if message and message != "Summary failed:" else "TubeNotes could not create the summary. Please try again."
 
 
 def _authentication_required_result() -> dict[str, Any]:
@@ -325,7 +349,11 @@ async def call_public_mcp_tool(
             return _tool_result(await _pdf_payload(user, video_url, language))
         return _tool_result({"error": "unknown_tool", "message": "Unknown TubeNotes tool."}, is_error=True)
     except Exception as exc:
-        return _tool_result({"error": "tool_failed", "message": str(exc)}, is_error=True)
+        logger.exception("MCP tool %s failed for TubeNotes user %s", tool_name, token.user_id)
+        return _tool_result(
+            {"error": "tool_failed", "message": _tool_failure_message(exc)},
+            is_error=True,
+        )
 
 
 def create_pdf_download_token(*, user_id: str, video_id: str, language: str) -> str:
