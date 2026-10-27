@@ -301,6 +301,33 @@ Do not commit `.env`, payment keys, database passwords, VAPID private keys, or O
 alembic upgrade head
 ```
 
+## ChatGPT TubeNotes plugin (MCP)
+
+The ChatGPT integration uses the **same FastAPI service, TubeNotes users,
+subscriptions, credits, summaries and PDF renderer** as the web app. It does
+not create a second customer database or expose any database credentials to
+ChatGPT.
+
+After deploying this release, enable it only on the public HTTPS deployment:
+
+```dotenv
+MCP_ENABLED=true
+MCP_PUBLIC_URL=https://tubenotes.ai/mcp
+OUTPUT_CACHE_ENABLED=true
+```
+
+Then apply `alembic upgrade head`, rebuild/restart the API container, and add
+`https://tubenotes.ai/mcp` as the MCP server URL in the OpenAI developer
+configuration. The server advertises OAuth discovery itself. When a user first
+uses a protected TubeNotes tool, they are sent to `https://tubenotes.ai/plugin/connect`
+to sign in with their existing TubeNotes email/password or Google account.
+
+The `summarize_youtube_video` and `create_video_pdf` tools require a language
+parameter, so ChatGPT asks for the desired language before it starts work.
+Both tools consume/check the existing TubeNotes entitlement ledger; a paid
+plan and prior credit usage therefore work exactly as they do on the website.
+PDF download links are secure, user-specific and expire after 15 minutes.
+
 Generate a new migration only after changing SQLAlchemy models:
 
 ```bash

@@ -23,6 +23,9 @@ yt-dlp>=2025.1.1
 # Detect the actual language of Latin-script captions when YouTube mislabels a
 # caption track. Non-Latin scripts are detected directly in summarizer.py.
 langdetect==1.0.9
+# ChatGPT/Codex plugin server.  FastMCP exposes the standard streamable HTTP
+# transport and OAuth-protected tools from this existing FastAPI deployment.
+mcp==1.27.1
 
 # Server-side PDF rendering of the full notes. WeasyPrint gets its text shaping
 # from Pango, which is what makes Devanagari, Tamil and Arabic come out as

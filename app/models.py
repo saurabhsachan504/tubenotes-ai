@@ -152,6 +152,70 @@ class User(TimestampMixin, Base):
 
 
 # ---------------------------------------------------------------------------
+# ChatGPT / Codex MCP OAuth
+# ---------------------------------------------------------------------------
+class McpOAuthClient(Base):
+    """A dynamically registered MCP OAuth client (normally ChatGPT)."""
+
+    __tablename__ = "mcp_oauth_clients"
+
+    client_id: Mapped[str] = mapped_column(String(2048), primary_key=True)
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class McpAuthorizationRequest(Base):
+    """Short-lived browser hand-off from ChatGPT OAuth to TubeNotes login."""
+
+    __tablename__ = "mcp_authorization_requests"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    client_id: Mapped[str] = mapped_column(String(2048), nullable=False, index=True)
+    redirect_uri: Mapped[str] = mapped_column(String(2048), nullable=False)
+    code_challenge: Mapped[str] = mapped_column(String(256), nullable=False)
+    scopes: Mapped[str] = mapped_column(String(512), nullable=False)
+    state: Mapped[str | None] = mapped_column(String(2048))
+    resource: Mapped[str | None] = mapped_column(String(2048))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class McpAuthorizationCode(Base):
+    """One-time PKCE authorization code. Only its SHA-256 digest is stored."""
+
+    __tablename__ = "mcp_authorization_codes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_id: Mapped[str] = mapped_column(String(2048), nullable=False, index=True)
+    redirect_uri: Mapped[str] = mapped_column(String(2048), nullable=False)
+    code_challenge: Mapped[str] = mapped_column(String(256), nullable=False)
+    scopes: Mapped[str] = mapped_column(String(512), nullable=False)
+    resource: Mapped[str | None] = mapped_column(String(2048))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class McpAccessToken(Base):
+    """Opaque, revocable bearer token presented by ChatGPT to MCP tools."""
+
+    __tablename__ = "mcp_access_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_id: Mapped[str] = mapped_column(String(2048), nullable=False, index=True)
+    scopes: Mapped[str] = mapped_column(String(512), nullable=False)
+    resource: Mapped[str | None] = mapped_column(String(2048))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+# ---------------------------------------------------------------------------
 # Devices
 # ---------------------------------------------------------------------------
 class DeviceTrialLedger(TimestampMixin, Base):

@@ -112,3 +112,34 @@ cd /opt/tubenotes-ai
 git pull --ff-only
 CONFIRM_SHARED_DB_BACKUP=yes bash deploy/deploy-shared-db.sh
 ```
+
+## ChatGPT TubeNotes plugin enable karna
+
+Is release ke baad `.env` mein ye values add karo:
+
+```ini
+MCP_ENABLED=true
+MCP_PUBLIC_URL=https://tubenotes.ai/mcp
+OUTPUT_CACHE_ENABLED=true
+```
+
+Phir normal update command chalao; isse MCP OAuth tables ki Alembic migration
+aur `mcp` dependency deploy ho jayegi:
+
+```bash
+cd /opt/tubenotes-ai
+git pull --ff-only
+CONFIRM_SHARED_DB_BACKUP=yes bash deploy/deploy-shared-db.sh
+```
+
+Verify:
+
+```bash
+curl -I https://tubenotes.ai/mcp/.well-known/oauth-authorization-server
+curl -I https://tubenotes.ai/plugin/connect
+```
+
+OpenAI developer configuration mein MCP server URL `https://tubenotes.ai/mcp`
+add karo. User jab pehli baar Summary ya PDF tool use karega, ChatGPT use
+`/plugin/connect` par existing TubeNotes login ke liye bhejega. Website aur
+ChatGPT dono same database, account, subscription aur credits use karte hain.

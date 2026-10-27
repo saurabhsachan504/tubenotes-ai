@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Connect TubeNotes to ChatGPT</title>
+  <style>
+    :root{font-family:Inter,system-ui,sans-serif;color:#22123f;background:#f7f3ff}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}.card{width:min(100%,460px);background:#fff;border:1px solid #e3d7f8;border-radius:22px;padding:28px;box-shadow:0 20px 55px rgba(73,30,132,.15)}.brand{font-weight:800;font-size:23px;color:#2b1553}.brand i{font-style:normal;color:#fff;background:linear-gradient(135deg,#7838eb,#de3b9d);border-radius:8px;padding:2px 7px;margin-right:7px}h1{font-size:25px;margin:24px 0 8px}p{color:#675d77;line-height:1.5}label{display:block;font-size:13px;font-weight:700;margin-top:16px}input{width:100%;margin-top:6px;padding:12px;border:1px solid #d9cceb;border-radius:10px;font:inherit}button{width:100%;border:0;border-radius:10px;padding:13px;margin-top:20px;color:white;background:linear-gradient(135deg,#6f35e9,#d7339e);font-weight:800;cursor:pointer}button:disabled{opacity:.6;cursor:wait}.msg{min-height:22px;margin-top:14px;font-size:14px;color:#a01d54}.fine{font-size:12px;margin-top:20px}.hidden{display:none}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand"><i>▶</i>TubeNotes</div>
+    <h1>Connect TubeNotes</h1>
+    <p id="lead">Checking your ChatGPT connection request…</p>
+    <form id="login" class="hidden">
+      <label>Email<input id="email" type="email" autocomplete="email" required></label>
+      <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
+      <button id="submit" type="submit">Connect to ChatGPT</button>
+    </form>
+    <div id="google" class="hidden" style="margin-top:14px"></div>
+    <p id="message" class="msg" role="alert"></p>
+    <p class="fine">TubeNotes will only use this connection to check your plan and create summaries or PDFs you request.</p>
+  </main>
+  <script src="https://accounts.google.com/gsi/client" async></script>
+  <script>
+  (()=>{
+    const req=new URLSearchParams(location.search).get('request');
+    const lead=document.querySelector('#lead'),form=document.querySelector('#login'),message=document.querySelector('#message'),button=document.querySelector('#submit');
+    const api='/api/v1';
+    const device=()=>({installation_id:(localStorage.tubenotes_mcp_installation_id||(localStorage.tubenotes_mcp_installation_id=crypto.randomUUID())),platform:'ChatGPT plugin',user_agent_brand:navigator.userAgent.slice(0,180),screen:`${screen.width}x${screen.height}`,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,language:navigator.language,hardware_concurrency:navigator.hardwareConcurrency||null,device_memory:navigator.deviceMemory||null,label:'ChatGPT plugin'});
+    const approve=async token=>{const r=await fetch(`${api}/mcp/oauth/approve`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},body:JSON.stringify({request_id:req})});const data=await r.json();if(!r.ok)throw new Error(data.detail||'Could not connect your account.');location.replace(data.redirect_url)};
+    const initGoogle=async()=>{try{const meta=await (await fetch(`${api}/meta`,{cache:'no-store'})).json();if(!meta.google_login||!meta.google_client_id)return;for(let i=0;i<30&&!(window.google&&google.accounts&&google.accounts.id);i++)await new Promise(r=>setTimeout(r,100));if(!(window.google&&google.accounts&&google.accounts.id))return;google.accounts.id.initialize({client_id:meta.google_client_id,callback:async response=>{message.textContent='';try{const r=await fetch(`${api}/auth/google`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:response.credential,device:device(),signup_source:'web'})});const data=await r.json();if(!r.ok)throw new Error(data.detail||'Google sign-in failed.');await approve(data.tokens.access_token)}catch(err){message.textContent=err.message||'Google sign-in failed.'}}});google.accounts.id.renderButton(document.querySelector('#google'),{theme:'outline',size:'large',width:400,text:'signin_with'});document.querySelector('#google').classList.remove('hidden')}catch(_){/* Password login remains available. */}};
+    if(!req){lead.textContent='This connection request is invalid. Return to ChatGPT and try again.';return}
+    fetch(`${api}/mcp/oauth/request/${encodeURIComponent(req)}`,{cache:'no-store'}).then(async r=>{if(!r.ok)throw new Error((await r.json()).detail);return r.json()}).then(info=>{lead.textContent=`Sign in to connect TubeNotes with ${info.client_name}.`;form.classList.remove('hidden');initGoogle()}).catch(e=>{lead.textContent=e.message||'This connection request expired. Return to ChatGPT and try again.'});
+    form.addEventListener('submit',async e=>{e.preventDefault();message.textContent='';button.disabled=true;try{const login=await fetch(`${api}/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.querySelector('#email').value.trim(),password:document.querySelector('#password').value})});const auth=await login.json();if(!login.ok)throw new Error(auth.detail||'Sign-in failed.');await approve(auth.tokens.access_token)}catch(err){message.textContent=err.message||'Could not connect your account.';button.disabled=false}});
+  })();
+  </script>
+</body>
+</html>

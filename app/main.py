@@ -31,7 +31,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import engine, init_db
-from app.routers import admin, auth, billing, contact, push, summarize, trending, usage, webhooks
+from app.routers import admin, auth, billing, contact, mcp, push, summarize, trending, usage, webhooks
 from app.services import translate as translate_service
 from app.services import trending as trending_service
 from app.services import youtube
@@ -226,6 +226,19 @@ app.include_router(admin.router, prefix=settings.API_PREFIX)
 app.include_router(contact.router, prefix=settings.API_PREFIX)
 app.include_router(push.router, prefix=settings.API_PREFIX)
 app.include_router(trending.router, prefix=settings.API_PREFIX)
+# Browser login/approval for the MCP OAuth flow. These routes are inert until
+# the MCP endpoint is enabled, but keeping them here makes the public callback
+# URL stable and does not alter any existing web-app route.
+app.include_router(mcp.api_router, prefix=settings.API_PREFIX)
+app.include_router(mcp.public_router)
+
+if settings.MCP_ENABLED:
+    # The mounted sub-app owns OAuth discovery, authorization-code/token
+    # endpoints and the streamable HTTP transport. It is deliberately mounted
+    # after /mcp/download above, so the short-lived PDF links retain priority.
+    from app.services.mcp_server import build_mcp_server
+
+    app.mount("/mcp", build_mcp_server().streamable_http_app(), name="tubenotes-mcp")
 
 
 @app.get("/healthz", tags=["meta"])

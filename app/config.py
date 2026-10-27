@@ -174,6 +174,21 @@ class Settings(BaseSettings):
     # Serve the browser UI from this same service at "/".
     WEB_APP_ENABLED: bool = True
 
+    # ---- ChatGPT / Codex plugin (MCP) ---------------------------------
+    # Disabled by default so the existing web app is unchanged until the
+    # public HTTPS endpoint and its OAuth callback have been deployed.
+    MCP_ENABLED: bool = False
+    # Public, stable URL users enter in ChatGPT Plugins. With the same backend
+    # this is normally https://tubenotes.ai/mcp (not a separate database).
+    MCP_PUBLIC_URL: str = ""
+    MCP_ACCESS_TOKEN_TTL_MINUTES: int = 60
+    MCP_AUTHORIZATION_TTL_MINUTES: int = 10
+    MCP_DOWNLOAD_TTL_MINUTES: int = 15
+
+    @property
+    def mcp_public_url(self) -> str:
+        return self.MCP_PUBLIC_URL.rstrip("/")
+
     # vLLM exposes an OpenAI-compatible API.  When this API itself runs in
     # Docker and vLLM is exposed on the host at :8010, host.docker.internal is
     # the correct address (docker-compose adds the Linux host-gateway mapping).

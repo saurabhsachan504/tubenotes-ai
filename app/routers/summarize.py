@@ -397,7 +397,16 @@ def _cache_lookup(db: Session, payload, video_id: str, *, mode: str | None = Non
     return None, target, model
 
 
-def _charge_and_lookup(db: Session, user: User, payload, video_id: str, *, action: str, mode: str):
+def _charge_and_lookup(
+    db: Session,
+    user: User,
+    payload,
+    video_id: str,
+    *,
+    action: str,
+    mode: str,
+    surface: str = "web",
+):
     """Every database touch of this request, in ONE blocking call.
 
     This runs on a worker thread, and that is the whole point. It used to run
@@ -417,7 +426,7 @@ def _charge_and_lookup(db: Session, user: User, payload, video_id: str, *, actio
             payload.device,
             action=action,
             idempotency_key=f"video:{video_id}",
-            meta={"video_id": video_id, "mode": mode, "surface": "web"},
+            meta={"video_id": video_id, "mode": mode, "surface": surface},
         )
         db.commit()
         if result.trial_reminder_remaining is not None:
