@@ -20,5 +20,9 @@ transcript language.
   user must connect or sign in. Do not ask for or repeat a password in chat.
 - If the host presents the secure connection UI, wait for it to complete and
   then continue with the requested summary or PDF.
-- Return the summary directly. For a PDF, give the user the secure download
-  URL returned by TubeNotes and mention its expiry time.
+- Return the summary directly, preserving TubeNotes' Markdown section headings,
+  short paragraphs, and bullet points exactly as returned. Do not add a second
+  summary, flatten the sections into prose, or add an introduction before it.
+- For a PDF, give the user the secure download URL returned by TubeNotes and
+  mention its expiry time. The download uses TubeNotes' purple section-heading
+  and bullet-point reading layout.

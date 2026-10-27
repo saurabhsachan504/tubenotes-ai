@@ -32,6 +32,11 @@ def test_an_oversized_document_is_refused(monkeypatch):
         asyncio.run(pdf.render_notes_pdf("x" * 200, title="t"))
 
 
+def test_an_unknown_pdf_style_is_refused():
+    with pytest.raises(ValueError, match="unknown PDF style"):
+        asyncio.run(pdf.render_notes_pdf("# notes", title="t", style="unknown"))
+
+
 def test_a_full_queue_gives_up_rather_than_piling_on(monkeypatch):
     """The whole point of the cap: say "busy" instead of queueing forever."""
     monkeypatch.setattr(settings, "PDF_RENDER_WORKERS", 1)
@@ -76,3 +81,15 @@ def test_markdown_becomes_a_real_pdf():
     )
     assert data.startswith(b"%PDF"), "not a PDF"
     assert len(data) > 800
+
+
+def test_plugin_markdown_becomes_a_real_pdf():
+    pytest.importorskip("weasyprint")
+    pytest.importorskip("markdown")
+    data = asyncio.run(
+        pdf.render_notes_pdf(
+            "## अवलोकन\n\nयह संक्षिप्त विवरण है।\n\n- पहला बिंदु\n- दूसरा बिंदु",
+            title="TubeNotes", style="plugin",
+        )
+    )
+    assert data.startswith(b"%PDF"), "not a PDF"

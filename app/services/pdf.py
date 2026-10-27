@@ -68,7 +68,32 @@ a { color: #14568a; text-decoration: none; }
 """
 
 
-def _render_sync(markdown_text: str, title: str, subtitle: str) -> bytes:
+# The ChatGPT plugin has its own compact, reader-first document treatment.
+# Keep it separate from the website renderer so a plugin update cannot change
+# a web user's established PDF appearance.
+_PLUGIN_CSS = """
+@page { size: A4; margin: 15mm 16mm 18mm 16mm;
+        @bottom-center { content: counter(page) " / " counter(pages);
+                         font-size: 8.5pt; color: #9a9aab; } }
+body { font-family: "Noto Sans", "Noto Sans Devanagari", "Noto Sans Tamil",
+       "Noto Sans Telugu", "Noto Sans Bengali", "Noto Sans Arabic", sans-serif;
+       font-size: 10.25pt; line-height: 1.52; color: #20212b; }
+h1 { font-size: 18pt; line-height: 1.25; margin: 0 0 2mm; color: #1f2030; }
+h2 { break-after: avoid; font-size: 12.5pt; line-height: 1.3; color: #9146f5;
+     border-left: 2.2pt solid #9146f5; margin: 6mm 0 2.4mm; padding: 0 0 0 2.6mm; }
+h3 { break-after: avoid; font-size: 11pt; color: #6d34bf; margin: 4.5mm 0 1.5mm; }
+p { margin: 0 0 2.6mm; }
+ul, ol { margin: 0 0 3mm; padding-left: 6.3mm; }
+li { margin: 0 0 1.15mm; }
+strong { font-weight: 700; color: #252332; }
+em { color: #625b78; }
+a { color: #7c3aed; text-decoration: none; }
+.tn-head { border-bottom: 0.5pt solid #e8e1f4; padding-bottom: 3.2mm; margin-bottom: 5.2mm; }
+.tn-meta { font-size: 8.8pt; color: #756f82; margin-top: 1.3mm; overflow-wrap: anywhere; }
+"""
+
+
+def _render_sync(markdown_text: str, title: str, subtitle: str, style: str) -> bytes:
     """Markdown -> styled PDF. Imported lazily so the API boots without these."""
     import markdown as md
     from weasyprint import CSS, HTML
@@ -85,7 +110,8 @@ def _render_sync(markdown_text: str, title: str, subtitle: str) -> bytes:
         f"<div class='tn-head'><h1>{safe_title}</h1>"
         f"<div class='tn-meta'>{safe_sub}</div></div>{body}</body></html>"
     )
-    return HTML(string=html).write_pdf(stylesheets=[CSS(string=_CSS)])
+    css = _PLUGIN_CSS if style == "plugin" else _CSS
+    return HTML(string=html).write_pdf(stylesheets=[CSS(string=css)])
 
 
 # ---------------------------------------------------------------------------
@@ -117,10 +143,14 @@ def shutdown() -> None:
         pool.shutdown(wait=False, cancel_futures=True)
 
 
-async def render_notes_pdf(markdown_text: str, *, title: str, subtitle: str = "") -> bytes:
-    """Render, waiting for a slot. Raises PDFBusy rather than queueing forever."""
+async def render_notes_pdf(
+    markdown_text: str, *, title: str, subtitle: str = "", style: str = "web"
+) -> bytes:
+    """Render a web or ChatGPT-plugin PDF, waiting for a bounded slot."""
     if not markdown_text or not markdown_text.strip():
         raise ValueError("nothing to render")
+    if style not in {"web", "plugin"}:
+        raise ValueError("unknown PDF style")
     if len(markdown_text) > settings.PDF_MAX_CHARS:
         raise PDFTooLarge(
             f"These notes are {len(markdown_text):,} characters, past the "
@@ -143,7 +173,7 @@ async def render_notes_pdf(markdown_text: str, *, title: str, subtitle: str = ""
     try:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            _get_pool(), _render_sync, markdown_text, title, subtitle
+            _get_pool(), _render_sync, markdown_text, title, subtitle, style
         )
     finally:
         sem.release()
