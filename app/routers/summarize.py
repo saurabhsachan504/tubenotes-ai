@@ -196,7 +196,11 @@ async def _obtain_transcript(
     return await run_in_threadpool(youtube.fetch_transcript, video_id)
 
 
-async def _prepare_video(payload: VideoRequest, video_id: str):
+async def _prepare_video(
+    payload: VideoRequest,
+    video_id: str,
+    transcript_override: youtube.Transcript | None = None,
+):
     """Fetch metadata first so its script can select the right caption track."""
     async def metadata():
         started = time.perf_counter()
@@ -211,7 +215,9 @@ async def _prepare_video(payload: VideoRequest, video_id: str):
 
     async def transcript():
         started = time.perf_counter()
-        value = await _obtain_transcript(payload, video_id, preferred_language)
+        value = transcript_override or await _obtain_transcript(
+            payload, video_id, preferred_language
+        )
         return value, (time.perf_counter() - started) * 1000
 
     captions, transcript_ms = await transcript()

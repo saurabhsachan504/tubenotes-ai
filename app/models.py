@@ -763,3 +763,35 @@ class CachedOutput(Base):
     last_used_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class McpTranscriptCache(Base):
+    """Short-lived, per-account transcript reuse for the ChatGPT plugin.
+
+    Unlike ``CachedOutput``, this is never shared between users.  It exists so
+    a summary followed by a full-notes PDF does not download the same public
+    YouTube captions twice.  The short expiry limits how long raw captions are
+    retained while still covering the normal two-step plugin flow.
+    """
+
+    __tablename__ = "mcp_transcript_cache"
+    __table_args__ = (
+        UniqueConstraint("user_id", "video_id", name="uq_mcp_transcript_user_video"),
+        Index("ix_mcp_transcript_cache_expires_at", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    video_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    language: Mapped[str | None] = mapped_column(String(16))
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default="server")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_used_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

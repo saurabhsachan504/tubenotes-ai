@@ -184,6 +184,9 @@ class Settings(BaseSettings):
     MCP_ACCESS_TOKEN_TTL_MINUTES: int = 60
     MCP_AUTHORIZATION_TTL_MINUTES: int = 10
     MCP_DOWNLOAD_TTL_MINUTES: int = 15
+    # Keeps the full caption text only for the signed-in plugin user, long
+    # enough for "summary, then full PDF" without a second YouTube request.
+    MCP_TRANSCRIPT_CACHE_TTL_MINUTES: int = 60
 
     @property
     def mcp_public_url(self) -> str:

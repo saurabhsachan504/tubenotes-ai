@@ -12,6 +12,7 @@ from typing import Any, Literal
 from urllib.parse import urlencode
 
 import jwt
+from sqlalchemy import select
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 from mcp.server.fastmcp import FastMCP
@@ -21,7 +22,7 @@ from fastapi import HTTPException
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import User
+from app.models import McpTranscriptCache, User
 from app.routers.summarize import (
     SummarizeRequest,
     VideoRequest,
@@ -37,8 +38,12 @@ from app.schemas import DeviceFingerprint
 from app.services import entitlements, output_cache, pdf, summarizer, translate, youtube
 from app.services.mcp_oauth import MCP_SCOPE, TubeNotesAccessToken, TubeNotesOAuthProvider
 
+_LANGUAGE_CODES = (
+    "en", "hi", "bn", "gu", "kn", "ml", "mr", "pa", "ta", "te",
+    "ur", "ar", "de", "es", "fr", "id", "it", "ja", "ko", "nl", "pt", "ru", "tr", "vi", "zh",
+)
 _LANGUAGE_OPTIONS = Literal[
-    "auto", "en", "hi", "bn", "gu", "kn", "ml", "mr", "pa", "ta", "te",
+    "en", "hi", "bn", "gu", "kn", "ml", "mr", "pa", "ta", "te",
     "ur", "ar", "de", "es", "fr", "id", "it", "ja", "ko", "nl", "pt", "ru", "tr", "vi", "zh",
 ]
 
@@ -62,11 +67,11 @@ def _tool_input_schema(*, video: bool = False) -> dict[str, Any]:
             "video_url": {"type": "string", "description": "Public YouTube video URL."},
             "language": {
                 "type": "string",
-                "default": "auto",
-                "description": "Output language code, or auto to use the transcript language.",
+                "enum": list(_LANGUAGE_CODES),
+                "description": "Required output language code chosen by the user, for example hi for Hindi or en for English. Never infer or default this value.",
             },
         },
-        "required": ["video_url"],
+        "required": ["video_url", "language"],
         "additionalProperties": False,
     }
 
@@ -92,7 +97,7 @@ def mcp_tool_definitions() -> list[dict[str, Any]]:
         {
             "name": "summarize_youtube_video",
             "title": "Summarize YouTube video",
-            "description": "Use this when the user wants a summary of a public YouTube video in a chosen language.",
+            "description": "Use this only after the user has explicitly selected an output language for a public YouTube video summary.",
             "inputSchema": _tool_input_schema(video=True),
             "outputSchema": _MCP_TOOL_OUTPUT_SCHEMA,
             "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": True},
@@ -101,7 +106,7 @@ def mcp_tool_definitions() -> list[dict[str, Any]]:
         {
             "name": "create_video_pdf",
             "title": "Create video notes PDF",
-            "description": "Use this when the user wants a downloadable PDF of complete YouTube video notes in a chosen language.",
+            "description": "Use this only after the user has explicitly selected an output language for complete YouTube video notes PDF.",
             "inputSchema": _tool_input_schema(video=True),
             "outputSchema": _MCP_TOOL_OUTPUT_SCHEMA,
             "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": True},
@@ -179,6 +184,88 @@ async def _claim(user: User, payload: VideoRequest, video_id: str, mode: str):
         db.close()
 
 
+def _as_utc(value: datetime) -> datetime:
+    """SQLite returns naive timestamps while Postgres returns UTC-aware ones."""
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def _load_mcp_transcript(user_id: str, video_id: str) -> youtube.Transcript | None:
+    """Read one user's short-lived transcript; never share raw captions."""
+    db = SessionLocal()
+    try:
+        row = db.scalar(
+            select(McpTranscriptCache).where(
+                McpTranscriptCache.user_id == user_id,
+                McpTranscriptCache.video_id == video_id,
+            )
+        )
+        if row is None:
+            return None
+        if _as_utc(row.expires_at) <= _now():
+            db.delete(row)
+            db.commit()
+            return None
+        row.last_used_at = _now()
+        db.commit()
+        return youtube.Transcript(
+            text=row.text,
+            language=row.language,
+            is_generated=True,
+            source=row.source,
+        )
+    finally:
+        db.close()
+
+
+def _store_mcp_transcript(user_id: str, video_id: str, transcript: youtube.Transcript) -> None:
+    """Upsert a transcript after a successful fetch for the signed-in user."""
+    db = SessionLocal()
+    try:
+        now = _now()
+        expiry = now + timedelta(minutes=settings.MCP_TRANSCRIPT_CACHE_TTL_MINUTES)
+        row = db.scalar(
+            select(McpTranscriptCache).where(
+                McpTranscriptCache.user_id == user_id,
+                McpTranscriptCache.video_id == video_id,
+            )
+        )
+        if row is None:
+            row = McpTranscriptCache(
+                user_id=user_id,
+                video_id=video_id,
+                text=transcript.text,
+                language=transcript.language,
+                source=transcript.source,
+                expires_at=expiry,
+                last_used_at=now,
+            )
+            db.add(row)
+        else:
+            row.text = transcript.text
+            row.language = transcript.language
+            row.source = transcript.source
+            row.expires_at = expiry
+            row.last_used_at = now
+        db.commit()
+    finally:
+        db.close()
+
+
+async def _prepare_mcp_video(user: User, payload: VideoRequest, video_id: str):
+    """Reuse captions from the immediately preceding MCP summary/PDF request."""
+    cached = await run_in_threadpool(_load_mcp_transcript, user.id, video_id)
+    meta, transcript, metadata_ms, transcript_ms = await _prepare_video(
+        payload, video_id, transcript_override=cached
+    )
+    if cached is None:
+        # Store only after the fetch succeeded.  A failed/transient YouTube
+        # response must never poison the subsequent PDF request.
+        await run_in_threadpool(_store_mcp_transcript, user.id, video_id, transcript)
+    else:
+        logger.info("reused MCP transcript for %s (%s chars)", video_id, len(transcript.text))
+    return meta, transcript, metadata_ms, transcript_ms
+
+
 async def _create_text(user: User, video_url: str, language: str, mode: Literal["summary", "notes"]) -> dict[str, Any]:
     video_id = _video_id_or_400(video_url)
     payload = (
@@ -204,7 +291,9 @@ async def _create_text(user: User, video_url: str, language: str, mode: Literal[
             "entitlement": entitlement.model_dump(mode="json"),
         }
 
-    meta, transcript, _metadata_ms, _transcript_ms = await _prepare_video(payload, video_id)
+    meta, transcript, _metadata_ms, _transcript_ms = await _prepare_mcp_video(
+        user, payload, video_id
+    )
     detected = summarizer.detect_language(transcript.text, hint=transcript.language)
     target = _resolve_target(language, detected)
     model, write_language, translate_to = summarizer.plan_for(target)
@@ -313,6 +402,12 @@ def _authentication_required_result() -> dict[str, Any]:
     )
 
 
+def _selected_mcp_language(arguments: dict[str, Any]) -> str | None:
+    """Accept only an explicit supported code; ``auto`` is intentionally invalid."""
+    value = str(arguments.get("language", "")).strip().lower()
+    return value if value in _LANGUAGE_CODES else None
+
+
 async def call_public_mcp_tool(
     authorization: str | None,
     tool_name: str,
@@ -336,8 +431,17 @@ async def call_public_mcp_tool(
         if tool_name == "get_tubenotes_profile":
             return _tool_result(_profile_payload(user))
         video_url = str(values.get("video_url", "")).strip()
-        language = str(values.get("language", "auto")).strip() or "auto"
+        language = _selected_mcp_language(values)
+        if tool_name in {"summarize_youtube_video", "create_video_pdf"} and language is None:
+            return _tool_result(
+                {
+                    "error": "language_required",
+                    "message": "Ask the user which language they want (for example Hindi or English), then call TubeNotes again with that selected language code.",
+                },
+                is_error=True,
+            )
         if tool_name == "summarize_youtube_video":
+            assert language is not None
             result = await _create_text(user, video_url, language, "summary")
             payload = {
                 **{key: value for key, value in result.items() if key != "text"},
@@ -346,6 +450,7 @@ async def call_public_mcp_tool(
             }
             return _tool_result(payload)
         if tool_name == "create_video_pdf":
+            assert language is not None
             return _tool_result(await _pdf_payload(user, video_url, language))
         return _tool_result({"error": "unknown_tool", "message": "Unknown TubeNotes tool."}, is_error=True)
     except Exception as exc:
@@ -388,8 +493,8 @@ def build_mcp_server() -> FastMCP:
         "TubeNotes",
         instructions=(
             "Use TubeNotes to summarize public YouTube videos or prepare a PDF. "
-            "Offer the user an output-language choice before calling a creation tool. "
-            "When they do not choose one, use auto so the result stays in the video's transcript language. "
+            "Before every summary or PDF creation tool call, ask the user to choose an output language. "
+            "Never infer, default, or send auto for the language. "
             "Never claim a PDF is ready until create_video_pdf returns its download URL."
         ),
         auth_server_provider=provider,
@@ -425,7 +530,7 @@ def build_mcp_server() -> FastMCP:
     )
     async def summarize_youtube_video(
         video_url: str,
-        language: _LANGUAGE_OPTIONS = "auto",
+        language: _LANGUAGE_OPTIONS,
     ) -> dict[str, Any]:
         user = _current_user()
         result = await _create_text(user, video_url, language, "summary")
@@ -442,7 +547,7 @@ def build_mcp_server() -> FastMCP:
     )
     async def create_video_pdf(
         video_url: str,
-        language: _LANGUAGE_OPTIONS = "auto",
+        language: _LANGUAGE_OPTIONS,
     ) -> dict[str, Any]:
         user = _current_user()
         return await _pdf_payload(user, video_url, language)

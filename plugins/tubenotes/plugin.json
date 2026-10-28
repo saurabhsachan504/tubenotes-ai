@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "tubenotes",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Summarize public YouTube videos and create multilingual video-notes PDFs with a TubeNotes account.",
   "author": {
     "name": "True Technologies",

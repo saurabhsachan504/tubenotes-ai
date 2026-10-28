@@ -5,9 +5,10 @@ description: Summarize a public YouTube video or create a downloadable TubeNotes
 
 Use TubeNotes only for a public YouTube URL supplied by the user.
 
-Before creating a summary or PDF, offer the user a language choice. If they do
-not state a preference, use `auto`; this returns the result in the detected
-transcript language.
+Before calling either creation tool, the user MUST explicitly choose the output
+language. Ask a short question such as "Summary Hindi mein chahiye ya English
+mein?" Do not infer a language from the video, interface, previous chats, or
+the user's location. Do not call either creation tool until they reply.
 
 - Use `summarize_youtube_video` when the user asks for a summary, key points,
   or an explanation of the video.

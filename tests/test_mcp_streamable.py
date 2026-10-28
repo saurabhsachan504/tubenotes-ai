@@ -22,6 +22,9 @@ def test_public_mcp_lists_oauth_protected_tools_without_login(client):
     tools = {tool["name"]: tool for tool in listed.json()["result"]["tools"]}
     assert tools["summarize_youtube_video"]["securitySchemes"] == [{"type": "oauth2", "scopes": ["tubenotes:summary"]}]
     assert tools["summarize_youtube_video"]["outputSchema"] == {"type": "object", "additionalProperties": True}
+    schema = tools["summarize_youtube_video"]["inputSchema"]
+    assert schema["required"] == ["video_url", "language"]
+    assert "auto" not in schema["properties"]["language"]["enum"]
     assert tools["get_tubenotes_profile"]["_meta"]["openai/profile"] is True
 
 
