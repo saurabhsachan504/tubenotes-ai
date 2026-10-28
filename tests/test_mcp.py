@@ -8,6 +8,7 @@ import pytest
 from mcp.server.auth.provider import AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 
+from app.config import settings
 from app.services.mcp_oauth import (
     MCP_SCOPE,
     TubeNotesOAuthProvider,
@@ -43,7 +44,7 @@ def test_mcp_oauth_code_is_one_time_and_scoped_to_the_user(client, db, device):
                 code_challenge="pkce-challenge",
                 redirect_uri="https://chatgpt.com/plugin-callback",
                 redirect_uri_provided_explicitly=True,
-                resource="https://tubenotes.ai/mcp",
+                resource=None,
             ),
         )
         request_id = parse_qs(urlparse(redirect).query)["request"][0]
@@ -59,6 +60,7 @@ def test_mcp_oauth_code_is_one_time_and_scoped_to_the_user(client, db, device):
         stored = await provider.load_authorization_code(client_info, code)
         assert stored is not None
         assert stored.user_id == user_id
+        assert stored.resource == settings.mcp_public_url
         token = await provider.exchange_authorization_code(client_info, stored)
         assert token.access_token
         assert await provider.load_authorization_code(client_info, code) is None

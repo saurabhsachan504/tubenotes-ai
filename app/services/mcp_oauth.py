@@ -81,6 +81,11 @@ class TubeNotesOAuthProvider:
             db.close()
 
     async def authorize(self, client, params) -> str:
+        # RFC 8707's resource indicator is optional. Claude Desktop omits it
+        # for custom connectors, but this authorization server only issues
+        # tokens for TubeNotes MCP, so bind the resulting code to that known
+        # resource rather than persisting a null audience.
+        resource = settings.mcp_public_url.rstrip("/")
         request_id = secrets.token_urlsafe(32)
         db = SessionLocal()
         try:
@@ -92,7 +97,7 @@ class TubeNotesOAuthProvider:
                     code_challenge=params.code_challenge,
                     scopes=" ".join(params.scopes or [MCP_SCOPE]),
                     state=params.state,
-                    resource=params.resource,
+                    resource=resource,
                     expires_at=now() + timedelta(minutes=settings.MCP_AUTHORIZATION_TTL_MINUTES),
                 )
             )

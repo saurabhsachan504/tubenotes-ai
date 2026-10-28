@@ -517,14 +517,14 @@ async def call_public_mcp_tool(
     if authorization and authorization.lower().startswith("bearer "):
         raw_token = authorization[7:].strip()
     token = await TubeNotesOAuthProvider().load_access_token(raw_token) if raw_token else None
-    # Claude Desktop currently resolves the OAuth registration endpoint at the
-    # site origin.  Its otherwise valid authorization request can therefore
-    # bind the token to APP_BASE_URL instead of the advertised /mcp resource.
-    # Both values identify this same TubeNotes authorization server; accept
-    # only those two exact origins, never an arbitrary client-provided value.
+    # Older Claude connections omit RFC 8707's optional resource indicator;
+    # their opaque tokens were issued by this same server with resource=None.
+    # Treat that legacy empty value as this MCP resource while still rejecting
+    # a token explicitly issued for an unrelated resource.
     accepted_resources = {
         settings.mcp_public_url.rstrip("/"),
         settings.APP_BASE_URL.rstrip("/"),
+        "",
     }
     if (
         token is None
