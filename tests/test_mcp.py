@@ -104,8 +104,15 @@ def test_mcp_dynamic_registration_accepts_claude_pkce_client(client, db, path):
     assert db.get(McpOAuthClient, registered["client_id"]) is not None
 
 
-def test_gemini_oauth_metadata_advertises_pkce_public_client(client):
-    response = client.get("/gemini-mcp/.well-known/oauth-authorization-server")
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/gemini-mcp/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-authorization-server/gemini-mcp",
+    ],
+)
+def test_gemini_oauth_metadata_advertises_pkce_public_client(client, path):
+    response = client.get(path)
 
     assert response.status_code == 200
     metadata = response.json()
@@ -114,6 +121,25 @@ def test_gemini_oauth_metadata_advertises_pkce_public_client(client):
     assert metadata["token_endpoint_auth_methods_supported"] == ["none"]
     assert metadata["code_challenge_methods_supported"] == ["S256"]
     assert response.headers["access-control-allow-origin"] == "*"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/gemini-mcp/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/gemini-mcp",
+    ],
+)
+def test_gemini_protected_resource_metadata_uses_standard_discovery_paths(client, path):
+    response = client.get(path)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "resource": settings.gemini_mcp_public_url,
+        "authorization_servers": [settings.gemini_mcp_public_url],
+        "scopes_supported": [MCP_SCOPE],
+        "bearer_methods_supported": ["header"],
+    }
 
 
 def test_gemini_dynamic_registration_allows_browser_preflight(client):

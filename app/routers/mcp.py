@@ -88,7 +88,31 @@ async def gemini_mcp_register_preflight():
     )
 
 
+@public_router.get("/gemini-mcp/.well-known/oauth-protected-resource", include_in_schema=False)
+@public_router.get("/.well-known/oauth-protected-resource/gemini-mcp", include_in_schema=False)
+async def gemini_oauth_protected_resource_metadata():
+    """Serve RFC 9728 discovery at both valid protected-resource locations.
+
+    The nested form is commonly used by MCP SDKs. Gemini follows the RFC's
+    canonical host-level form when the protected resource includes a path.
+    """
+    resource = settings.gemini_mcp_public_url
+    return JSONResponse(
+        {
+            "resource": resource,
+            "authorization_servers": [resource],
+            "scopes_supported": [MCP_SCOPE],
+            "bearer_methods_supported": ["header"],
+        },
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
 @public_router.get("/gemini-mcp/.well-known/oauth-authorization-server", include_in_schema=False)
+@public_router.get("/.well-known/oauth-authorization-server/gemini-mcp", include_in_schema=False)
 async def gemini_oauth_authorization_server_metadata():
     """Advertise public-client OAuth metadata accepted by Gemini Connected Apps.
 
