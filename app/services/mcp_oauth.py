@@ -7,11 +7,13 @@ opaque MCP bearer token after the PKCE exchange.
 from __future__ import annotations
 
 import secrets
+from uuid import uuid4
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 from mcp.server.auth.provider import AccessToken, AuthorizationCode, RefreshToken, TokenError
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from app.config import settings
@@ -204,6 +206,72 @@ class TubeNotesOAuthProvider:
                 db.commit()
         finally:
             db.close()
+
+
+async def register_dynamic_client(metadata: object) -> OAuthClientInformationFull:
+    """Register a public OAuth client without FastMCP 1.12's DCR restrictions.
+
+    That FastMCP release rejects a standards-valid client that asks only for an
+    authorization-code grant; it requires ``refresh_token`` too. Claude uses
+    the former when creating a custom connector. We deliberately support both
+    shapes, while retaining PKCE and the normal token-endpoint checks.
+    """
+    if not isinstance(metadata, dict):
+        raise ValueError("Client metadata must be a JSON object")
+
+    raw_redirect_uris = metadata.get("redirect_uris")
+    if not isinstance(raw_redirect_uris, list) or not raw_redirect_uris:
+        raise ValueError("redirect_uris must contain at least one callback URL")
+    if len(raw_redirect_uris) > 16 or any(not isinstance(uri, str) or len(uri) > 2048 for uri in raw_redirect_uris):
+        raise ValueError("redirect_uris contains an invalid callback URL")
+
+    method = metadata.get("token_endpoint_auth_method", "none")
+    if method not in {"none", "client_secret_post"}:
+        raise ValueError("Unsupported token_endpoint_auth_method")
+
+    grant_types = metadata.get("grant_types", ["authorization_code"])
+    if not isinstance(grant_types, list) or not grant_types or not all(isinstance(item, str) for item in grant_types):
+        raise ValueError("grant_types must be an array")
+    if "authorization_code" not in grant_types or not set(grant_types).issubset({"authorization_code", "refresh_token"}):
+        raise ValueError("Only authorization_code and refresh_token grants are supported")
+
+    response_types = metadata.get("response_types", ["code"])
+    if response_types != ["code"]:
+        raise ValueError("Only the code response type is supported")
+
+    scope = metadata.get("scope", MCP_SCOPE)
+    if not isinstance(scope, str) or not scope.strip() or not set(_scopes(scope)).issubset({MCP_SCOPE}):
+        raise ValueError("Requested scopes are not valid")
+
+    # OAuthClientInformationFull gives us URL/type validation and strips any
+    # unknown, non-security-relevant metadata fields sent by a newer client.
+    client_secret = secrets.token_urlsafe(32) if method == "client_secret_post" else None
+    try:
+        client = OAuthClientInformationFull.model_validate(
+            {
+                "client_id": str(uuid4()),
+                "client_id_issued_at": int(now().timestamp()),
+                "client_secret": client_secret,
+                "redirect_uris": raw_redirect_uris,
+                "token_endpoint_auth_method": method,
+                "grant_types": grant_types,
+                "response_types": response_types,
+                "scope": " ".join(_scopes(scope)),
+                **{
+                    key: metadata[key]
+                    for key in (
+                        "client_name", "client_uri", "logo_uri", "contacts", "tos_uri", "policy_uri",
+                        "jwks_uri", "jwks", "software_id", "software_version",
+                    )
+                    if key in metadata
+                },
+            }
+        )
+    except ValidationError as exc:
+        raise ValueError("Invalid client metadata") from exc
+
+    await TubeNotesOAuthProvider().register_client(client)
+    return client
 
 
 def authorization_request_details(request_id: str) -> dict[str, str] | None:

@@ -14,7 +14,11 @@ from app.deps import get_current_user
 from app.models import User
 from app.schemas import DeviceFingerprint
 from app.services import pdf
-from app.services.mcp_oauth import approve_authorization_request, authorization_request_details
+from app.services.mcp_oauth import (
+    approve_authorization_request,
+    authorization_request_details,
+    register_dynamic_client,
+)
 from app.services.mcp_server import call_public_mcp_tool, mcp_tool_definitions, render_plugin_pdf
 
 api_router = APIRouter(prefix="/mcp", tags=["mcp"])
@@ -29,6 +33,33 @@ class ApproveMcpAuthorizationRequest(BaseModel):
 
 def _rpc_result(request_id: Any, result: dict[str, Any]) -> JSONResponse:
     return JSONResponse({"jsonrpc": "2.0", "id": request_id, "result": result})
+
+
+@public_router.post("/mcp/register", include_in_schema=False)
+async def register_mcp_oauth_client(request: Request):
+    """OAuth Dynamic Client Registration compatible with Claude custom connectors.
+
+    The FastMCP version used by the service requires a refresh-token grant at
+    registration time. Claude correctly registers a PKCE-only public client,
+    so it is served here before the FastMCP sub-application is mounted.
+    """
+    try:
+        metadata = await request.json()
+    except ValueError:
+        metadata = None
+    try:
+        client = await register_dynamic_client(metadata)
+    except ValueError as exc:
+        return JSONResponse(
+            {"error": "invalid_client_metadata", "error_description": str(exc)},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            headers={"Cache-Control": "no-store"},
+        )
+    return JSONResponse(
+        client.model_dump(mode="json", exclude_none=True),
+        status_code=status.HTTP_201_CREATED,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @public_router.post("/mcp/", include_in_schema=False)

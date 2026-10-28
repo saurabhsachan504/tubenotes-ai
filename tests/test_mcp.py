@@ -12,6 +12,7 @@ from app.services.mcp_oauth import (
     approve_authorization_request,
     authorization_request_details,
 )
+from app.models import McpOAuthClient
 from app.schemas import DeviceFingerprint
 from tests.conftest import register
 
@@ -76,3 +77,23 @@ def test_mcp_oauth_approval_requires_signed_in_user(client, device):
     )
     assert response.status_code == 401
     assert body["user"]["email"] == "mcp-api@example.com"
+
+
+def test_mcp_dynamic_registration_accepts_claude_pkce_client(client, db):
+    response = client.post(
+        "/mcp/register",
+        json={
+            "redirect_uris": ["https://claude.ai/mcp/callback"],
+            "grant_types": ["authorization_code"],
+            "response_types": ["code"],
+            "scope": MCP_SCOPE,
+            "client_name": "Claude",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    registered = response.json()
+    assert registered["client_id"]
+    assert registered["token_endpoint_auth_method"] == "none"
+    assert registered["grant_types"] == ["authorization_code"]
+    assert db.get(McpOAuthClient, registered["client_id"]) is not None
