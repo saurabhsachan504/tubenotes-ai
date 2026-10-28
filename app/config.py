@@ -187,6 +187,10 @@ class Settings(BaseSettings):
     # Keeps the full caption text only for the signed-in plugin user, long
     # enough for "summary, then full PDF" without a second YouTube request.
     MCP_TRANSCRIPT_CACHE_TTL_MINUTES: int = 60
+    # MCP has its own quota: it must not change the web-app's trial policy.
+    # The counter is keyed to the signed-in browser's coarse machine fingerprint
+    # captured during the secure OAuth hand-off, never to an email account.
+    MCP_FREE_TRIAL_LIMIT: int = 20
 
     @property
     def mcp_public_url(self) -> str:

@@ -194,6 +194,9 @@ class McpAuthorizationCode(Base):
     code_challenge: Mapped[str] = mapped_column(String(256), nullable=False)
     scopes: Mapped[str] = mapped_column(String(512), nullable=False)
     resource: Mapped[str | None] = mapped_column(String(2048))
+    # HMAC of the OAuth-popup browser's coarse hardware fingerprint.  The raw
+    # fingerprint is never stored; this ties the MCP token to one machine.
+    machine_hash: Mapped[str | None] = mapped_column(String(64))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -210,9 +213,47 @@ class McpAccessToken(Base):
     client_id: Mapped[str] = mapped_column(String(2048), nullable=False, index=True)
     scopes: Mapped[str] = mapped_column(String(512), nullable=False)
     resource: Mapped[str | None] = mapped_column(String(2048))
+    machine_hash: Mapped[str | None] = mapped_column(String(64), index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class McpTrialLedger(Base):
+    """Twenty free MCP video runs, shared by every account on one machine."""
+
+    __tablename__ = "mcp_trial_ledger"
+
+    machine_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    trials_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class McpTrialUsage(Base):
+    """One unlocked video, so its summary and PDF never spend two trials."""
+
+    __tablename__ = "mcp_trial_usages"
+    __table_args__ = (
+        UniqueConstraint("machine_hash", "video_id", name="uq_mcp_trial_machine_video"),
+        Index("ix_mcp_trial_usage_user_id", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    machine_hash: Mapped[str] = mapped_column(
+        ForeignKey("mcp_trial_ledger.machine_hash", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    video_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 # ---------------------------------------------------------------------------

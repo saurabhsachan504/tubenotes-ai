@@ -1,8 +1,9 @@
 """TubeNotes tools exposed to ChatGPT and Codex through MCP.
 
-This deliberately calls the same entitlement, transcript, model, translation
-and PDF services as the website.  The only surface-specific detail is a stable
-per-account virtual device used by the existing trial ledger.
+This deliberately calls the same transcript, model, translation and PDF
+services as the website.  Its trial allowance is separate: the OAuth connect
+page binds every token to a coarse browser-machine hash, so account switching
+cannot mint another free MCP allowance.
 """
 import re
 import json
@@ -22,11 +23,11 @@ from fastapi import HTTPException
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import McpTranscriptCache, User
+from app.models import McpTranscriptCache, McpTrialLedger, McpTrialUsage, User
 from app.routers.summarize import (
     SummarizeRequest,
     VideoRequest,
-    _charge_and_lookup,
+    _cache_lookup,
     _may_cache,
     _prepare_video,
     _resolve_target,
@@ -34,7 +35,7 @@ from app.routers.summarize import (
     _friendly,
     _video_id_or_400,
 )
-from app.schemas import DeviceFingerprint
+from app.schemas import DeviceFingerprint, EntitlementOut
 from app.services import entitlements, output_cache, pdf, summarizer, translate, youtube
 from app.services.mcp_oauth import MCP_SCOPE, TubeNotesAccessToken, TubeNotesOAuthProvider
 
@@ -119,15 +120,9 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _plugin_device(user_id: str) -> DeviceFingerprint:
-    """A deterministic virtual device without pretending ChatGPT exposes hardware."""
-    return DeviceFingerprint(
-        installation_id=f"chatgpt-mcp:{user_id}",
-        platform="ChatGPT plugin",
-        user_agent_brand="ChatGPT",
-        language="en",
-        label="ChatGPT plugin",
-    )
+def _mcp_request_device(user_id: str) -> DeviceFingerprint:
+    """Schema placeholder only; plugin billing uses OAuth-bound machine_hash."""
+    return DeviceFingerprint(installation_id=f"chatgpt-mcp:{user_id}", platform="ChatGPT plugin")
 
 
 def _active_user(user_id: str) -> User:
@@ -151,10 +146,65 @@ def _current_user() -> User:
     return _active_user(str(getattr(token, "user_id", "") or ""))
 
 
-def _profile_payload(user: User) -> dict[str, Any]:
+def _current_machine_hash() -> str:
+    token = get_access_token()
+    value = str(getattr(token, "machine_hash", "") or "")
+    if not value:
+        raise PermissionError("Reconnect TubeNotes to apply the device trial limit.")
+    return value
+
+
+def _mcp_ledger(db, machine_hash: str, *, lock: bool = False) -> McpTrialLedger:
+    statement = select(McpTrialLedger).where(McpTrialLedger.machine_hash == machine_hash)
+    if lock and not settings.is_sqlite:
+        statement = statement.with_for_update()
+    row = db.execute(statement).scalar_one_or_none()
+    if row is None:
+        row = McpTrialLedger(machine_hash=machine_hash, trials_used=0)
+        db.add(row)
+        db.flush()
+    return row
+
+
+def _mcp_entitlement(db, user: User, machine_hash: str) -> EntitlementOut:
+    """Plugin-only quota: twenty public videos per browser machine.
+
+    Web/extension trials intentionally remain independent.  A TubeNotes
+    subscription (or manual Pro grant) always takes precedence over this cap.
+    """
+    limit = settings.MCP_FREE_TRIAL_LIMIT
+    upgrade_url = f"{settings.APP_BASE_URL}{settings.API_PREFIX}/billing/checkout"
+    if not user.is_active:
+        return EntitlementOut(
+            allowed=False, reason="account_disabled", plan="blocked",
+            trials_limit=limit, trials_used=0, trials_remaining=0,
+            device_trials_used=0, device_trials_remaining=0, upgrade_url=upgrade_url,
+        )
+    if entitlements.active_manual_pro(db, user) is not None or entitlements.active_subscription(db, user) is not None:
+        return EntitlementOut(
+            allowed=True, reason="subscription_active", plan="subscription",
+            trials_limit=limit, trials_used=0, trials_remaining=limit,
+            device_trials_used=0, device_trials_remaining=limit,
+        )
+    ledger = _mcp_ledger(db, machine_hash)
+    remaining = max(0, limit - ledger.trials_used)
+    return EntitlementOut(
+        allowed=remaining > 0,
+        reason="trial_available" if remaining > 0 else "machine_trial_exhausted",
+        plan="free_trial",
+        trials_limit=limit,
+        trials_used=ledger.trials_used,
+        trials_remaining=remaining,
+        device_trials_used=ledger.trials_used,
+        device_trials_remaining=remaining,
+        upgrade_url=upgrade_url,
+    )
+
+
+def _profile_payload(user: User, machine_hash: str) -> dict[str, Any]:
     db = SessionLocal()
     try:
-        entitlement, _device = entitlements.check(db, user, _plugin_device(user.id))
+        entitlement = _mcp_entitlement(db, user, machine_hash)
         return {
             "id": user.id,
             "email": user.email,
@@ -167,18 +217,55 @@ def _profile_payload(user: User) -> dict[str, Any]:
         db.close()
 
 
-async def _claim(user: User, payload: VideoRequest, video_id: str, mode: str):
+def _claim_mcp_trial(db, user: User, machine_hash: str, video_id: str, payload, mode: str):
+    """Atomically unlock one video for an MCP browser machine and check cache."""
+    ledger = _mcp_ledger(db, machine_hash, lock=True)
+    prior = db.execute(
+        select(McpTrialUsage).where(
+            McpTrialUsage.machine_hash == machine_hash,
+            McpTrialUsage.video_id == video_id,
+        )
+    ).scalar_one_or_none()
+    if prior is None:
+        entitlement = _mcp_entitlement(db, user, machine_hash)
+        if not entitlement.allowed:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "message": (
+                        f"This device has used all {settings.MCP_FREE_TRIAL_LIMIT} free TubeNotes plugin trials. "
+                        "Subscribe to continue."
+                    ),
+                    "entitlement": entitlement.model_dump(mode="json"),
+                },
+            )
+        if entitlement.plan == "free_trial":
+            ledger.trials_used += 1
+            db.add(McpTrialUsage(machine_hash=machine_hash, user_id=user.id, video_id=video_id))
+            db.flush()
+        entitlement = _mcp_entitlement(db, user, machine_hash)
+    else:
+        # A video already unlocked on this browser remains available for its
+        # PDF or a retry even after the twentieth new video was consumed.
+        entitlement = _mcp_entitlement(db, user, machine_hash)
+        if not entitlement.allowed:
+            entitlement = entitlement.model_copy(update={"allowed": True, "reason": "already_unlocked"})
+    db.commit()
+    cached_row, cached_target, cached_model = _cache_lookup(db, payload, video_id, mode=mode)
+    return entitlement, cached_row, cached_target, cached_model
+
+
+async def _claim(user: User, machine_hash: str, payload: VideoRequest, video_id: str, mode: str):
     db = SessionLocal()
     try:
         return await run_in_threadpool(
-            _charge_and_lookup,
+            _claim_mcp_trial,
             db,
             user,
+            machine_hash,
             payload,
             video_id,
-            action=f"mcp:{mode}",
-            mode=mode,
-            surface="mcp",
+            mode,
         )
     finally:
         db.close()
@@ -266,14 +353,19 @@ async def _prepare_mcp_video(user: User, payload: VideoRequest, video_id: str):
     return meta, transcript, metadata_ms, transcript_ms
 
 
-async def _create_text(user: User, video_url: str, language: str, mode: Literal["summary", "notes"]) -> dict[str, Any]:
+async def _create_text(
+    user: User, machine_hash: str, video_url: str, language: str,
+    mode: Literal["summary", "notes"],
+) -> dict[str, Any]:
     video_id = _video_id_or_400(video_url)
     payload = (
-        SummarizeRequest(url=video_url, target_lang=language, device=_plugin_device(user.id), mode="summary")
+        SummarizeRequest(url=video_url, target_lang=language, device=_mcp_request_device(user.id), mode="summary")
         if mode == "summary"
-        else VideoRequest(url=video_url, target_lang=language, device=_plugin_device(user.id))
+        else VideoRequest(url=video_url, target_lang=language, device=_mcp_request_device(user.id))
     )
-    entitlement, cached, cached_target, cached_model = await _claim(user, payload, video_id, mode)
+    entitlement, cached, cached_target, cached_model = await _claim(
+        user, machine_hash, payload, video_id, mode
+    )
     if cached is not None:
         meta = await youtube.fetch_metadata(video_id)
         text = cached.text
@@ -335,10 +427,10 @@ async def _create_text(user: User, video_url: str, language: str, mode: Literal[
     }
 
 
-async def _pdf_payload(user: User, video_url: str, language: str) -> dict[str, Any]:
+async def _pdf_payload(user: User, machine_hash: str, video_url: str, language: str) -> dict[str, Any]:
     if not settings.OUTPUT_CACHE_ENABLED:
         raise RuntimeError("PDF export is unavailable until TubeNotes output caching is enabled.")
-    result = await _create_text(user, video_url, language, "notes")
+    result = await _create_text(user, machine_hash, video_url, language, "notes")
     token = create_pdf_download_token(
         user_id=user.id,
         video_id=result["video_id"],
@@ -389,14 +481,21 @@ def _tool_failure_message(exc: Exception) -> str:
         detail = exc.detail
         if isinstance(detail, str) and detail.strip():
             return detail.strip()
+        if isinstance(detail, dict):
+            message = str(detail.get("message") or "").strip()
+            upgrade_url = str((detail.get("entitlement") or {}).get("upgrade_url") or "").strip()
+            if message and upgrade_url:
+                return f"{message} Subscribe here: {upgrade_url}"
+            if message:
+                return message
         return "TubeNotes could not process this request. Please try again."
     message = _friendly(exc).strip()
     return message if message and message != "Summary failed:" else "TubeNotes could not create the summary. Please try again."
 
 
-def _authentication_required_result() -> dict[str, Any]:
+def _authentication_required_result(message: str = "Connect your TubeNotes account to continue.") -> dict[str, Any]:
     return _tool_result(
-        {"error": "authentication_required", "message": "Connect your TubeNotes account to continue."},
+        {"error": "authentication_required", "message": message},
         is_error=True,
         meta={"mcp/www_authenticate": [_oauth_challenge()]},
     )
@@ -424,12 +523,17 @@ async def call_public_mcp_tool(
         or str(token.resource or "").rstrip("/") != settings.mcp_public_url
     ):
         return _authentication_required_result()
+    machine_hash = str(getattr(token, "machine_hash", "") or "")
+    if not machine_hash:
+        return _authentication_required_result(
+            "Reconnect TubeNotes to apply the 20-trial device limit."
+        )
 
     try:
         user = _active_user(token.user_id)
         values = arguments or {}
         if tool_name == "get_tubenotes_profile":
-            return _tool_result(_profile_payload(user))
+            return _tool_result(_profile_payload(user, machine_hash))
         video_url = str(values.get("video_url", "")).strip()
         language = _selected_mcp_language(values)
         if tool_name in {"summarize_youtube_video", "create_video_pdf"} and language is None:
@@ -442,7 +546,7 @@ async def call_public_mcp_tool(
             )
         if tool_name == "summarize_youtube_video":
             assert language is not None
-            result = await _create_text(user, video_url, language, "summary")
+            result = await _create_text(user, machine_hash, video_url, language, "summary")
             payload = {
                 **{key: value for key, value in result.items() if key != "text"},
                 "summary": result["text"],
@@ -451,7 +555,7 @@ async def call_public_mcp_tool(
             return _tool_result(payload)
         if tool_name == "create_video_pdf":
             assert language is not None
-            return _tool_result(await _pdf_payload(user, video_url, language))
+            return _tool_result(await _pdf_payload(user, machine_hash, video_url, language))
         return _tool_result({"error": "unknown_tool", "message": "Unknown TubeNotes tool."}, is_error=True)
     except Exception as exc:
         logger.exception("MCP tool %s failed for TubeNotes user %s", tool_name, token.user_id)
@@ -521,7 +625,7 @@ def build_mcp_server() -> FastMCP:
     )
     async def get_tubenotes_profile() -> dict[str, Any]:
         user = _current_user()
-        return _profile_payload(user)
+        return _profile_payload(user, _current_machine_hash())
 
     @server.tool(
         title="Summarize YouTube video",
@@ -533,7 +637,7 @@ def build_mcp_server() -> FastMCP:
         language: _LANGUAGE_OPTIONS,
     ) -> dict[str, Any]:
         user = _current_user()
-        result = await _create_text(user, video_url, language, "summary")
+        result = await _create_text(user, _current_machine_hash(), video_url, language, "summary")
         return {
             **{key: value for key, value in result.items() if key != "text"},
             "summary": result["text"],
@@ -550,7 +654,7 @@ def build_mcp_server() -> FastMCP:
         language: _LANGUAGE_OPTIONS,
     ) -> dict[str, Any]:
         user = _current_user()
-        return await _pdf_payload(user, video_url, language)
+        return await _pdf_payload(user, _current_machine_hash(), video_url, language)
 
     return server
 

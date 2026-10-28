@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from app.deps import get_current_user
 from app.models import User
+from app.schemas import DeviceFingerprint
 from app.services import pdf
 from app.services.mcp_oauth import approve_authorization_request, authorization_request_details
 from app.services.mcp_server import call_public_mcp_tool, mcp_tool_definitions, render_plugin_pdf
@@ -23,6 +24,7 @@ _STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 
 class ApproveMcpAuthorizationRequest(BaseModel):
     request_id: str = Field(min_length=24, max_length=128)
+    device: DeviceFingerprint
 
 
 def _rpc_result(request_id: Any, result: dict[str, Any]) -> JSONResponse:
@@ -56,7 +58,7 @@ async def public_streamable_mcp(request: Request):
         return _rpc_result(request_id, {
             "protocolVersion": str(params.get("protocolVersion") or "2025-03-26"),
             "capabilities": {"tools": {"listChanged": False}},
-            "serverInfo": {"name": "TubeNotes", "version": "1.0.9"},
+            "serverInfo": {"name": "TubeNotes", "version": "1.0.10"},
             "instructions": "Before each TubeNotes summary or PDF request, ask the user to explicitly choose an output language. Never default it automatically.",
         })
     if method == "ping":
@@ -86,7 +88,10 @@ def approve_oauth_request(
     payload: ApproveMcpAuthorizationRequest,
     user: User = Depends(get_current_user),
 ):
-    redirect_url = approve_authorization_request(payload.request_id, user.id)
+    try:
+        redirect_url = approve_authorization_request(payload.request_id, user.id, payload.device)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if redirect_url is None:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="This connection request expired. Return to ChatGPT and try again.")
     return {"redirect_url": redirect_url}

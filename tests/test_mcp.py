@@ -12,6 +12,7 @@ from app.services.mcp_oauth import (
     approve_authorization_request,
     authorization_request_details,
 )
+from app.schemas import DeviceFingerprint
 from tests.conftest import register
 
 
@@ -47,7 +48,9 @@ def test_mcp_oauth_code_is_one_time_and_scoped_to_the_user(client, db, device):
             "client_name": "ChatGPT",
             "scope": MCP_SCOPE,
         }
-        callback = approve_authorization_request(request_id, user_id)
+        callback = approve_authorization_request(
+            request_id, user_id, DeviceFingerprint.model_validate(device)
+        )
         code = parse_qs(urlparse(callback).query)["code"][0]
         assert parse_qs(urlparse(callback).query)["state"] == ["state-123"]
         stored = await provider.load_authorization_code(client_info, code)
@@ -60,12 +63,16 @@ def test_mcp_oauth_code_is_one_time_and_scoped_to_the_user(client, db, device):
         assert access is not None
         assert access.user_id == user_id
         assert access.scopes == [MCP_SCOPE]
+        assert access.machine_hash
 
     asyncio.run(flow())
 
 
 def test_mcp_oauth_approval_requires_signed_in_user(client, device):
     body, _headers, _device = register(client, email="mcp-api@example.com", device=device)
-    response = client.post("/api/v1/mcp/oauth/approve", json={"request_id": "x" * 32})
+    response = client.post(
+        "/api/v1/mcp/oauth/approve",
+        json={"request_id": "x" * 32, "device": device},
+    )
     assert response.status_code == 401
     assert body["user"]["email"] == "mcp-api@example.com"

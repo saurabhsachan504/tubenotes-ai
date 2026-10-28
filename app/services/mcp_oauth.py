@@ -17,7 +17,9 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import SessionLocal
 from app.models import McpAccessToken, McpAuthorizationCode, McpAuthorizationRequest, McpOAuthClient
+from app.schemas import DeviceFingerprint
 from app.security import sha256
+from app.services import devices as device_service
 
 MCP_SCOPE = "tubenotes:summary"
 
@@ -37,10 +39,12 @@ def _scopes(value: str) -> list[str]:
 
 class TubeNotesAuthorizationCode(AuthorizationCode):
     user_id: str
+    machine_hash: str | None = None
 
 
 class TubeNotesAccessToken(AccessToken):
     user_id: str
+    machine_hash: str | None = None
 
 
 class TubeNotesOAuthProvider:
@@ -118,6 +122,7 @@ class TubeNotesOAuthProvider:
                 redirect_uri_provided_explicitly=True,
                 resource=row.resource,
                 user_id=row.user_id,
+                machine_hash=row.machine_hash,
             )
         finally:
             db.close()
@@ -143,6 +148,7 @@ class TubeNotesOAuthProvider:
                     client_id=row.client_id,
                     scopes=row.scopes,
                     resource=row.resource,
+                    machine_hash=row.machine_hash,
                     expires_at=expires_at,
                 )
             )
@@ -181,6 +187,7 @@ class TubeNotesOAuthProvider:
                 expires_at=int(row.expires_at.timestamp()),
                 resource=row.resource,
                 user_id=row.user_id,
+                machine_hash=row.machine_hash,
             )
         finally:
             db.close()
@@ -218,8 +225,15 @@ def authorization_request_details(request_id: str) -> dict[str, str] | None:
         db.close()
 
 
-def approve_authorization_request(request_id: str, user_id: str) -> str | None:
+def approve_authorization_request(
+    request_id: str, user_id: str, device: DeviceFingerprint
+) -> str | None:
     """Create one code after an existing TubeNotes user authenticated."""
+    machine_hash = device_service.fingerprint_to_machine_hash(device)
+    if machine_hash is None:
+        raise ValueError(
+            "This browser did not provide enough device details. Please reconnect using a full browser."
+        )
     db = SessionLocal()
     try:
         request = db.get(McpAuthorizationRequest, request_id)
@@ -241,6 +255,7 @@ def approve_authorization_request(request_id: str, user_id: str) -> str | None:
                 code_challenge=code_challenge,
                 scopes=scopes,
                 resource=resource,
+                machine_hash=machine_hash,
                 expires_at=now() + timedelta(minutes=settings.MCP_AUTHORIZATION_TTL_MINUTES),
             )
         )
