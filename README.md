@@ -313,6 +313,8 @@ After deploying this release, enable it only on the public HTTPS deployment:
 ```dotenv
 MCP_ENABLED=true
 MCP_PUBLIC_URL=https://tubenotes.ai/mcp
+# Optional; defaults to APP_BASE_URL/gemini-mcp.
+GEMINI_MCP_PUBLIC_URL=https://tubenotes.ai/gemini-mcp
 OUTPUT_CACHE_ENABLED=true
 ```
 
@@ -327,6 +329,15 @@ parameter, so ChatGPT asks for the desired language before it starts work.
 Both tools consume/check the existing TubeNotes entitlement ledger; a paid
 plan and prior credit usage therefore work exactly as they do on the website.
 PDF download links are secure, user-specific and expire after 15 minutes.
+
+### Gemini Connected Apps
+
+Gemini uses a separate standards-only Streamable HTTP transport so its OAuth
+discovery and authentication rules cannot change the ChatGPT/Claude endpoint.
+In Gemini **Customize > Connectors > Add a custom app**, enter
+`https://tubenotes.ai/gemini-mcp/` and complete the TubeNotes OAuth prompt.
+The Gemini endpoint uses public-client OAuth 2.1 with PKCE; it does not require
+users to enter a client secret.
 
 Generate a new migration only after changing SQLAlchemy models:
 

@@ -52,6 +52,12 @@ class TubeNotesAccessToken(AccessToken):
 class TubeNotesOAuthProvider:
     """Small persistent OAuth provider used by FastMCP's standard handlers."""
 
+    def __init__(self, resource_url: str | None = None):
+        # The same authorization server backs the ChatGPT/Claude and Gemini
+        # MCP transports. Each transport supplies its own protected resource
+        # URL so an authorization code cannot be minted for the wrong one.
+        self.resource_url = (resource_url or settings.mcp_public_url).rstrip("/")
+
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
         if not client_id:
             return None
@@ -81,11 +87,10 @@ class TubeNotesOAuthProvider:
             db.close()
 
     async def authorize(self, client, params) -> str:
-        # RFC 8707's resource indicator is optional. Claude Desktop omits it
-        # for custom connectors, but this authorization server only issues
-        # tokens for TubeNotes MCP, so bind the resulting code to that known
-        # resource rather than persisting a null audience.
-        resource = settings.mcp_public_url.rstrip("/")
+        # RFC 8707's resource indicator is optional. Bind a token to the
+        # protected MCP resource that received this OAuth request rather than
+        # persisting a null audience.
+        resource = self.resource_url
         request_id = secrets.token_urlsafe(32)
         db = SessionLocal()
         try:

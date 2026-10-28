@@ -604,11 +604,12 @@ def decode_pdf_download_token(token: str) -> dict[str, str]:
     return payload
 
 
-def build_mcp_server() -> FastMCP:
-    """Build the authenticated MCP app; called only when MCP_ENABLED=true."""
-    if not settings.mcp_public_url.startswith("https://"):
-        raise RuntimeError("MCP_PUBLIC_URL must be a public HTTPS URL when MCP_ENABLED=true")
-    provider = TubeNotesOAuthProvider()
+def build_mcp_server(public_url: str | None = None) -> FastMCP:
+    """Build an authenticated MCP app for one public transport URL."""
+    resource_url = (public_url or settings.mcp_public_url).rstrip("/")
+    if not resource_url.startswith("https://"):
+        raise RuntimeError("Each public MCP URL must use HTTPS when MCP_ENABLED=true")
+    provider = TubeNotesOAuthProvider(resource_url)
     server = FastMCP(
         "TubeNotes",
         instructions=(
@@ -619,8 +620,8 @@ def build_mcp_server() -> FastMCP:
         ),
         auth_server_provider=provider,
         auth=AuthSettings(
-            issuer_url=settings.mcp_public_url,
-            resource_server_url=settings.mcp_public_url,
+            issuer_url=resource_url,
+            resource_server_url=resource_url,
             service_documentation_url=f"{settings.APP_BASE_URL.rstrip('/')}/privacy",
             required_scopes=[MCP_SCOPE],
             client_registration_options=ClientRegistrationOptions(

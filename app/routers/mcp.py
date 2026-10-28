@@ -16,6 +16,7 @@ from app.models import User
 from app.schemas import DeviceFingerprint
 from app.services import pdf
 from app.services.mcp_oauth import (
+    MCP_SCOPE,
     approve_authorization_request,
     authorization_request_details,
     register_dynamic_client,
@@ -38,12 +39,15 @@ def _rpc_result(request_id: Any, result: dict[str, Any]) -> JSONResponse:
 
 @public_router.post("/register", include_in_schema=False)
 @public_router.post("/mcp/register", include_in_schema=False)
+@public_router.post("/gemini-mcp/register", include_in_schema=False)
 async def register_mcp_oauth_client(request: Request):
-    """OAuth Dynamic Client Registration compatible with Claude custom connectors.
+    """OAuth Dynamic Client Registration for the supported MCP connectors.
 
     The FastMCP version used by the service requires a refresh-token grant at
     registration time. Claude correctly registers a PKCE-only public client,
-    so it is served here before the FastMCP sub-application is mounted.
+    while Gemini requires an OAuth public client without a client secret. This
+    compatibility endpoint is served before the FastMCP sub-application is
+    mounted.
     """
     try:
         metadata = await request.json()
@@ -55,12 +59,62 @@ async def register_mcp_oauth_client(request: Request):
         return JSONResponse(
             {"error": "invalid_client_metadata", "error_description": str(exc)},
             status_code=status.HTTP_400_BAD_REQUEST,
-            headers={"Cache-Control": "no-store"},
+            headers={
+                "Cache-Control": "no-store",
+                "Access-Control-Allow-Origin": "*",
+            },
         )
     return JSONResponse(
         client.model_dump(mode="json", exclude_none=True),
         status_code=status.HTTP_201_CREATED,
-        headers={"Cache-Control": "no-store"},
+        headers={
+            "Cache-Control": "no-store",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+@public_router.options("/gemini-mcp/register", include_in_schema=False)
+async def gemini_mcp_register_preflight():
+    """Allow browser-based OAuth registration from Gemini's Connected Apps UI."""
+    return Response(
+        status_code=status.HTTP_204_NO_CONTENT,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Max-Age": "3600",
+        },
+    )
+
+
+@public_router.get("/gemini-mcp/.well-known/oauth-authorization-server", include_in_schema=False)
+async def gemini_oauth_authorization_server_metadata():
+    """Advertise public-client OAuth metadata accepted by Gemini Connected Apps.
+
+    FastMCP 1.12 hard-codes ``client_secret_post`` in discovery despite also
+    supporting the standard public-client ``none`` method. Gemini correctly
+    requires PKCE public-client OAuth, so expose that accurate metadata only on
+    the separate Gemini transport.
+    """
+    issuer = settings.gemini_mcp_public_url
+    return JSONResponse(
+        {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/authorize",
+            "token_endpoint": f"{issuer}/token",
+            "registration_endpoint": f"{issuer}/register",
+            "scopes_supported": [MCP_SCOPE],
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code"],
+            "token_endpoint_auth_methods_supported": ["none"],
+            "service_documentation": f"{settings.APP_BASE_URL.rstrip('/')}/privacy",
+            "code_challenge_methods_supported": ["S256"],
+        },
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "Access-Control-Allow-Origin": "*",
+        },
     )
 
 

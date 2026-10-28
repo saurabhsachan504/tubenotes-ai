@@ -238,7 +238,15 @@ if settings.MCP_ENABLED:
     # after /mcp/download above, so the short-lived PDF links retain priority.
     from app.services.mcp_server import build_mcp_server
 
-    app.mount("/mcp", build_mcp_server().streamable_http_app(), name="tubenotes-mcp")
+    app.mount("/mcp", build_mcp_server(settings.mcp_public_url).streamable_http_app(), name="tubenotes-mcp")
+    # Gemini requires an unmodified, OAuth-protected Streamable HTTP transport.
+    # Keep it separate from /mcp/, whose public discovery compatibility route
+    # exists specifically for ChatGPT and Claude.
+    app.mount(
+        "/gemini-mcp",
+        build_mcp_server(settings.gemini_mcp_public_url).streamable_http_app(),
+        name="tubenotes-gemini-mcp",
+    )
 
 
 @app.get("/healthz", tags=["meta"])

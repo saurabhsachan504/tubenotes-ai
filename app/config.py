@@ -181,6 +181,10 @@ class Settings(BaseSettings):
     # Public, stable URL users enter in ChatGPT Plugins. With the same backend
     # this is normally https://tubenotes.ai/mcp (not a separate database).
     MCP_PUBLIC_URL: str = ""
+    # Gemini uses a separate, standards-only MCP transport. Leaving this blank
+    # derives the public URL from APP_BASE_URL, so existing deployments need no
+    # additional secret or infrastructure configuration.
+    GEMINI_MCP_PUBLIC_URL: str = ""
     MCP_ACCESS_TOKEN_TTL_MINUTES: int = 60
     MCP_AUTHORIZATION_TTL_MINUTES: int = 10
     MCP_DOWNLOAD_TTL_MINUTES: int = 15
@@ -195,6 +199,11 @@ class Settings(BaseSettings):
     @property
     def mcp_public_url(self) -> str:
         return self.MCP_PUBLIC_URL.rstrip("/")
+
+    @property
+    def gemini_mcp_public_url(self) -> str:
+        configured = self.GEMINI_MCP_PUBLIC_URL.rstrip("/")
+        return configured or f"{self.APP_BASE_URL.rstrip('/')}/gemini-mcp"
 
     # vLLM exposes an OpenAI-compatible API.  When this API itself runs in
     # Docker and vLLM is exposed on the host at :8010, host.docker.internal is

@@ -83,7 +83,7 @@ def test_mcp_oauth_approval_requires_signed_in_user(client, device):
     assert body["user"]["email"] == "mcp-api@example.com"
 
 
-@pytest.mark.parametrize("path", ["/mcp/register", "/register"])
+@pytest.mark.parametrize("path", ["/mcp/register", "/register", "/gemini-mcp/register"])
 def test_mcp_dynamic_registration_accepts_claude_pkce_client(client, db, path):
     response = client.post(
         path,
@@ -102,3 +102,23 @@ def test_mcp_dynamic_registration_accepts_claude_pkce_client(client, db, path):
     assert registered["token_endpoint_auth_method"] == "none"
     assert registered["grant_types"] == ["authorization_code"]
     assert db.get(McpOAuthClient, registered["client_id"]) is not None
+
+
+def test_gemini_oauth_metadata_advertises_pkce_public_client(client):
+    response = client.get("/gemini-mcp/.well-known/oauth-authorization-server")
+
+    assert response.status_code == 200
+    metadata = response.json()
+    assert metadata["issuer"] == settings.gemini_mcp_public_url
+    assert metadata["registration_endpoint"] == f"{settings.gemini_mcp_public_url}/register"
+    assert metadata["token_endpoint_auth_methods_supported"] == ["none"]
+    assert metadata["code_challenge_methods_supported"] == ["S256"]
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
+def test_gemini_dynamic_registration_allows_browser_preflight(client):
+    response = client.options("/gemini-mcp/register")
+
+    assert response.status_code == 204
+    assert response.headers["access-control-allow-origin"] == "*"
+    assert response.headers["access-control-allow-methods"] == "POST, OPTIONS"
