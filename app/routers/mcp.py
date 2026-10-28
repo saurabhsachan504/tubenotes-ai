@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
 from app.deps import get_current_user
+from app.config import settings
 from app.models import User
 from app.schemas import DeviceFingerprint
 from app.services import pdf
@@ -35,6 +36,7 @@ def _rpc_result(request_id: Any, result: dict[str, Any]) -> JSONResponse:
     return JSONResponse({"jsonrpc": "2.0", "id": request_id, "result": result})
 
 
+@public_router.post("/register", include_in_schema=False)
 @public_router.post("/mcp/register", include_in_schema=False)
 async def register_mcp_oauth_client(request: Request):
     """OAuth Dynamic Client Registration compatible with Claude custom connectors.
@@ -60,6 +62,34 @@ async def register_mcp_oauth_client(request: Request):
         status_code=status.HTTP_201_CREATED,
         headers={"Cache-Control": "no-store"},
     )
+
+
+def _mcp_oauth_redirect(request: Request, endpoint: str) -> RedirectResponse:
+    """Compatibility aliases for clients that resolve OAuth URLs at the origin.
+
+    Claude Desktop currently requests ``/register`` after discovering this MCP
+    endpoint, despite the advertised ``/mcp/register`` URL. Keep the aliases
+    narrow and use 307 so a token POST retains its body and method.
+    """
+    target = f"{settings.mcp_public_url.rstrip('/')}/{endpoint}"
+    if request.url.query:
+        target = f"{target}?{request.url.query}"
+    return RedirectResponse(target, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
+
+@public_router.get("/authorize", include_in_schema=False)
+async def root_oauth_authorize_alias(request: Request):
+    return _mcp_oauth_redirect(request, "authorize")
+
+
+@public_router.post("/token", include_in_schema=False)
+async def root_oauth_token_alias(request: Request):
+    return _mcp_oauth_redirect(request, "token")
+
+
+@public_router.post("/revoke", include_in_schema=False)
+async def root_oauth_revoke_alias(request: Request):
+    return _mcp_oauth_redirect(request, "revoke")
 
 
 @public_router.post("/mcp/", include_in_schema=False)

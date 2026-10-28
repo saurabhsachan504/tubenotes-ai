@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from urllib.parse import parse_qs, urlparse
 
+import pytest
+
 from mcp.server.auth.provider import AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 
@@ -79,9 +81,10 @@ def test_mcp_oauth_approval_requires_signed_in_user(client, device):
     assert body["user"]["email"] == "mcp-api@example.com"
 
 
-def test_mcp_dynamic_registration_accepts_claude_pkce_client(client, db):
+@pytest.mark.parametrize("path", ["/mcp/register", "/register"])
+def test_mcp_dynamic_registration_accepts_claude_pkce_client(client, db, path):
     response = client.post(
-        "/mcp/register",
+        path,
         json={
             "redirect_uris": ["https://claude.ai/mcp/callback"],
             "grant_types": ["authorization_code"],
