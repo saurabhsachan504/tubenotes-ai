@@ -263,8 +263,8 @@ async def _claim(user: User, machine_hash: str, payload: VideoRequest, video_id:
             db,
             user,
             machine_hash,
-            payload,
             video_id,
+            payload,
             mode,
         )
     finally:
