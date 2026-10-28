@@ -517,11 +517,27 @@ async def call_public_mcp_tool(
     if authorization and authorization.lower().startswith("bearer "):
         raw_token = authorization[7:].strip()
     token = await TubeNotesOAuthProvider().load_access_token(raw_token) if raw_token else None
+    # Claude Desktop currently resolves the OAuth registration endpoint at the
+    # site origin.  Its otherwise valid authorization request can therefore
+    # bind the token to APP_BASE_URL instead of the advertised /mcp resource.
+    # Both values identify this same TubeNotes authorization server; accept
+    # only those two exact origins, never an arbitrary client-provided value.
+    accepted_resources = {
+        settings.mcp_public_url.rstrip("/"),
+        settings.APP_BASE_URL.rstrip("/"),
+    }
     if (
         token is None
         or MCP_SCOPE not in token.scopes
-        or str(token.resource or "").rstrip("/") != settings.mcp_public_url
+        or str(token.resource or "").rstrip("/") not in accepted_resources
     ):
+        if token is None:
+            reason = "no_bearer_token" if not raw_token else "unknown_or_expired_token"
+        elif MCP_SCOPE not in token.scopes:
+            reason = "scope_missing"
+        else:
+            reason = "unexpected_resource"
+        logger.info("MCP tool %s rejected authentication: %s", tool_name, reason)
         return _authentication_required_result()
     machine_hash = str(getattr(token, "machine_hash", "") or "")
     if not machine_hash:
