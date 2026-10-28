@@ -342,6 +342,12 @@ def approve_authorization_request(
         params = {"code": raw_code}
         if state:
             params["state"] = state
+        if resource == settings.gemini_mcp_public_url:
+            # Gemini validates OAuth authorization responses using RFC 9207
+            # before it sends the one-time code to the token endpoint. Keep
+            # this transport-specific so established ChatGPT/Claude callback
+            # behavior remains unchanged.
+            params["iss"] = settings.gemini_mcp_public_url
         separator = "&" if "?" in redirect_uri else "?"
         return f"{redirect_uri}{separator}{urlencode(params)}"
     finally:

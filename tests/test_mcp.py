@@ -20,10 +20,19 @@ from app.schemas import DeviceFingerprint
 from tests.conftest import register
 
 
-def test_mcp_oauth_code_is_one_time_and_scoped_to_the_user(client, db, device):
+@pytest.mark.parametrize(
+    ("resource_url", "expected_issuer"),
+    [
+        (settings.mcp_public_url, None),
+        (settings.gemini_mcp_public_url, settings.gemini_mcp_public_url),
+    ],
+)
+def test_mcp_oauth_code_is_one_time_and_scoped_to_the_user(
+    client, db, device, resource_url, expected_issuer
+):
     body, _headers, _device = register(client, email="mcp@example.com", device=device)
     user_id = body["user"]["id"]
-    provider = TubeNotesOAuthProvider()
+    provider = TubeNotesOAuthProvider(resource_url)
     client_info = OAuthClientInformationFull(
         client_id="chatgpt-test-client",
         redirect_uris=["https://chatgpt.com/plugin-callback"],
@@ -56,11 +65,16 @@ def test_mcp_oauth_code_is_one_time_and_scoped_to_the_user(client, db, device):
             request_id, user_id, DeviceFingerprint.model_validate(device)
         )
         code = parse_qs(urlparse(callback).query)["code"][0]
-        assert parse_qs(urlparse(callback).query)["state"] == ["state-123"]
+        callback_params = parse_qs(urlparse(callback).query)
+        assert callback_params["state"] == ["state-123"]
+        if expected_issuer:
+            assert callback_params["iss"] == [expected_issuer]
+        else:
+            assert "iss" not in callback_params
         stored = await provider.load_authorization_code(client_info, code)
         assert stored is not None
         assert stored.user_id == user_id
-        assert stored.resource == settings.mcp_public_url
+        assert stored.resource == resource_url
         token = await provider.exchange_authorization_code(client_info, stored)
         assert token.access_token
         assert await provider.load_authorization_code(client_info, code) is None
@@ -120,6 +134,7 @@ def test_gemini_oauth_metadata_advertises_pkce_public_client(client, path):
     assert metadata["registration_endpoint"] == f"{settings.gemini_mcp_public_url}/register"
     assert metadata["token_endpoint_auth_methods_supported"] == ["none"]
     assert metadata["code_challenge_methods_supported"] == ["S256"]
+    assert metadata["authorization_response_iss_parameter_supported"] is True
     assert response.headers["access-control-allow-origin"] == "*"
 
 

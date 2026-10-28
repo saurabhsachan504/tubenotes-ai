@@ -134,6 +134,7 @@ async def gemini_oauth_authorization_server_metadata():
             "token_endpoint_auth_methods_supported": ["none"],
             "service_documentation": f"{settings.APP_BASE_URL.rstrip('/')}/privacy",
             "code_challenge_methods_supported": ["S256"],
+            "authorization_response_iss_parameter_supported": True,
         },
         headers={
             "Cache-Control": "public, max-age=3600",
