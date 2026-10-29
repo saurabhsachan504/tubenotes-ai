@@ -464,7 +464,13 @@ async def _create_text(
 
 
 async def _pdf_payload(
-    user: User, machine_hash: str, video_url: str, language: str, *, include_trial_status: bool = False,
+    user: User,
+    machine_hash: str,
+    video_url: str,
+    language: str,
+    *,
+    include_trial_status: bool = False,
+    pdf_style: Literal["plugin", "claude"] = "plugin",
 ) -> dict[str, Any]:
     if not settings.OUTPUT_CACHE_ENABLED:
         raise RuntimeError("PDF export is unavailable until TubeNotes output caching is enabled.")
@@ -475,6 +481,7 @@ async def _pdf_payload(
         user_id=user.id,
         video_id=result["video_id"],
         language=result["language"],
+        style=pdf_style,
     )
     payload = {
         "video_id": result["video_id"],
@@ -628,13 +635,18 @@ async def call_public_mcp_tool(
         )
 
 
-def create_pdf_download_token(*, user_id: str, video_id: str, language: str) -> str:
+def create_pdf_download_token(
+    *, user_id: str, video_id: str, language: str, style: Literal["plugin", "claude"] = "plugin"
+) -> str:
+    if style not in {"plugin", "claude"}:
+        raise ValueError("unsupported plugin PDF style")
     expiry = _now() + timedelta(minutes=settings.MCP_DOWNLOAD_TTL_MINUTES)
     return jwt.encode(
         {
             "sub": user_id,
             "video_id": video_id,
             "language": language,
+            "style": style,
             "type": "mcp_pdf_download",
             "iss": settings.APP_NAME,
             "exp": int(expiry.timestamp()),
@@ -652,7 +664,10 @@ def decode_pdf_download_token(token: str) -> dict[str, str]:
 
 
 def build_mcp_server(
-    public_url: str | None = None, *, include_trial_status: bool = False
+    public_url: str | None = None,
+    *,
+    include_trial_status: bool = False,
+    pdf_style: Literal["plugin", "claude"] = "plugin",
 ) -> FastMCP:
     """Build an authenticated MCP app for one public transport URL."""
     resource_url = (public_url or settings.mcp_public_url).rstrip("/")
@@ -740,13 +755,14 @@ def build_mcp_server(
             video_url,
             language,
             include_trial_status=include_trial_status,
+            pdf_style=pdf_style,
         )
 
     return server
 
 
 async def render_plugin_pdf(token: str) -> tuple[bytes, str]:
-    """Render a cached notes PDF for a short-lived link returned to ChatGPT."""
+    """Render a cached notes PDF for a signed MCP download link."""
     payload = decode_pdf_download_token(token)
     video_id = str(payload.get("video_id", ""))
     language = str(payload.get("language", ""))
@@ -761,11 +777,14 @@ async def render_plugin_pdf(token: str) -> tuple[bytes, str]:
     if row is None:
         raise ValueError("This PDF link has expired. Ask TubeNotes to create it again.")
     meta = await youtube.fetch_metadata(video_id)
+    style = str(payload.get("style", "plugin"))
+    if style not in {"plugin", "claude"}:
+        raise ValueError("Invalid PDF link")
     data = await pdf.render_notes_pdf(
         row.text,
         title=meta.title,
         subtitle=f"{meta.author or 'YouTube'} - {youtube.watch_url(video_id)}",
-        style="plugin",
+        style=style,
     )
     safe_name = re.sub(r"[^A-Za-z0-9 _-]+", "", meta.title or "tubenotes-notes")[:60].strip() or "tubenotes-notes"
     return data, f"{safe_name}.pdf"

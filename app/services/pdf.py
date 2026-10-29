@@ -93,6 +93,45 @@ a { color: #7c3aed; text-decoration: none; }
 """
 
 
+# Claude receives an intentionally more expressive treatment. It is selected
+# from the signed MCP download token, so the website, ChatGPT, and Gemini keep
+# their existing document appearance.
+_CLAUDE_CSS = """
+@page { size: A4; margin: 14mm 15mm 18mm 15mm;
+        @bottom-left { content: "TubeNotes  •  Claude Edition";
+                       font-size: 8pt; color: #8b83a8; }
+        @bottom-right { content: counter(page) " / " counter(pages);
+                        font-size: 8pt; color: #8b83a8; } }
+body { font-family: "Noto Sans", "Noto Sans Devanagari", "Noto Sans Tamil",
+       "Noto Sans Telugu", "Noto Sans Bengali", "Noto Sans Arabic", sans-serif;
+       font-size: 10.3pt; line-height: 1.58; color: #242035; }
+h1 { font-size: 21pt; line-height: 1.18; margin: 0; color: #20143d; }
+h2 { break-after: avoid; font-size: 13.2pt; line-height: 1.28; color: #47227f;
+     background: #f4edff; border-left: 3.3pt solid #8b4df0; border-radius: 2mm;
+     margin: 7mm 0 2.8mm; padding: 2.3mm 3mm; }
+h2::before { content: "✦  "; color: #e05aa4; }
+h3 { break-after: avoid; font-size: 11.3pt; color: #62409a; margin: 5mm 0 1.7mm; }
+h3::before { content: "◆  "; color: #f29b3d; font-size: 8pt; vertical-align: 1pt; }
+p { margin: 0 0 2.8mm; }
+ul, ol { margin: 0 0 3.6mm; padding-left: 6.7mm; }
+li { margin: 0 0 1.45mm; }
+li::marker { color: #8b4df0; font-weight: 700; }
+strong { color: #3e2172; font-weight: 700; background: #fff0a8;
+         border-radius: 1mm; padding: 0 0.7mm; }
+em { color: #80509d; }
+blockquote { margin: 4mm 0; padding: 3mm 4mm; color: #4d4265;
+             background: #eef8ff; border-left: 3pt solid #37a8e8; border-radius: 2mm; }
+code { color: #63319e; background: #f1ecf8; border-radius: 1mm; padding: 0 0.8mm; }
+a { color: #6f2dcc; text-decoration: none; font-weight: 700; }
+.tn-head { background: linear-gradient(135deg, #f2eaff, #fff0f8);
+            border: 0.6pt solid #e2d2fa; border-radius: 3mm; margin-bottom: 6mm;
+            padding: 5mm 5mm 4mm; }
+.tn-kicker { color: #8b4df0; font-size: 8pt; font-weight: 700; letter-spacing: 0.8pt;
+             margin-bottom: 1.8mm; text-transform: uppercase; }
+.tn-meta { font-size: 8.8pt; color: #716986; margin-top: 1.8mm; overflow-wrap: anywhere; }
+"""
+
+
 def _render_sync(markdown_text: str, title: str, subtitle: str, style: str) -> bytes:
     """Markdown -> styled PDF. Imported lazily so the API boots without these."""
     import markdown as md
@@ -105,12 +144,13 @@ def _render_sync(markdown_text: str, title: str, subtitle: str, style: str) -> b
     )
     safe_title = (title or "Notes").replace("<", "&lt;").replace(">", "&gt;")
     safe_sub = (subtitle or "").replace("<", "&lt;").replace(">", "&gt;")
+    kicker = "<div class='tn-kicker'>TubeNotes • Claude Edition</div>" if style == "claude" else ""
     html = (
         "<html><head><meta charset='utf-8'></head><body>"
-        f"<div class='tn-head'><h1>{safe_title}</h1>"
+        f"<div class='tn-head'>{kicker}<h1>{safe_title}</h1>"
         f"<div class='tn-meta'>{safe_sub}</div></div>{body}</body></html>"
     )
-    css = _PLUGIN_CSS if style == "plugin" else _CSS
+    css = {"web": _CSS, "plugin": _PLUGIN_CSS, "claude": _CLAUDE_CSS}[style]
     return HTML(string=html).write_pdf(stylesheets=[CSS(string=css)])
 
 
@@ -146,10 +186,10 @@ def shutdown() -> None:
 async def render_notes_pdf(
     markdown_text: str, *, title: str, subtitle: str = "", style: str = "web"
 ) -> bytes:
-    """Render a web or ChatGPT-plugin PDF, waiting for a bounded slot."""
+    """Render a web, ChatGPT, or Claude PDF, waiting for a bounded slot."""
     if not markdown_text or not markdown_text.strip():
         raise ValueError("nothing to render")
-    if style not in {"web", "plugin"}:
+    if style not in {"web", "plugin", "claude"}:
         raise ValueError("unknown PDF style")
     if len(markdown_text) > settings.PDF_MAX_CHARS:
         raise PDFTooLarge(

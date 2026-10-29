@@ -252,7 +252,11 @@ if settings.MCP_ENABLED:
     # Claude uses the native /mcp Streamable HTTP tools, so include a trial
     # status in its tool responses. ChatGPT has its own public response layer
     # with the same status; Gemini intentionally remains unchanged.
-    chatgpt_mcp_server = build_mcp_server(settings.mcp_public_url, include_trial_status=True)
+    chatgpt_mcp_server = build_mcp_server(
+        settings.mcp_public_url,
+        include_trial_status=True,
+        pdf_style="claude",
+    )
     gemini_mcp_server = build_mcp_server(settings.gemini_mcp_public_url)
     _mcp_servers.extend((chatgpt_mcp_server, gemini_mcp_server))
     app.mount("/mcp", chatgpt_mcp_server.streamable_http_app(), name="tubenotes-mcp")

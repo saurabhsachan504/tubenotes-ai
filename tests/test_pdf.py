@@ -93,3 +93,15 @@ def test_plugin_markdown_becomes_a_real_pdf():
         )
     )
     assert data.startswith(b"%PDF"), "not a PDF"
+
+
+def test_claude_markdown_becomes_a_real_pdf():
+    pytest.importorskip("weasyprint")
+    pytest.importorskip("markdown")
+    data = asyncio.run(
+        pdf.render_notes_pdf(
+            "## Key Takeaways\n\n- **Important insight**\n\n> A highlighted explanation.",
+            title="TubeNotes", style="claude",
+        )
+    )
+    assert data.startswith(b"%PDF"), "not a PDF"
