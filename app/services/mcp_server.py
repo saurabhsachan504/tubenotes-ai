@@ -221,7 +221,7 @@ def _profile_payload(user: User, machine_hash: str) -> dict[str, Any]:
 
 
 def _trial_status(entitlement: EntitlementOut, *, trial_consumed: bool) -> dict[str, Any] | None:
-    """Give ChatGPT a precise, user-facing notice only when a trial was spent."""
+    """Give a precise, user-facing notice only when a trial was spent."""
     if not trial_consumed or entitlement.plan != "free_trial":
         return None
     remaining = entitlement.trials_remaining
@@ -232,15 +232,17 @@ def _trial_status(entitlement: EntitlementOut, *, trial_consumed: bool) -> dict[
             f"You have used all {entitlement.trials_limit} free TubeNotes trials. "
             "Subscribe to continue."
         )
-    return {
+    status = {
         "trial_consumed": True,
         "trials_remaining": remaining,
         "trials_limit": entitlement.trials_limit,
         "message": message,
+    }
+    if remaining == 0:
         # The site completes sign-in and opens the user's account area, where
         # the normal server-side checkout flow chooses the correct plan.
-        "subscribe_url": settings.APP_BASE_URL.rstrip("/"),
-    }
+        status["subscribe_url"] = settings.APP_BASE_URL.rstrip("/")
+    return status
 
 
 def _claim_mcp_trial(db, user: User, machine_hash: str, video_id: str, payload, mode: str):
@@ -666,7 +668,8 @@ def build_mcp_server(
             "Never claim a PDF is ready until create_video_pdf returns its download URL."
             + (
                 " When a tool response includes trial_status, tell the user its message. "
-                "If it includes subscribe_url, present it as a Subscribe to continue link."
+                "Present subscribe_url as a Subscribe to continue link only when "
+                "trial_status.trials_remaining is zero."
                 if include_trial_status
                 else ""
             )

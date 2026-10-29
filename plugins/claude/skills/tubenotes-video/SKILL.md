@@ -47,7 +47,8 @@ access.
 - For a PDF, provide the secure download link and state that it expires.
 - When a successful summary or PDF response contains `trial_status`, show its
   `message` as a separate final line. For example: `🎟️ Free trials left: 12 / 20`.
-  If it also contains `subscribe_url`, present that URL as a clear **Subscribe
-  to continue** link.
+  Present a **Subscribe to continue** link only when
+  `trial_status.trials_remaining` is `0` and the response contains
+  `subscribe_url`. Never show a subscribe link while free trials remain.
 - Use the exact English link text "Open in TubeNotes" in ordinary response
   text. Do not attempt to change any host-app button that Claude localizes.
