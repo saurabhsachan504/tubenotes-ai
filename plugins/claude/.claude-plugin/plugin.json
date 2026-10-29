@@ -1,7 +1,6 @@
 {
   "name": "tubenotes",
-  "displayName": "TubeNotes",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Summarize public YouTube videos and create complete multilingual notes PDFs with a connected TubeNotes account.",
   "author": {
     "name": "True Technologies",
