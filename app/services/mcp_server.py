@@ -226,7 +226,7 @@ def _trial_status(entitlement: EntitlementOut, *, trial_consumed: bool) -> dict[
         return None
     remaining = entitlement.trials_remaining
     if remaining > 0:
-        message = f"Free TubeNotes trials remaining: {remaining} of {entitlement.trials_limit}."
+        message = f"🎟️ Free trials left: {remaining} / {entitlement.trials_limit}"
     else:
         message = (
             f"You have used all {entitlement.trials_limit} free TubeNotes trials. "

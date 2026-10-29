@@ -38,6 +38,7 @@ def test_mcp_machine_gets_twenty_trials_across_accounts(client, db, device, monk
         trial_statuses.append(_trial_status(entitlement, trial_consumed=trial_consumed))
 
     assert trial_statuses[0]["trials_remaining"] == 19
+    assert trial_statuses[0]["message"] == "🎟️ Free trials left: 19 / 20"
     assert trial_statuses[-1]["trials_remaining"] == 0
     assert "Subscribe to continue" in trial_statuses[-1]["message"]
     assert trial_statuses[-1]["subscribe_url"] == settings.APP_BASE_URL.rstrip("/")
