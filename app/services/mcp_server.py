@@ -480,6 +480,7 @@ async def _pdf_payload(
     pdf_style: Literal["plugin", "claude"] = "plugin",
     cache_mode: Literal["notes", "gemini_full_notes"] = "notes",
     notes_chunk_chars: int | None = None,
+    external_download_only: bool = False,
 ) -> dict[str, Any]:
     if not settings.OUTPUT_CACHE_ENABLED:
         raise RuntimeError("PDF export is unavailable until TubeNotes output caching is enabled.")
@@ -509,6 +510,22 @@ async def _pdf_payload(
         "expires_in_minutes": settings.MCP_DOWNLOAD_TTL_MINUTES,
         "message": "Your PDF is ready. Open the secure download link before it expires.",
     }
+    if external_download_only:
+        # Gemini can create a Canvas document from a tool response. That document
+        # is only its own short summary, not the PDF rendered by TubeNotes. Make
+        # the delivery contract explicit in both structured fields and prose so
+        # the client presents this signed link rather than making a substitute.
+        payload.update(
+            {
+                "delivery_type": "tubenotes_premium_pdf_download",
+                "must_use_pdf_download_url": True,
+                "message": (
+                    "Your complete TubeNotes premium PDF is ready. Present and open "
+                    "pdf_download_url as the download link. Do not create, export, or "
+                    "substitute a Canvas/document PDF from the summary."
+                ),
+            }
+        )
     if include_trial_status:
         payload["trial_status"] = result.get("trial_status")
     return payload
@@ -742,6 +759,7 @@ def build_mcp_server(
     pdf_style: Literal["plugin", "claude"] = "plugin",
     pdf_cache_mode: Literal["notes", "gemini_full_notes"] = "notes",
     pdf_notes_chunk_chars: int | None = None,
+    external_pdf_download_only: bool = False,
 ) -> FastMCP:
     """Build an authenticated MCP app for one public transport URL."""
     resource_url = (public_url or settings.mcp_public_url).rstrip("/")
@@ -755,6 +773,14 @@ def build_mcp_server(
             "Before every summary or PDF creation tool call, ask the user to choose an output language. "
             "Never infer, default, or send auto for the language. "
             "Never claim a PDF is ready until create_video_pdf returns its download URL."
+            + (
+                " For every PDF request, call create_video_pdf and present its "
+                "pdf_download_url as the PDF download. Never create, export, or "
+                "substitute a Canvas, document, artifact, or other PDF from the "
+                "summary: it is not the complete TubeNotes PDF."
+                if external_pdf_download_only
+                else ""
+            )
             + (
                 " When a tool response includes trial_status, tell the user its message. "
                 "Present subscribe_url as a Subscribe to continue link only when "
@@ -819,6 +845,12 @@ def build_mcp_server(
             "Use this when the user wants a downloadable PDF of exhaustive, complete "
             "YouTube video notes in a chosen language. The PDF covers the full "
             "transcript and every major topic, not a short summary."
+            + (
+                " This tool's pdf_download_url is the only PDF to present. Do not "
+                "make a Canvas, document, artifact, or substitute PDF from its content."
+                if external_pdf_download_only
+                else ""
+            )
         ),
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True),
     )
@@ -836,6 +868,7 @@ def build_mcp_server(
             pdf_style=pdf_style,
             cache_mode=pdf_cache_mode,
             notes_chunk_chars=pdf_notes_chunk_chars,
+            external_download_only=external_pdf_download_only,
         )
 
     return server

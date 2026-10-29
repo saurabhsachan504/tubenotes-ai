@@ -263,6 +263,7 @@ if settings.MCP_ENABLED:
         pdf_style="claude",
         pdf_cache_mode="gemini_full_notes",
         pdf_notes_chunk_chars=settings.GEMINI_PDF_NOTES_CHUNK_CHARS,
+        external_pdf_download_only=True,
     )
     _mcp_servers.extend((chatgpt_mcp_server, gemini_mcp_server))
     app.mount("/mcp", chatgpt_mcp_server.streamable_http_app(), name="tubenotes-mcp")
