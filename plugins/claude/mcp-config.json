@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "tubenotes": {
+      "type": "http",
+      "url": "https://tubenotes.ai/mcp/"
+    }
+  }
+}

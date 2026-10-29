@@ -1,8 +1,8 @@
-"""OAuth 2.1 state for ChatGPT's TubeNotes MCP connection.
+"""OAuth 2.1 state for TubeNotes' ChatGPT and Claude MCP connections.
 
-The browser signs in to the existing TubeNotes account system.  ChatGPT never
-receives a site password or a normal web-app JWT: it receives a short-lived,
-opaque MCP bearer token after the PKCE exchange.
+The browser signs in to the existing TubeNotes account system.  The MCP hosts
+never receive a site password or a normal web-app JWT: they receive an opaque
+MCP bearer token after the PKCE exchange.
 """
 from __future__ import annotations
 
@@ -45,8 +45,12 @@ def _scopes(value: str) -> list[str]:
     return [scope for scope in value.split(" ") if scope]
 
 
-def _is_chatgpt_client(client: OAuthClientInformationFull) -> bool:
-    """Identify the first-party ChatGPT callback without trusting its display name."""
+def _is_persistent_connector_client(client: OAuthClientInformationFull) -> bool:
+    """Identify first-party callbacks that support silent OAuth renewal.
+
+    This is intentionally based on the registered callback host, never the
+    client display name supplied during dynamic registration.
+    """
     hosts = {
         (urlparse(str(uri)).hostname or "").lower()
         for uri in client.redirect_uris
@@ -58,13 +62,15 @@ def _is_chatgpt_client(client: OAuthClientInformationFull) -> bool:
         or host.endswith(".chat.openai.com")
         or host == "oauth.openai.com"
         or host == "oauth-redirect.openai.com"
+        or host == "claude.ai"
+        or host.endswith(".claude.ai")
         for host in hosts
     )
 
 
-def _with_chatgpt_refresh_grant(client: OAuthClientInformationFull) -> OAuthClientInformationFull:
-    """Ensure ChatGPT's DCR record permits its standard silent refresh grant."""
-    if not _is_chatgpt_client(client) or "refresh_token" in client.grant_types:
+def _with_persistent_refresh_grant(client: OAuthClientInformationFull) -> OAuthClientInformationFull:
+    """Allow ChatGPT and Claude to renew a connected account silently."""
+    if not _is_persistent_connector_client(client) or "refresh_token" in client.grant_types:
         return client
     return client.model_copy(update={"grant_types": [*client.grant_types, "refresh_token"]})
 
@@ -105,12 +111,12 @@ class TubeNotesOAuthProvider:
             row = db.get(McpOAuthClient, client_id)
             if row is None:
                 return None
-            client = _with_chatgpt_refresh_grant(
+            client = _with_persistent_refresh_grant(
                 OAuthClientInformationFull.model_validate_json(row.metadata_json)
             )
-            # Older ChatGPT records were created before refresh support. Upgrade
-            # just those records on their next OAuth request; Claude and Gemini
-            # metadata remains exactly as registered.
+            # Older ChatGPT and Claude records were created before refresh
+            # support. Upgrade only their trusted callback records on the next
+            # OAuth request; Gemini metadata remains exactly as registered.
             payload = client.model_dump_json()
             if payload != row.metadata_json:
                 row.metadata_json = payload
@@ -120,7 +126,7 @@ class TubeNotesOAuthProvider:
             db.close()
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
-        client_info = _with_chatgpt_refresh_grant(client_info)
+        client_info = _with_persistent_refresh_grant(client_info)
         client_id = str(client_info.client_id or "")
         if not client_id:
             raise ValueError("OAuth client ID is required")
@@ -131,8 +137,8 @@ class TubeNotesOAuthProvider:
             if row is None:
                 db.add(McpOAuthClient(client_id=client_id, metadata_json=payload))
             else:
-                # DCR metadata may be refreshed by ChatGPT. The client ID is
-                # stable and update is safer than accumulating stale callbacks.
+                # DCR metadata may be refreshed by a connector. The client ID
+                # is stable and update is safer than accumulating stale callbacks.
                 row.metadata_json = payload
             db.commit()
         finally:
@@ -206,7 +212,7 @@ class TubeNotesOAuthProvider:
 
         The plaintext values exist only in the OAuth response. The database
         stores their hashes, so a database export cannot be used to operate a
-        user's ChatGPT connection.
+        user's connector session.
         """
         raw_access = secrets.token_urlsafe(48)
         expires_at = now() + timedelta(minutes=settings.MCP_ACCESS_TOKEN_TTL_MINUTES)
@@ -221,9 +227,9 @@ class TubeNotesOAuthProvider:
                 scopes=scopes,
                 resource=resource,
                 machine_hash=machine_hash,
-                # A plugin connection is intentionally persistent. ChatGPT
-                # can end it through OAuth revocation when the plugin is
-                # removed, which revokes this session and its access tokens.
+                # A plugin connection is intentionally persistent. ChatGPT or
+                # Claude can end it through OAuth revocation when the plugin
+                # is removed, which revokes this session and its access tokens.
                 expires_at=None,
             )
             db.add(refresh)
@@ -267,9 +273,8 @@ class TubeNotesOAuthProvider:
                 scopes=row.scopes,
                 resource=row.resource,
                 machine_hash=row.machine_hash,
-                # Claude and Gemini clients currently register only the code
-                # grant. Keeping refresh tokens opt-in leaves those connector
-                # flows unchanged while ChatGPT receives automatic renewal.
+                # Only trusted ChatGPT and Claude callbacks are upgraded to
+                # the refresh grant. Gemini's code-only flow remains unchanged.
                 issue_refresh_token="refresh_token" in (client.grant_types or []),
             )
             db.commit()
@@ -472,7 +477,7 @@ async def register_dynamic_client(metadata: object) -> OAuthClientInformationFul
     except ValidationError as exc:
         raise ValueError("Invalid client metadata") from exc
 
-    client = _with_chatgpt_refresh_grant(client)
+    client = _with_persistent_refresh_grant(client)
     await TubeNotesOAuthProvider().register_client(client)
     return client
 

@@ -649,7 +649,9 @@ def decode_pdf_download_token(token: str) -> dict[str, str]:
     return payload
 
 
-def build_mcp_server(public_url: str | None = None) -> FastMCP:
+def build_mcp_server(
+    public_url: str | None = None, *, include_trial_status: bool = False
+) -> FastMCP:
     """Build an authenticated MCP app for one public transport URL."""
     resource_url = (public_url or settings.mcp_public_url).rstrip("/")
     if not resource_url.startswith("https://"):
@@ -662,6 +664,12 @@ def build_mcp_server(public_url: str | None = None) -> FastMCP:
             "Before every summary or PDF creation tool call, ask the user to choose an output language. "
             "Never infer, default, or send auto for the language. "
             "Never claim a PDF is ready until create_video_pdf returns its download URL."
+            + (
+                " When a tool response includes trial_status, tell the user its message. "
+                "If it includes subscribe_url, present it as a Subscribe to continue link."
+                if include_trial_status
+                else ""
+            )
         ),
         auth_server_provider=provider,
         auth=AuthSettings(
@@ -699,7 +707,14 @@ def build_mcp_server(public_url: str | None = None) -> FastMCP:
         language: _LANGUAGE_OPTIONS,
     ) -> dict[str, Any]:
         user = _current_user()
-        result = await _create_text(user, _current_machine_hash(), video_url, language, "summary")
+        result = await _create_text(
+            user,
+            _current_machine_hash(),
+            video_url,
+            language,
+            "summary",
+            include_trial_status=include_trial_status,
+        )
         return {
             **{key: value for key, value in result.items() if key != "text"},
             "summary": result["text"],
@@ -716,7 +731,13 @@ def build_mcp_server(public_url: str | None = None) -> FastMCP:
         language: _LANGUAGE_OPTIONS,
     ) -> dict[str, Any]:
         user = _current_user()
-        return await _pdf_payload(user, _current_machine_hash(), video_url, language)
+        return await _pdf_payload(
+            user,
+            _current_machine_hash(),
+            video_url,
+            language,
+            include_trial_status=include_trial_status,
+        )
 
     return server
 

@@ -1,0 +1,18 @@
+{
+  "name": "tubenotes",
+  "displayName": "TubeNotes",
+  "version": "1.0.5",
+  "description": "Summarize public YouTube videos and create complete multilingual notes PDFs with a connected TubeNotes account.",
+  "author": {
+    "name": "True Technologies",
+    "email": "support@tubenotes.ai"
+  },
+  "homepage": "https://tubenotes.ai",
+  "repository": "https://github.com/saurabhsachan504/tubenotes-ai",
+  "mcpServers": {
+    "tubenotes": {
+      "type": "http",
+      "url": "https://tubenotes.ai/mcp/"
+    }
+  }
+}

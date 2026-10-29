@@ -130,8 +130,9 @@ def test_mcp_dynamic_registration_accepts_claude_pkce_client(client, db, path):
     registered = response.json()
     assert registered["client_id"]
     assert registered["token_endpoint_auth_method"] == "none"
-    assert registered["grant_types"] == ["authorization_code"]
-    assert db.get(McpOAuthClient, registered["client_id"]) is not None
+    assert registered["grant_types"] == ["authorization_code", "refresh_token"]
+    stored = db.get(McpOAuthClient, registered["client_id"])
+    assert stored is not None and "refresh_token" in stored.metadata_json
 
 
 def test_mcp_dynamic_registration_adds_refresh_grant_for_chatgpt(client, db):
@@ -151,6 +152,27 @@ def test_mcp_dynamic_registration_adds_refresh_grant_for_chatgpt(client, db):
     assert registered["grant_types"] == ["authorization_code", "refresh_token"]
     stored = db.get(McpOAuthClient, registered["client_id"])
     assert stored is not None and "refresh_token" in stored.metadata_json
+
+
+def test_gemini_dynamic_registration_keeps_code_only_grant(client, db):
+    response = client.post(
+        "/gemini-mcp/register",
+        json={
+            "redirect_uris": [
+                "https://oauth-redirect.googleusercontent.com/r/tubenotes-test"
+            ],
+            "grant_types": ["authorization_code"],
+            "response_types": ["code"],
+            "scope": MCP_SCOPE,
+            "client_name": "TubeNotes for Gemini",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    registered = response.json()
+    assert registered["grant_types"] == ["authorization_code"]
+    stored = db.get(McpOAuthClient, registered["client_id"])
+    assert stored is not None and "refresh_token" not in stored.metadata_json
 
 
 @pytest.mark.parametrize(

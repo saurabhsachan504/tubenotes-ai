@@ -1,0 +1,7 @@
+{
+  "name": "tubenotes-claude-plugin",
+  "version": "1.0.5",
+  "private": true,
+  "description": "TubeNotes remote MCP plugin for Claude.",
+  "homepage": "https://tubenotes.ai"
+}
