@@ -77,12 +77,28 @@ def test_mcp_oauth_code_is_one_time_and_scoped_to_the_user(
         assert stored.resource == resource_url
         token = await provider.exchange_authorization_code(client_info, stored)
         assert token.access_token
+        assert token.refresh_token
         assert await provider.load_authorization_code(client_info, code) is None
         access = await provider.load_access_token(token.access_token)
         assert access is not None
         assert access.user_id == user_id
         assert access.scopes == [MCP_SCOPE]
         assert access.machine_hash
+
+        refresh = await provider.load_refresh_token(client_info, token.refresh_token)
+        assert refresh is not None
+        rotated = await provider.exchange_refresh_token(client_info, refresh, [MCP_SCOPE])
+        assert rotated.access_token and rotated.refresh_token
+        assert rotated.refresh_token != token.refresh_token
+        assert await provider.load_access_token(token.access_token) is None
+        assert await provider.load_refresh_token(client_info, token.refresh_token) is None
+        assert await provider.load_access_token(rotated.access_token) is not None
+
+        refreshed = await provider.load_refresh_token(client_info, rotated.refresh_token)
+        assert refreshed is not None
+        await provider.revoke_token(refreshed)
+        assert await provider.load_access_token(rotated.access_token) is None
+        assert await provider.load_refresh_token(client_info, rotated.refresh_token) is None
 
     asyncio.run(flow())
 
@@ -116,6 +132,25 @@ def test_mcp_dynamic_registration_accepts_claude_pkce_client(client, db, path):
     assert registered["token_endpoint_auth_method"] == "none"
     assert registered["grant_types"] == ["authorization_code"]
     assert db.get(McpOAuthClient, registered["client_id"]) is not None
+
+
+def test_mcp_dynamic_registration_adds_refresh_grant_for_chatgpt(client, db):
+    response = client.post(
+        "/mcp/register",
+        json={
+            "redirect_uris": ["https://chatgpt.com/connector_platform_oauth_redirect"],
+            "grant_types": ["authorization_code"],
+            "response_types": ["code"],
+            "scope": MCP_SCOPE,
+            "client_name": "TubeNotes for ChatGPT",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    registered = response.json()
+    assert registered["grant_types"] == ["authorization_code", "refresh_token"]
+    stored = db.get(McpOAuthClient, registered["client_id"])
+    assert stored is not None and "refresh_token" in stored.metadata_json
 
 
 @pytest.mark.parametrize(

@@ -21,9 +21,16 @@ the user's location. Do not call either creation tool until they reply.
   user must connect or sign in. Do not ask for or repeat a password in chat.
 - If the host presents the secure connection UI, wait for it to complete and
   then continue with the requested summary or PDF.
+- A completed TubeNotes connection renews automatically. Do not tell the user
+  to reconnect because time has passed; request a new connection only if a
+  TubeNotes tool explicitly returns `authentication_required`.
 - Return the summary directly, preserving TubeNotes' Markdown section headings,
   short paragraphs, and bullet points exactly as returned. Do not add a second
   summary, flatten the sections into prose, or add an introduction before it.
 - For a PDF, give the user the secure download URL returned by TubeNotes and
   mention its expiry time. The download uses TubeNotes' purple section-heading
   and bullet-point reading layout.
+- When a successful summary or PDF response includes `trial_status`, include
+  its `message` immediately after the result. When `trials_remaining` is zero,
+  present `subscribe_url` as a clear **Subscribe to continue** link. Do not
+  show this notice for a previously unlocked video when `trial_status` is null.

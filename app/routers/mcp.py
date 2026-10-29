@@ -198,7 +198,7 @@ async def public_streamable_mcp(request: Request):
         return _rpc_result(request_id, {
             "protocolVersion": str(params.get("protocolVersion") or "2025-03-26"),
             "capabilities": {"tools": {"listChanged": False}},
-            "serverInfo": {"name": "TubeNotes", "version": "1.0.10"},
+            "serverInfo": {"name": "TubeNotes", "version": "1.0.11"},
             "instructions": "Before each TubeNotes summary or PDF request, ask the user to explicitly choose an output language. Never default it automatically.",
         })
     if method == "ping":

@@ -9,7 +9,7 @@ from __future__ import annotations
 import secrets
 from uuid import uuid4
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from mcp.server.auth.provider import AccessToken, AuthorizationCode, RefreshToken, TokenError
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
@@ -18,7 +18,13 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import McpAccessToken, McpAuthorizationCode, McpAuthorizationRequest, McpOAuthClient
+from app.models import (
+    McpAccessToken,
+    McpAuthorizationCode,
+    McpAuthorizationRequest,
+    McpOAuthClient,
+    McpRefreshToken,
+)
 from app.schemas import DeviceFingerprint
 from app.security import sha256
 from app.services import devices as device_service
@@ -39,6 +45,30 @@ def _scopes(value: str) -> list[str]:
     return [scope for scope in value.split(" ") if scope]
 
 
+def _is_chatgpt_client(client: OAuthClientInformationFull) -> bool:
+    """Identify the first-party ChatGPT callback without trusting its display name."""
+    hosts = {
+        (urlparse(str(uri)).hostname or "").lower()
+        for uri in client.redirect_uris
+    }
+    return any(
+        host == "chatgpt.com"
+        or host.endswith(".chatgpt.com")
+        or host == "chat.openai.com"
+        or host.endswith(".chat.openai.com")
+        or host == "oauth.openai.com"
+        or host == "oauth-redirect.openai.com"
+        for host in hosts
+    )
+
+
+def _with_chatgpt_refresh_grant(client: OAuthClientInformationFull) -> OAuthClientInformationFull:
+    """Ensure ChatGPT's DCR record permits its standard silent refresh grant."""
+    if not _is_chatgpt_client(client) or "refresh_token" in client.grant_types:
+        return client
+    return client.model_copy(update={"grant_types": [*client.grant_types, "refresh_token"]})
+
+
 class TubeNotesAuthorizationCode(AuthorizationCode):
     user_id: str
     machine_hash: str | None = None
@@ -47,6 +77,15 @@ class TubeNotesAuthorizationCode(AuthorizationCode):
 class TubeNotesAccessToken(AccessToken):
     user_id: str
     machine_hash: str | None = None
+
+
+class TubeNotesRefreshToken(RefreshToken):
+    """Refresh-token metadata kept server-side and never sent to MCP tools."""
+
+    refresh_token_id: str
+    user_id: str
+    machine_hash: str | None = None
+    resource: str | None = None
 
 
 class TubeNotesOAuthProvider:
@@ -64,11 +103,24 @@ class TubeNotesOAuthProvider:
         db = SessionLocal()
         try:
             row = db.get(McpOAuthClient, client_id)
-            return OAuthClientInformationFull.model_validate_json(row.metadata_json) if row else None
+            if row is None:
+                return None
+            client = _with_chatgpt_refresh_grant(
+                OAuthClientInformationFull.model_validate_json(row.metadata_json)
+            )
+            # Older ChatGPT records were created before refresh support. Upgrade
+            # just those records on their next OAuth request; Claude and Gemini
+            # metadata remains exactly as registered.
+            payload = client.model_dump_json()
+            if payload != row.metadata_json:
+                row.metadata_json = payload
+                db.commit()
+            return client
         finally:
             db.close()
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        client_info = _with_chatgpt_refresh_grant(client_info)
         client_id = str(client_info.client_id or "")
         if not client_id:
             raise ValueError("OAuth client ID is required")
@@ -139,6 +191,63 @@ class TubeNotesOAuthProvider:
         finally:
             db.close()
 
+    def _issue_token_pair(
+        self,
+        db,
+        *,
+        user_id: str,
+        client_id: str,
+        scopes: str,
+        resource: str | None,
+        machine_hash: str | None,
+        issue_refresh_token: bool,
+    ) -> OAuthToken:
+        """Create a short-lived access token and, for capable clients, a durable refresh token.
+
+        The plaintext values exist only in the OAuth response. The database
+        stores their hashes, so a database export cannot be used to operate a
+        user's ChatGPT connection.
+        """
+        raw_access = secrets.token_urlsafe(48)
+        expires_at = now() + timedelta(minutes=settings.MCP_ACCESS_TOKEN_TTL_MINUTES)
+        refresh_token_id: str | None = None
+        raw_refresh: str | None = None
+        if issue_refresh_token:
+            raw_refresh = secrets.token_urlsafe(64)
+            refresh = McpRefreshToken(
+                token_hash=sha256(raw_refresh),
+                user_id=user_id,
+                client_id=client_id,
+                scopes=scopes,
+                resource=resource,
+                machine_hash=machine_hash,
+                # A plugin connection is intentionally persistent. ChatGPT
+                # can end it through OAuth revocation when the plugin is
+                # removed, which revokes this session and its access tokens.
+                expires_at=None,
+            )
+            db.add(refresh)
+            db.flush()
+            refresh_token_id = refresh.id
+        db.add(
+            McpAccessToken(
+                token_hash=sha256(raw_access),
+                user_id=user_id,
+                client_id=client_id,
+                scopes=scopes,
+                resource=resource,
+                machine_hash=machine_hash,
+                refresh_token_id=refresh_token_id,
+                expires_at=expires_at,
+            )
+        )
+        return OAuthToken(
+            access_token=raw_access,
+            expires_in=int((expires_at - now()).total_seconds()),
+            scope=scopes,
+            refresh_token=raw_refresh,
+        )
+
     async def exchange_authorization_code(self, client, authorization_code: TubeNotesAuthorizationCode) -> OAuthToken:
         db = SessionLocal()
         try:
@@ -151,35 +260,89 @@ class TubeNotesOAuthProvider:
             if row is None or row.consumed_at is not None or _utc(row.expires_at) <= now():
                 raise TokenError("invalid_grant", "Authorization code is expired or already used")
             row.consumed_at = now()
-            raw = secrets.token_urlsafe(48)
-            expires_at = now() + timedelta(minutes=settings.MCP_ACCESS_TOKEN_TTL_MINUTES)
-            db.add(
-                McpAccessToken(
-                    token_hash=sha256(raw),
-                    user_id=row.user_id,
-                    client_id=row.client_id,
-                    scopes=row.scopes,
-                    resource=row.resource,
-                    machine_hash=row.machine_hash,
-                    expires_at=expires_at,
-                )
+            token = self._issue_token_pair(
+                db,
+                user_id=row.user_id,
+                client_id=row.client_id,
+                scopes=row.scopes,
+                resource=row.resource,
+                machine_hash=row.machine_hash,
+                # Claude and Gemini clients currently register only the code
+                # grant. Keeping refresh tokens opt-in leaves those connector
+                # flows unchanged while ChatGPT receives automatic renewal.
+                issue_refresh_token="refresh_token" in (client.grant_types or []),
             )
             db.commit()
-            return OAuthToken(
-                access_token=raw,
-                expires_in=int((expires_at - now()).total_seconds()),
-                scope=row.scopes,
+            return token
+        finally:
+            db.close()
+
+    async def load_refresh_token(self, client, refresh_token: str) -> TubeNotesRefreshToken | None:
+        db = SessionLocal()
+        try:
+            row = db.execute(
+                select(McpRefreshToken).where(
+                    McpRefreshToken.token_hash == sha256(refresh_token),
+                    McpRefreshToken.client_id == str(client.client_id),
+                    McpRefreshToken.revoked_at.is_(None),
+                )
+            ).scalar_one_or_none()
+            if row is None or (row.expires_at is not None and _utc(row.expires_at) <= now()):
+                return None
+            return TubeNotesRefreshToken(
+                token=refresh_token,
+                client_id=row.client_id,
+                scopes=_scopes(row.scopes),
+                expires_at=int(row.expires_at.timestamp()) if row.expires_at is not None else None,
+                refresh_token_id=row.id,
+                user_id=row.user_id,
+                machine_hash=row.machine_hash,
+                resource=row.resource,
             )
         finally:
             db.close()
 
-    async def load_refresh_token(self, client, refresh_token: str) -> RefreshToken | None:
-        # Deliberately no persistent refresh token. A short-lived MCP token
-        # limits exposure and ChatGPT reconnects through the normal PKCE flow.
-        return None
+    async def exchange_refresh_token(
+        self, client, refresh_token: TubeNotesRefreshToken, scopes: list[str]
+    ) -> OAuthToken:
+        db = SessionLocal()
+        try:
+            row = db.execute(
+                select(McpRefreshToken).where(
+                    McpRefreshToken.id == refresh_token.refresh_token_id,
+                    McpRefreshToken.token_hash == sha256(refresh_token.token),
+                    McpRefreshToken.client_id == str(client.client_id),
+                    McpRefreshToken.revoked_at.is_(None),
+                )
+            ).scalar_one_or_none()
+            if row is None or (row.expires_at is not None and _utc(row.expires_at) <= now()):
+                raise TokenError("invalid_grant", "TubeNotes connection is no longer active")
 
-    async def exchange_refresh_token(self, client, refresh_token, scopes: list[str]) -> OAuthToken:
-        raise TokenError("invalid_grant", "Reconnect TubeNotes to continue")
+            # Rotate the refresh secret on every exchange. Reuse of an older
+            # secret cannot keep the connection alive, and access tokens from
+            # its family are revoked at the same time.
+            row.revoked_at = now()
+            active_access_tokens = db.execute(
+                select(McpAccessToken).where(
+                    McpAccessToken.refresh_token_id == row.id,
+                    McpAccessToken.revoked_at.is_(None),
+                )
+            ).scalars()
+            for access_token in active_access_tokens:
+                access_token.revoked_at = now()
+            token = self._issue_token_pair(
+                db,
+                user_id=row.user_id,
+                client_id=row.client_id,
+                scopes=" ".join(scopes),
+                resource=row.resource,
+                machine_hash=row.machine_hash,
+                issue_refresh_token=True,
+            )
+            db.commit()
+            return token
+        finally:
+            db.close()
 
     async def load_access_token(self, token: str) -> TubeNotesAccessToken | None:
         db = SessionLocal()
@@ -210,9 +373,38 @@ class TubeNotesOAuthProvider:
             return
         db = SessionLocal()
         try:
-            row = db.execute(select(McpAccessToken).where(McpAccessToken.token_hash == sha256(raw))).scalar_one_or_none()
+            refresh = db.execute(
+                select(McpRefreshToken).where(McpRefreshToken.token_hash == sha256(raw))
+            ).scalar_one_or_none()
+            if refresh is not None:
+                refresh.revoked_at = now()
+                rows = db.execute(
+                    select(McpAccessToken).where(
+                        McpAccessToken.refresh_token_id == refresh.id,
+                        McpAccessToken.revoked_at.is_(None),
+                    )
+                ).scalars()
+                for row in rows:
+                    row.revoked_at = now()
+                db.commit()
+                return
+            row = db.execute(
+                select(McpAccessToken).where(McpAccessToken.token_hash == sha256(raw))
+            ).scalar_one_or_none()
             if row is not None:
                 row.revoked_at = now()
+                if row.refresh_token_id:
+                    refresh = db.get(McpRefreshToken, row.refresh_token_id)
+                    if refresh is not None:
+                        refresh.revoked_at = now()
+                        rows = db.execute(
+                            select(McpAccessToken).where(
+                                McpAccessToken.refresh_token_id == refresh.id,
+                                McpAccessToken.revoked_at.is_(None),
+                            )
+                        ).scalars()
+                        for linked in rows:
+                            linked.revoked_at = now()
                 db.commit()
         finally:
             db.close()
@@ -280,6 +472,7 @@ async def register_dynamic_client(metadata: object) -> OAuthClientInformationFul
     except ValidationError as exc:
         raise ValueError("Invalid client metadata") from exc
 
+    client = _with_chatgpt_refresh_grant(client)
     await TubeNotesOAuthProvider().register_client(client)
     return client
 

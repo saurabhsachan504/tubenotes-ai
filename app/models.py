@@ -202,8 +202,27 @@ class McpAuthorizationCode(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class McpRefreshToken(Base):
+    """Long-lived, rotating OAuth session for an MCP client connection."""
+
+    __tablename__ = "mcp_refresh_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_id: Mapped[str] = mapped_column(String(2048), nullable=False, index=True)
+    scopes: Mapped[str] = mapped_column(String(512), nullable=False)
+    resource: Mapped[str | None] = mapped_column(String(2048))
+    machine_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    # MCP connections stay linked until the host revokes the connection (for
+    # example on plugin removal).  Individual access tokens remain short lived.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class McpAccessToken(Base):
-    """Opaque, revocable bearer token presented by ChatGPT to MCP tools."""
+    """Short-lived, revocable bearer token presented by ChatGPT to MCP tools."""
 
     __tablename__ = "mcp_access_tokens"
 
@@ -214,6 +233,9 @@ class McpAccessToken(Base):
     scopes: Mapped[str] = mapped_column(String(512), nullable=False)
     resource: Mapped[str | None] = mapped_column(String(2048))
     machine_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    refresh_token_id: Mapped[str | None] = mapped_column(
+        ForeignKey("mcp_refresh_tokens.id", ondelete="CASCADE"), index=True
+    )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

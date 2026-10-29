@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from app.config import settings
 from app.models import McpTrialLedger, McpTrialUsage, User
 from app.routers.summarize import SummarizeRequest
-from app.services.mcp_server import _claim_mcp_trial
+from app.services.mcp_server import _claim_mcp_trial, _trial_status
 from tests.conftest import make_device, register
 
 
@@ -27,12 +27,20 @@ def test_mcp_machine_gets_twenty_trials_across_accounts(client, db, device, monk
     second_user = db.get(User, second["user"]["id"])
     machine_hash = "a" * 64
 
+    trial_statuses = []
     for number in range(20):
         video_id = f"video{number:06d}"[-11:]
-        entitlement, *_ = _claim_mcp_trial(
+        entitlement, *_, trial_consumed = _claim_mcp_trial(
             db, first_user, machine_hash, video_id, _payload(video_id), "summary"
         )
         assert entitlement.allowed
+        assert trial_consumed
+        trial_statuses.append(_trial_status(entitlement, trial_consumed=trial_consumed))
+
+    assert trial_statuses[0]["trials_remaining"] == 19
+    assert trial_statuses[-1]["trials_remaining"] == 0
+    assert "Subscribe to continue" in trial_statuses[-1]["message"]
+    assert trial_statuses[-1]["subscribe_url"] == settings.APP_BASE_URL.rstrip("/")
 
     ledger = db.get(McpTrialLedger, machine_hash)
     assert ledger is not None and ledger.trials_used == 20
@@ -45,7 +53,8 @@ def test_mcp_machine_gets_twenty_trials_across_accounts(client, db, device, monk
     assert blocked.value.status_code == 402
 
     # A PDF/retry for an already unlocked video remains free after the cap.
-    unlocked, *_ = _claim_mcp_trial(
+    unlocked, *_, trial_consumed = _claim_mcp_trial(
         db, second_user, machine_hash, "video000000", _payload("video000000"), "notes"
     )
     assert unlocked.allowed
+    assert not trial_consumed
