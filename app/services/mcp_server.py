@@ -760,6 +760,7 @@ def build_mcp_server(
     pdf_cache_mode: Literal["notes", "gemini_full_notes"] = "notes",
     pdf_notes_chunk_chars: int | None = None,
     external_pdf_download_only: bool = False,
+    guided_video_choices: bool = False,
 ) -> FastMCP:
     """Build an authenticated MCP app for one public transport URL."""
     resource_url = (public_url or settings.mcp_public_url).rstrip("/")
@@ -770,9 +771,17 @@ def build_mcp_server(
         "TubeNotes",
         instructions=(
             "Use TubeNotes to summarize public YouTube videos or prepare a PDF. "
-            "Before every summary or PDF creation tool call, ask the user to choose an output language. "
-            "Never infer, default, or send auto for the language. "
-            "Never claim a PDF is ready until create_video_pdf returns its download URL."
+            "Before every summary or PDF creation tool call, the user must explicitly choose both "
+            "the output type and the output language. Never infer, default, or send auto for either choice. "
+            + (
+                "If the user supplies only a YouTube URL, or either choice is missing, do not call a "
+                "TubeNotes video tool. Ask exactly: 'Would you like a Summary or a Full PDF, and in "
+                "which language?' A video title, transcript language, interface language, or previous "
+                "default is not an explicit choice. "
+                if guided_video_choices
+                else ""
+            )
+            + "Never claim a PDF is ready until create_video_pdf returns its download URL."
             + (
                 " For every PDF request, call create_video_pdf and present its "
                 "pdf_download_url as the PDF download. Never create, export, or "
@@ -817,7 +826,17 @@ def build_mcp_server(
 
     @server.tool(
         title="Summarize YouTube video",
-        description="Use this when the user wants a summary of a public YouTube video in a chosen language.",
+        description=(
+            "Use this only after the user explicitly chose Summary and a language for a public YouTube video. "
+            "Return the structured TubeNotes summary as generated: preserve its Markdown headings, short "
+            "paragraphs, key-point bullets, and conclusion. Do not replace it with a Canvas/document."
+            + (
+                " A URL by itself is not permission to call this tool; first ask whether the user wants "
+                "a Summary or a Full PDF, and which language."
+                if guided_video_choices
+                else ""
+            )
+        ),
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True),
     )
     async def summarize_youtube_video(
@@ -833,11 +852,17 @@ def build_mcp_server(
             "summary",
             include_trial_status=include_trial_status,
         )
-        return {
+        payload = {
             **{key: value for key, value in result.items() if key != "text"},
             "summary": result["text"],
             "open_in_tubenotes": f"{settings.APP_BASE_URL.rstrip('/')}/?{urlencode({'youtube_url': video_url})}",
         }
+        if guided_video_choices:
+            payload["presentation_instruction"] = (
+                "Present the summary exactly as supplied in the summary field. Keep its Markdown headings "
+                "and bullet points; do not rewrite, compress, or turn it into a separate document."
+            )
+        return payload
 
     @server.tool(
         title="Create video notes PDF",
@@ -845,6 +870,12 @@ def build_mcp_server(
             "Use this when the user wants a downloadable PDF of exhaustive, complete "
             "YouTube video notes in a chosen language. The PDF covers the full "
             "transcript and every major topic, not a short summary."
+            + (
+                " Use this only after the user explicitly chose Full PDF and a language. A URL alone is "
+                "not permission to call this tool."
+                if guided_video_choices
+                else ""
+            )
             + (
                 " This tool's pdf_download_url is the only PDF to present. Do not "
                 "make a Canvas, document, artifact, or substitute PDF from its content."
