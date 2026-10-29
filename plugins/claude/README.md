@@ -8,7 +8,7 @@ local server and it does not contain any user credentials.
 ## Install in Claude
 
 1. In Claude Desktop or Claude, open **Customize > Plugins**.
-2. Open **Manage plugins** and upload `tubenotes-claude-plugin-1.0.6.zip`.
+2. Open **Manage plugins** and upload `tubenotes-claude-plugin-1.0.7.zip`.
 3. Enable **TubeNotes** for the conversation.
 4. On the first TubeNotes request, complete the secure TubeNotes OAuth sign-in
    when Claude displays it. Choose **Register automatically** if Claude asks
