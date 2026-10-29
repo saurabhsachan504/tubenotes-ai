@@ -785,6 +785,7 @@ async def render_plugin_pdf(token: str) -> tuple[bytes, str]:
         title=meta.title,
         subtitle=f"{meta.author or 'YouTube'} - {youtube.watch_url(video_id)}",
         style=style,
+        hero_image=meta.thumbnail if style == "claude" else "",
     )
     safe_name = re.sub(r"[^A-Za-z0-9 _-]+", "", meta.title or "tubenotes-notes")[:60].strip() or "tubenotes-notes"
     return data, f"{safe_name}.pdf"

@@ -24,8 +24,10 @@ shaping, and WeasyPrint gets it from Pango. ReportLab would draw broken glyphs.
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import os
+import re
 from concurrent.futures import ProcessPoolExecutor
 
 from app.config import settings
@@ -129,10 +131,124 @@ a { color: #6f2dcc; text-decoration: none; font-weight: 700; }
 .tn-kicker { color: #8b4df0; font-size: 8pt; font-weight: 700; letter-spacing: 0.8pt;
              margin-bottom: 1.8mm; text-transform: uppercase; }
 .tn-meta { font-size: 8.8pt; color: #716986; margin-top: 1.8mm; overflow-wrap: anywhere; }
+
+/* Premium Claude document layout.  It uses only content already generated for
+   the notes, rather than inserting topic-specific facts or illustrations. */
+@page { size: A4; margin: 12mm 13mm 18mm 13mm;
+        @bottom-left { content: "TubeNotes | Claude Edition";
+                       font-size: 8pt; color: #756b9d; }
+        @bottom-right { content: counter(page) " / " counter(pages);
+                        font-size: 8pt; color: #756b9d; } }
+body { font-size: 10.15pt; line-height: 1.58; color: #27233a; }
+h1 { font-family: Georgia, "Noto Serif", serif; font-size: 25pt; line-height: 1.08;
+     margin: 0; color: #ffffff; }
+h2 { background: #f1e9ff; border-left: 3.4pt solid #7c3aed; border-radius: 2.2mm;
+     margin: 7mm 0 3mm; padding: 2.5mm 3.4mm; }
+h2::before { content: "\\2605  "; color: #e29320; }
+h3 { border-bottom: 0.55pt solid #d8c9ff; padding-bottom: 1.2mm; }
+h3::before { content: "\\25cf  "; color: #8b4df0; }
+.tn-head { padding: 0; margin: 0; border: 0; background: none; }
+.tn-hero { position: relative; overflow: hidden; display: flex; min-height: 51mm;
+           box-sizing: border-box; background: linear-gradient(125deg, #10133e, #30206e 58%, #6439ca);
+           border-radius: 4mm; margin-bottom: 4mm; padding: 7mm 7mm 5.5mm;
+           break-inside: avoid; }
+.tn-hero::after { content: ""; position: absolute; right: -18mm; bottom: -22mm; width: 78mm;
+                  height: 78mm; border: 0.7pt solid rgba(235,225,255,.48); border-radius: 50%;
+                  box-shadow: 0 0 0 11mm rgba(147,94,255,.11), 0 0 0 22mm rgba(147,94,255,.08); }
+.tn-hero-copy { position: relative; z-index: 2; width: 65%; }
+.tn-kicker { color: #d6b8ff; font-size: 7.9pt; font-weight: 700; letter-spacing: 1.25pt;
+             margin-bottom: 2.2mm; text-transform: uppercase; }
+.tn-meta { font-size: 8.8pt; line-height: 1.42; color: #e7dcff; margin-top: 3.3mm;
+           overflow-wrap: anywhere; }
+.tn-hero-tag { display: inline-block; border-radius: 4mm; background: rgba(170,119,255,.28);
+               color: #f2eaff; font-size: 7.5pt; font-weight: 700; letter-spacing: .9pt;
+               margin-top: 4mm; padding: 1.6mm 3mm; text-transform: uppercase; }
+.tn-hero-art { position: absolute; z-index: 1; display: flex; justify-content: center; align-items: center;
+               overflow: hidden; right: 5mm; top: 4mm; width: 49mm; height: 43mm; border-radius: 50%;
+               border: 1pt solid rgba(234,220,255,.78); background: rgba(111,67,214,.42); }
+.tn-hero-art::before { content: ""; position: absolute; width: 61mm; height: 18mm;
+                        border: 0.7pt solid rgba(231,215,255,.68); border-radius: 50%; transform: rotate(-29deg); }
+.tn-hero-art::after { content: ""; position: absolute; width: 53mm; height: 15mm;
+                       border: 0.6pt solid rgba(231,215,255,.45); border-radius: 50%; transform: rotate(33deg); }
+.tn-hero-image { width: 100%; height: 100%; object-fit: cover; opacity: .86; }
+.tn-takeaways { break-inside: avoid; margin: 0 0 5mm; padding: 4.4mm 5mm 3.2mm;
+                background: linear-gradient(120deg, #fff7c7, #fff3b0); border: .65pt solid #f5d878;
+                border-radius: 3.2mm; }
+.tn-takeaways-heading { display: flex; align-items: center; margin: 0 0 2mm; color: #22184d;
+                        font-family: Georgia, "Noto Serif", serif; font-size: 15pt; font-weight: 700; }
+.tn-takeaways-icon { display: inline-block; width: 9mm; height: 9mm; margin-right: 3mm; border-radius: 50%;
+                     background: #ffe78c; color: #7a4f00; font-family: sans-serif; font-size: 18pt;
+                     line-height: 9mm; text-align: center; }
+.tn-takeaways ul { margin: 0; padding-left: 6mm; }
+.tn-takeaways li { margin-bottom: 1.25mm; }
+.tn-takeaways li::marker { color: #e6a400; }
+.tn-reading-card { break-inside: avoid; float: right; width: 43%; box-sizing: border-box;
+                   margin: 0 0 3.5mm 4.5mm; padding: 4mm; border-radius: 3mm;
+                   background: linear-gradient(145deg, #dff8ff, #e9e0ff); border: .6pt solid #c3e9f5;
+                   color: #292053; }
+.tn-reading-card-label { display: block; color: #5e3eb0; font-size: 7.5pt; font-weight: 700;
+                         letter-spacing: .9pt; text-transform: uppercase; }
+.tn-reading-card-title { display: block; margin-top: 1.3mm; color: #2c1768; font-family: Georgia, "Noto Serif", serif;
+                         font-size: 14pt; line-height: 1.18; }
+.tn-reading-card-line { height: .55pt; margin: 2.6mm 0; background: #ad91ed; }
+.tn-reading-card-note { color: #5b5276; font-size: 8.3pt; line-height: 1.38; }
+.tn-content::after { content: ""; display: block; clear: both; }
 """
 
 
-def _render_sync(markdown_text: str, title: str, subtitle: str, style: str) -> bytes:
+def _takeaways_from_html(body: str) -> list[str]:
+    """Use the final bullet list as a concise, model-authored takeaway card."""
+    lists = re.findall(r"<(?:ul|ol)>(.*?)</(?:ul|ol)>", body, flags=re.DOTALL | re.IGNORECASE)
+    for item_list in reversed(lists):
+        items = re.findall(r"<li>(.*?)</li>", item_list, flags=re.DOTALL | re.IGNORECASE)
+        cleaned = [
+            html.unescape(re.sub(r"<[^>]+>", "", item)).strip()
+            for item in items
+        ]
+        cleaned = [item for item in cleaned if item]
+        if len(cleaned) >= 2:
+            return cleaned[:4]
+    return []
+
+
+def _claude_document(body: str, title: str, subtitle: str, hero_image: str) -> str:
+    """Wrap notes in a premium layout without inventing video facts."""
+    safe_title = html.escape(title or "Notes")
+    safe_subtitle = html.escape(subtitle or "")
+    image = html.escape(hero_image, quote=True) if hero_image.startswith("https://") else ""
+    image_html = f"<img class='tn-hero-image' src='{image}' alt=''>" if image else ""
+    takeaways = _takeaways_from_html(body)
+    takeaway_html = ""
+    if takeaways:
+        takeaway_html = (
+            "<section class='tn-takeaways'><div class='tn-takeaways-heading'>"
+            "<span class='tn-takeaways-icon'>&#128161;</span>Key Takeaways</div><ul>"
+            + "".join(f"<li>{html.escape(item)}</li>" for item in takeaways)
+            + "</ul></section>"
+        )
+    return (
+        "<div class='tn-hero'><div class='tn-hero-copy'>"
+        "<div class='tn-kicker'>TubeNotes | Claude Edition</div>"
+        f"<h1>{safe_title}</h1><div class='tn-meta'>{safe_subtitle}</div>"
+        "<div class='tn-hero-tag'>Watch | Learn | Keep</div></div>"
+        f"<div class='tn-hero-art'>{image_html}</div></div>"
+        f"{takeaway_html}"
+        "<aside class='tn-reading-card'><span class='tn-reading-card-label'>Video Notes</span>"
+        "<span class='tn-reading-card-title'>Clear ideas, kept beautifully.</span>"
+        "<div class='tn-reading-card-line'></div>"
+        "<span class='tn-reading-card-note'>A structured guide created from the video, ready to read or save.</span>"
+        "</aside><main class='tn-content'>"
+        f"{body}</main>"
+    )
+
+
+def _render_sync(
+    markdown_text: str,
+    title: str,
+    subtitle: str,
+    style: str,
+    hero_image: str,
+) -> bytes:
     """Markdown -> styled PDF. Imported lazily so the API boots without these."""
     import markdown as md
     from weasyprint import CSS, HTML
@@ -142,6 +258,11 @@ def _render_sync(markdown_text: str, title: str, subtitle: str, style: str) -> b
         extensions=["extra", "sane_lists", "nl2br"],
         output_format="html5",
     )
+    if style == "claude":
+        document = _claude_document(body, title, subtitle, hero_image)
+        return HTML(
+            string=f"<html><head><meta charset='utf-8'></head><body>{document}</body></html>"
+        ).write_pdf(stylesheets=[CSS(string=_CLAUDE_CSS)])
     safe_title = (title or "Notes").replace("<", "&lt;").replace(">", "&gt;")
     safe_sub = (subtitle or "").replace("<", "&lt;").replace(">", "&gt;")
     kicker = "<div class='tn-kicker'>TubeNotes • Claude Edition</div>" if style == "claude" else ""
@@ -184,7 +305,12 @@ def shutdown() -> None:
 
 
 async def render_notes_pdf(
-    markdown_text: str, *, title: str, subtitle: str = "", style: str = "web"
+    markdown_text: str,
+    *,
+    title: str,
+    subtitle: str = "",
+    style: str = "web",
+    hero_image: str = "",
 ) -> bytes:
     """Render a web, ChatGPT, or Claude PDF, waiting for a bounded slot."""
     if not markdown_text or not markdown_text.strip():
@@ -213,7 +339,7 @@ async def render_notes_pdf(
     try:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            _get_pool(), _render_sync, markdown_text, title, subtitle, style
+            _get_pool(), _render_sync, markdown_text, title, subtitle, style, hero_image
         )
     finally:
         sem.release()
