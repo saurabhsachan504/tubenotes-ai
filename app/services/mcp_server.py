@@ -386,15 +386,18 @@ async def _prepare_mcp_video(user: User, payload: VideoRequest, video_id: str):
 async def _create_text(
     user: User, machine_hash: str, video_url: str, language: str,
     mode: Literal["summary", "notes"], *, include_trial_status: bool = False,
+    cache_mode: Literal["summary", "notes", "gemini_full_notes"] | None = None,
+    notes_chunk_chars: int | None = None,
 ) -> dict[str, Any]:
     video_id = _video_id_or_400(video_url)
+    output_mode = cache_mode or mode
     payload = (
         SummarizeRequest(url=video_url, target_lang=language, device=_mcp_request_device(user.id), mode="summary")
         if mode == "summary"
         else VideoRequest(url=video_url, target_lang=language, device=_mcp_request_device(user.id))
     )
     entitlement, cached, cached_target, cached_model, trial_consumed = await _claim(
-        user, machine_hash, payload, video_id, mode
+        user, machine_hash, payload, video_id, output_mode
     )
     if cached is not None:
         meta = await youtube.fetch_metadata(video_id)
@@ -428,7 +431,11 @@ async def _create_text(
             parts.append(part)
         text = "".join(parts)
     else:
-        text = await summarizer.full_notes(transcript.text, lang=write_language)
+        text = await summarizer.full_notes(
+            transcript.text,
+            lang=write_language,
+            chunk_chars=notes_chunk_chars,
+        )
     if not text.strip():
         raise RuntimeError("TubeNotes could not create an answer for this video. Please try again.")
     if translate_to:
@@ -439,7 +446,7 @@ async def _create_text(
         await run_in_threadpool(
             _store_cached,
             video_id,
-            mode,
+            output_mode,
             target,
             model,
             text,
@@ -471,17 +478,27 @@ async def _pdf_payload(
     *,
     include_trial_status: bool = False,
     pdf_style: Literal["plugin", "claude"] = "plugin",
+    cache_mode: Literal["notes", "gemini_full_notes"] = "notes",
+    notes_chunk_chars: int | None = None,
 ) -> dict[str, Any]:
     if not settings.OUTPUT_CACHE_ENABLED:
         raise RuntimeError("PDF export is unavailable until TubeNotes output caching is enabled.")
     result = await _create_text(
-        user, machine_hash, video_url, language, "notes", include_trial_status=include_trial_status
+        user,
+        machine_hash,
+        video_url,
+        language,
+        "notes",
+        include_trial_status=include_trial_status,
+        cache_mode=cache_mode,
+        notes_chunk_chars=notes_chunk_chars,
     )
     token = create_pdf_download_token(
         user_id=user.id,
         video_id=result["video_id"],
         language=result["language"],
         style=pdf_style,
+        output_mode=cache_mode,
     )
     payload = {
         "video_id": result["video_id"],
@@ -683,10 +700,17 @@ async def call_public_mcp_tool(
 
 
 def create_pdf_download_token(
-    *, user_id: str, video_id: str, language: str, style: Literal["plugin", "claude"] = "plugin"
+    *,
+    user_id: str,
+    video_id: str,
+    language: str,
+    style: Literal["plugin", "claude"] = "plugin",
+    output_mode: Literal["notes", "gemini_full_notes"] = "notes",
 ) -> str:
     if style not in {"plugin", "claude"}:
         raise ValueError("unsupported plugin PDF style")
+    if output_mode not in {"notes", "gemini_full_notes"}:
+        raise ValueError("unsupported PDF output mode")
     expiry = _now() + timedelta(minutes=settings.MCP_DOWNLOAD_TTL_MINUTES)
     return jwt.encode(
         {
@@ -694,6 +718,7 @@ def create_pdf_download_token(
             "video_id": video_id,
             "language": language,
             "style": style,
+            "output_mode": output_mode,
             "type": "mcp_pdf_download",
             "iss": settings.APP_NAME,
             "exp": int(expiry.timestamp()),
@@ -715,6 +740,8 @@ def build_mcp_server(
     *,
     include_trial_status: bool = False,
     pdf_style: Literal["plugin", "claude"] = "plugin",
+    pdf_cache_mode: Literal["notes", "gemini_full_notes"] = "notes",
+    pdf_notes_chunk_chars: int | None = None,
 ) -> FastMCP:
     """Build an authenticated MCP app for one public transport URL."""
     resource_url = (public_url or settings.mcp_public_url).rstrip("/")
@@ -788,7 +815,11 @@ def build_mcp_server(
 
     @server.tool(
         title="Create video notes PDF",
-        description="Use this when the user wants a downloadable PDF of complete YouTube video notes in a chosen language.",
+        description=(
+            "Use this when the user wants a downloadable PDF of exhaustive, complete "
+            "YouTube video notes in a chosen language. The PDF covers the full "
+            "transcript and every major topic, not a short summary."
+        ),
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True),
     )
     async def create_video_pdf(
@@ -803,6 +834,8 @@ def build_mcp_server(
             language,
             include_trial_status=include_trial_status,
             pdf_style=pdf_style,
+            cache_mode=pdf_cache_mode,
+            notes_chunk_chars=pdf_notes_chunk_chars,
         )
 
     return server
@@ -815,10 +848,13 @@ async def render_plugin_pdf(token: str) -> tuple[bytes, str]:
     language = str(payload.get("language", ""))
     if not video_id or not language:
         raise ValueError("Invalid PDF link")
+    output_mode = str(payload.get("output_mode", "notes"))
+    if output_mode not in {"notes", "gemini_full_notes"}:
+        raise ValueError("Invalid PDF link")
     model = summarizer.plan_for(language)[0]
     db = SessionLocal()
     try:
-        row = output_cache.get(db, video_id, "notes", language, model)
+        row = output_cache.get(db, video_id, output_mode, language, model)
     finally:
         db.close()
     if row is None:

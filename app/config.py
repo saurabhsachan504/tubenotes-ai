@@ -195,6 +195,10 @@ class Settings(BaseSettings):
     # The counter is keyed to the signed-in browser's coarse machine fingerprint
     # captured during the secure OAuth hand-off, never to an email account.
     MCP_FREE_TRIAL_LIMIT: int = 20
+    # Gemini PDF exports have their own cache key and use smaller source
+    # sections than the fast default. This preserves the web app's tuning
+    # while making long Gemini requests favour coverage over speed.
+    GEMINI_PDF_NOTES_CHUNK_CHARS: int = 6000
 
     @property
     def mcp_public_url(self) -> str:

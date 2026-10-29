@@ -865,7 +865,7 @@ def effective_chunk_chars() -> int:
     return wanted
 
 
-def _budget_for(chunk: str) -> int:
+def _budget_for(chunk: str, *, reference_chunk_chars: int | None = None) -> int:
     """Scale the notes output allowance to how much material the chunk holds.
 
     A FULL chunk keeps the configured exhaustive-notes budget; a 300-character
@@ -877,7 +877,7 @@ def _budget_for(chunk: str) -> int:
     anything else: at 12,000-char chunks every half-full chunk still claimed the
     entire budget.
     """
-    full = effective_chunk_chars()
+    full = reference_chunk_chars or effective_chunk_chars()
     cap = max(1, settings.NOTES_NUM_PREDICT)
     # A floor proportional to the budget rather than a fixed 768, so it keeps
     # meaning the same thing if NOTES_NUM_PREDICT is tuned.
@@ -887,7 +887,13 @@ def _budget_for(chunk: str) -> int:
 
 
 async def full_notes(
-    transcript: str, *, lang: str, on_progress=None, on_warning=None, on_text=None
+    transcript: str,
+    *,
+    lang: str,
+    on_progress=None,
+    on_warning=None,
+    on_text=None,
+    chunk_chars: int | None = None,
 ) -> str:
     """Exhaustive notes covering the WHOLE video - this is what the PDF shows.
 
@@ -912,9 +918,14 @@ async def full_notes(
         else f"\n\nFINAL REMINDER: write everything in {language_name(lang)} only."
     )
 
-    chunks = split_into_chunks(
-        transcript, effective_chunk_chars(), settings.NOTES_CHUNK_OVERLAP
+    normal_chunk_chars = effective_chunk_chars()
+    # An individual surface may choose a smaller section size to favour depth
+    # over throughput. Never allow it to exceed the context-safe default.
+    selected_chunk_chars = min(
+        normal_chunk_chars,
+        max(1, int(chunk_chars or normal_chunk_chars)),
     )
+    chunks = split_into_chunks(transcript, selected_chunk_chars, settings.NOTES_CHUNK_OVERLAP)
     if settings.NOTES_MAX_CHUNKS and len(chunks) > settings.NOTES_MAX_CHUNKS:
         dropped = len(chunks) - settings.NOTES_MAX_CHUNKS
         chunks = chunks[: settings.NOTES_MAX_CHUNKS]
@@ -929,6 +940,7 @@ async def full_notes(
     _active_notes += 1
     try:
         return await _write_all(chunks, lang=lang, model=model, directive=directive,
+                                chunk_chars=selected_chunk_chars,
                                 reminder=reminder, on_progress=on_progress,
                                 on_warning=on_warning, on_text=on_text)
     finally:
@@ -955,6 +967,7 @@ def _fair_share() -> int:
 
 async def _write_all(
     chunks: list[str], *, lang: str, model: str, directive: str, reminder: str,
+    chunk_chars: int,
     on_progress=None, on_warning=None, on_text=None,
 ) -> str:
     total = len(chunks)
@@ -1020,7 +1033,7 @@ async def _write_all(
                 if on_progress:
                     await on_progress(done, total, started, overall())
 
-            budget = _budget_for(chunk)
+            budget = _budget_for(chunk, reference_chunk_chars=chunk_chars)
 
             def seen(n: int, text: str, _idx: int = idx, _budget: int = budget) -> None:
                 # Expected length: what parts of THIS video have actually run
@@ -1044,7 +1057,7 @@ async def _write_all(
                         model=model,
                         system=directive + "\n\n" + base + reminder,
                         content=chunk,
-                        num_predict=_budget_for(chunk),
+                        num_predict=_budget_for(chunk, reference_chunk_chars=chunk_chars),
                         queue_wait=settings.NOTES_QUEUE_TIMEOUT_SECONDS,
                         batch=not is_short,
                         on_token=seen,

@@ -739,6 +739,26 @@ def test_notes_read_the_entire_transcript_not_a_sample(monkeypatch):
     assert out.count("## part") == len(seen)
 
 
+def test_notes_can_use_smaller_sections_for_a_more_detailed_surface(monkeypatch):
+    """A connector can favour depth without changing the web app's default."""
+    import asyncio
+
+    monkeypatch.setattr(settings, "NOTES_CHUNK_CHARS", 1_000)
+    monkeypatch.setattr(settings, "NOTES_CHUNK_OVERLAP", 0)
+    seen: list[tuple[str, int]] = []
+
+    async def fake_chat(*, content, num_predict, **_kwargs):
+        seen.append((content, num_predict))
+        return "## detailed part\nnotes"
+
+    monkeypatch.setattr(summarizer, "collect_chat", fake_chat)
+    transcript = "word " * 1_000
+    asyncio.run(summarizer.full_notes(transcript, lang="en", chunk_chars=250))
+
+    assert len(seen) >= 15, "the smaller connector section size was ignored"
+    assert all(budget == settings.NOTES_NUM_PREDICT for _chunk, budget in seen[:-1])
+
+
 def test_notes_chunk_cap_is_off_by_default_and_warns_when_set(monkeypatch):
     import asyncio
 
