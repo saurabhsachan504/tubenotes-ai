@@ -16,7 +16,7 @@ import hashlib
 import logging
 import re
 import time
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from html import escape
 
 from fastapi import FastAPI, Request, status
@@ -101,6 +101,11 @@ _INSECURE_DEFAULTS = {
     "dev-only-insecure-device-pepper-change-me",
 }
 
+# Starlette does not automatically enter the lifespan of mounted sub-apps.
+# Keep the concrete FastMCP servers here so the parent FastAPI lifespan can
+# start their Streamable HTTP session managers after they are mounted below.
+_mcp_servers = []
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -132,7 +137,13 @@ async def lifespan(app: FastAPI):
     else:
         # Convenient for dev/tests; production should run Alembic migrations.
         init_db()
-    yield
+    # FastMCP's Streamable HTTP transport needs its session manager's task
+    # group for every authenticated JSON-RPC request. Mount lifespans are not
+    # propagated by Starlette, so enter them explicitly here.
+    async with AsyncExitStack() as stack:
+        for mcp_server in _mcp_servers:
+            await stack.enter_async_context(mcp_server.session_manager.run())
+        yield
     summarize.pdf.shutdown()
     await summarize.summarizer.close_vllm_client()
     await translate_service.close_google_client()
@@ -238,13 +249,16 @@ if settings.MCP_ENABLED:
     # after /mcp/download above, so the short-lived PDF links retain priority.
     from app.services.mcp_server import build_mcp_server
 
-    app.mount("/mcp", build_mcp_server(settings.mcp_public_url).streamable_http_app(), name="tubenotes-mcp")
+    chatgpt_mcp_server = build_mcp_server(settings.mcp_public_url)
+    gemini_mcp_server = build_mcp_server(settings.gemini_mcp_public_url)
+    _mcp_servers.extend((chatgpt_mcp_server, gemini_mcp_server))
+    app.mount("/mcp", chatgpt_mcp_server.streamable_http_app(), name="tubenotes-mcp")
     # Gemini requires an unmodified, OAuth-protected Streamable HTTP transport.
     # Keep it separate from /mcp/, whose public discovery compatibility route
     # exists specifically for ChatGPT and Claude.
     app.mount(
         "/gemini-mcp",
-        build_mcp_server(settings.gemini_mcp_public_url).streamable_http_app(),
+        gemini_mcp_server.streamable_http_app(),
         name="tubenotes-gemini-mcp",
     )
 
