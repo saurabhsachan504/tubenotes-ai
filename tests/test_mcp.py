@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -15,9 +16,29 @@ from app.services.mcp_oauth import (
     approve_authorization_request,
     authorization_request_details,
 )
+from app.services.mcp_server import _pdf_style_for_client
 from app.models import McpOAuthClient
 from app.schemas import DeviceFingerprint
 from tests.conftest import register
+
+
+def test_public_mcp_pdf_style_follows_the_connector_callback_host(db):
+    db.add_all(
+        [
+            McpOAuthClient(
+                client_id="claude-pdf-client",
+                metadata_json=json.dumps({"redirect_uris": ["https://claude.ai/oauth/callback"]}),
+            ),
+            McpOAuthClient(
+                client_id="chatgpt-pdf-client",
+                metadata_json=json.dumps({"redirect_uris": ["https://chatgpt.com/plugin-callback"]}),
+            ),
+        ]
+    )
+    db.commit()
+
+    assert _pdf_style_for_client("claude-pdf-client") == "claude"
+    assert _pdf_style_for_client("chatgpt-pdf-client") == "plugin"
 
 
 @pytest.mark.parametrize(

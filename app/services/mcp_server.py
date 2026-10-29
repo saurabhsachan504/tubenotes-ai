@@ -10,7 +10,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import jwt
 from sqlalchemy import select
@@ -23,7 +23,7 @@ from fastapi import HTTPException
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import McpTranscriptCache, McpTrialLedger, McpTrialUsage, User
+from app.models import McpOAuthClient, McpTranscriptCache, McpTrialLedger, McpTrialUsage, User
 from app.routers.summarize import (
     SummarizeRequest,
     VideoRequest,
@@ -557,6 +557,35 @@ def _selected_mcp_language(arguments: dict[str, Any]) -> str | None:
     return value if value in _LANGUAGE_CODES else None
 
 
+def _pdf_style_for_client(client_id: str) -> Literal["plugin", "claude"]:
+    """Keep the public MCP transport's visual style host-specific.
+
+    Both ChatGPT and Claude currently use the OAuth-compatible ``/mcp/``
+    transport.  The bearer token carries a client ID, and its registered OAuth
+    callback is the reliable host identity - unlike a mutable User-Agent.
+    """
+    db = SessionLocal()
+    try:
+        client = db.get(McpOAuthClient, client_id)
+        if client is None:
+            return "plugin"
+        try:
+            metadata = json.loads(client.metadata_json)
+        except (TypeError, ValueError):
+            return "plugin"
+        redirects = metadata.get("redirect_uris", []) if isinstance(metadata, dict) else []
+        hosts = {
+            (urlparse(uri).hostname or "").lower()
+            for uri in redirects
+            if isinstance(uri, str)
+        }
+        if any(host == "claude.ai" or host.endswith(".claude.ai") for host in hosts):
+            return "claude"
+        return "plugin"
+    finally:
+        db.close()
+
+
 async def call_public_mcp_tool(
     authorization: str | None,
     tool_name: str,
@@ -624,7 +653,14 @@ async def call_public_mcp_tool(
         if tool_name == "create_video_pdf":
             assert language is not None
             return _tool_result(
-                await _pdf_payload(user, machine_hash, video_url, language, include_trial_status=True)
+                await _pdf_payload(
+                    user,
+                    machine_hash,
+                    video_url,
+                    language,
+                    include_trial_status=True,
+                    pdf_style=_pdf_style_for_client(str(token.client_id or "")),
+                )
             )
         return _tool_result({"error": "unknown_tool", "message": "Unknown TubeNotes tool."}, is_error=True)
     except Exception as exc:
