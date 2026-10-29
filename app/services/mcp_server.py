@@ -752,6 +752,111 @@ def decode_pdf_download_token(token: str) -> dict[str, str]:
     return payload
 
 
+def _video_selection_message() -> str:
+    return "Would you like a Summary or a Full PDF, and in which language?"
+
+
+def _create_video_selection_token(*, user_id: str, video_id: str) -> str:
+    """Create a short-lived, URL-bound first step for Gemini's video flow."""
+    expiry = _now() + timedelta(minutes=settings.MCP_DOWNLOAD_TTL_MINUTES)
+    return jwt.encode(
+        {
+            "sub": user_id,
+            "video_id": video_id,
+            "stage": "choose_output",
+            "type": "mcp_video_selection",
+            "iss": settings.APP_NAME,
+            "exp": int(expiry.timestamp()),
+        },
+        settings.SECRET_KEY,
+        algorithm=settings.JWT_ALGORITHM,
+    )
+
+
+def _approve_video_selection(
+    token: str,
+    *,
+    user_id: str,
+    video_url: str,
+    output_type: Literal["summary", "pdf"],
+    language: str,
+) -> str:
+    """Turn a pending selection into the only token accepted by work tools."""
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+            options={"require": ["exp", "sub"]},
+        )
+    except jwt.PyJWTError as exc:
+        raise ValueError("Your selection has expired. Please choose Summary or Full PDF again.") from exc
+    if (
+        payload.get("type") != "mcp_video_selection"
+        or payload.get("stage") != "choose_output"
+        or str(payload.get("sub", "")) != user_id
+        or str(payload.get("video_id", "")) != _video_id_or_400(video_url)
+    ):
+        raise ValueError("This selection does not match the requested video. Please choose again.")
+    expiry = _now() + timedelta(minutes=settings.MCP_DOWNLOAD_TTL_MINUTES)
+    return jwt.encode(
+        {
+            "sub": user_id,
+            "video_id": str(payload["video_id"]),
+            "output_type": output_type,
+            "language": language,
+            "stage": "approved",
+            "type": "mcp_video_selection",
+            "iss": settings.APP_NAME,
+            "exp": int(expiry.timestamp()),
+        },
+        settings.SECRET_KEY,
+        algorithm=settings.JWT_ALGORITHM,
+    )
+
+
+def _selection_is_approved(
+    token: str,
+    *,
+    user_id: str,
+    video_url: str,
+    output_type: Literal["summary", "pdf"],
+    language: str,
+) -> bool:
+    """Whether a work call follows an explicit Gemini selection handshake."""
+    if not token:
+        return False
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+            options={"require": ["exp", "sub"]},
+        )
+    except jwt.PyJWTError:
+        return False
+    return (
+        payload.get("type") == "mcp_video_selection"
+        and payload.get("stage") == "approved"
+        and str(payload.get("sub", "")) == user_id
+        and str(payload.get("video_id", "")) == _video_id_or_400(video_url)
+        and payload.get("output_type") == output_type
+        and payload.get("language") == language
+    )
+
+
+def _selection_required_payload() -> dict[str, Any]:
+    return {
+        "error": "video_selection_required",
+        "message": _video_selection_message(),
+        "required_steps": [
+            "Call begin_video_request for this URL.",
+            "Wait for the user's explicit output and language choice.",
+            "Call select_video_output, then use its approved_selection_token.",
+        ],
+    }
+
+
 def build_mcp_server(
     public_url: str | None = None,
     *,
@@ -761,6 +866,7 @@ def build_mcp_server(
     pdf_notes_chunk_chars: int | None = None,
     external_pdf_download_only: bool = False,
     guided_video_choices: bool = False,
+    requires_video_selection: bool = False,
 ) -> FastMCP:
     """Build an authenticated MCP app for one public transport URL."""
     resource_url = (public_url or settings.mcp_public_url).rstrip("/")
@@ -779,6 +885,14 @@ def build_mcp_server(
                 "which language?' A video title, transcript language, interface language, or previous "
                 "default is not an explicit choice. "
                 if guided_video_choices
+                else ""
+            )
+            + (
+                "For this connector, direct summary or PDF calls without an approved_selection_token are "
+                "rejected. On a URL-only request, call begin_video_request and ask its question. After the "
+                "user explicitly selects output type and language, call select_video_output and immediately "
+                "call the matching work tool with approved_selection_token. "
+                if requires_video_selection
                 else ""
             )
             + "Never claim a PDF is ready until create_video_pdf returns its download URL."
@@ -824,6 +938,52 @@ def build_mcp_server(
         user = _current_user()
         return _profile_payload(user, _current_machine_hash())
 
+    if requires_video_selection:
+        @server.tool(
+            title="Start TubeNotes video request",
+            description=(
+                "Use when the user supplied a YouTube URL but has not explicitly selected Summary or Full PDF "
+                "and a language. Do not summarize or create a PDF. Return the question to the user and wait "
+                "for their answer."
+            ),
+            annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True),
+        )
+        async def begin_video_request(video_url: str) -> dict[str, Any]:
+            user = _current_user()
+            video_id = _video_id_or_400(video_url)
+            return {
+                "selection_token": _create_video_selection_token(user_id=user.id, video_id=video_id),
+                "message": _video_selection_message(),
+                "output_options": ["summary", "pdf"],
+                "language_options": list(_LANGUAGE_CODES),
+            }
+
+        @server.tool(
+            title="Confirm TubeNotes video request",
+            description=(
+                "Use only after the user explicitly answered the output type (summary or pdf) and language "
+                "question. It approves one matching video request; then immediately call the matching work tool."
+            ),
+            annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True),
+        )
+        async def select_video_output(
+            video_url: str,
+            selection_token: str,
+            output_type: Literal["summary", "pdf"],
+            language: _LANGUAGE_OPTIONS,
+        ) -> dict[str, Any]:
+            user = _current_user()
+            return {
+                "approved_selection_token": _approve_video_selection(
+                    selection_token,
+                    user_id=user.id,
+                    video_url=video_url,
+                    output_type=output_type,
+                    language=language,
+                ),
+                "message": "Selection confirmed. Create the selected TubeNotes output now.",
+            }
+
     @server.tool(
         title="Summarize YouTube video",
         description=(
@@ -842,8 +1002,17 @@ def build_mcp_server(
     async def summarize_youtube_video(
         video_url: str,
         language: _LANGUAGE_OPTIONS,
+        approved_selection_token: str = "",
     ) -> dict[str, Any]:
         user = _current_user()
+        if requires_video_selection and not _selection_is_approved(
+            approved_selection_token,
+            user_id=user.id,
+            video_url=video_url,
+            output_type="summary",
+            language=language,
+        ):
+            return _selection_required_payload()
         result = await _create_text(
             user,
             _current_machine_hash(),
@@ -888,8 +1057,17 @@ def build_mcp_server(
     async def create_video_pdf(
         video_url: str,
         language: _LANGUAGE_OPTIONS,
+        approved_selection_token: str = "",
     ) -> dict[str, Any]:
         user = _current_user()
+        if requires_video_selection and not _selection_is_approved(
+            approved_selection_token,
+            user_id=user.id,
+            video_url=video_url,
+            output_type="pdf",
+            language=language,
+        ):
+            return _selection_required_payload()
         return await _pdf_payload(
             user,
             _current_machine_hash(),
