@@ -558,7 +558,7 @@ def _selected_mcp_language(arguments: dict[str, Any]) -> str | None:
 
 
 def _pdf_style_for_client(client_id: str) -> Literal["plugin", "claude"]:
-    """Keep the public MCP transport's visual style host-specific.
+    """Select the premium design for first-party ChatGPT and Claude clients.
 
     Both ChatGPT and Claude currently use the OAuth-compatible ``/mcp/``
     transport.  The bearer token carries a client ID, and its registered OAuth
@@ -579,7 +579,18 @@ def _pdf_style_for_client(client_id: str) -> Literal["plugin", "claude"]:
             for uri in redirects
             if isinstance(uri, str)
         }
-        if any(host == "claude.ai" or host.endswith(".claude.ai") for host in hosts):
+        premium_hosts = (
+            "claude.ai",
+            "chatgpt.com",
+            "chat.openai.com",
+            "oauth.openai.com",
+            "oauth-redirect.openai.com",
+        )
+        if any(
+            host == trusted_host or host.endswith(f".{trusted_host}")
+            for host in hosts
+            for trusted_host in premium_hosts
+        ):
             return "claude"
         return "plugin"
     finally:

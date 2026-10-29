@@ -100,7 +100,7 @@ a { color: #7c3aed; text-decoration: none; }
 # their existing document appearance.
 _CLAUDE_CSS = """
 @page { size: A4; margin: 14mm 15mm 18mm 15mm;
-        @bottom-left { content: "TubeNotes  •  Claude Edition";
+        @bottom-left { content: "TubeNotes | Premium Edition";
                        font-size: 8pt; color: #8b83a8; }
         @bottom-right { content: counter(page) " / " counter(pages);
                         font-size: 8pt; color: #8b83a8; } }
@@ -135,7 +135,7 @@ a { color: #6f2dcc; text-decoration: none; font-weight: 700; }
 /* Premium Claude document layout.  It uses only content already generated for
    the notes, rather than inserting topic-specific facts or illustrations. */
 @page { size: A4; margin: 12mm 13mm 18mm 13mm;
-        @bottom-left { content: "TubeNotes | Claude Edition";
+        @bottom-left { content: "TubeNotes | Premium Edition";
                        font-size: 8pt; color: #756b9d; }
         @bottom-right { content: counter(page) " / " counter(pages);
                         font-size: 8pt; color: #756b9d; } }
@@ -228,7 +228,7 @@ def _claude_document(body: str, title: str, subtitle: str, hero_image: str) -> s
         )
     return (
         "<div class='tn-hero'><div class='tn-hero-copy'>"
-        "<div class='tn-kicker'>TubeNotes | Claude Edition</div>"
+        "<div class='tn-kicker'>TubeNotes | Premium Edition</div>"
         f"<h1>{safe_title}</h1><div class='tn-meta'>{safe_subtitle}</div>"
         "<div class='tn-hero-tag'>Watch | Learn | Keep</div></div>"
         f"<div class='tn-hero-art'>{image_html}</div></div>"
@@ -265,7 +265,7 @@ def _render_sync(
         ).write_pdf(stylesheets=[CSS(string=_CLAUDE_CSS)])
     safe_title = (title or "Notes").replace("<", "&lt;").replace(">", "&gt;")
     safe_sub = (subtitle or "").replace("<", "&lt;").replace(">", "&gt;")
-    kicker = "<div class='tn-kicker'>TubeNotes • Claude Edition</div>" if style == "claude" else ""
+    kicker = "<div class='tn-kicker'>TubeNotes | Premium Edition</div>" if style == "claude" else ""
     html = (
         "<html><head><meta charset='utf-8'></head><body>"
         f"<div class='tn-head'>{kicker}<h1>{safe_title}</h1>"

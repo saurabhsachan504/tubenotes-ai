@@ -22,7 +22,7 @@ from app.schemas import DeviceFingerprint
 from tests.conftest import register
 
 
-def test_public_mcp_pdf_style_follows_the_connector_callback_host(db):
+def test_public_mcp_pdf_style_uses_premium_design_for_first_party_connectors(db):
     db.add_all(
         [
             McpOAuthClient(
@@ -38,7 +38,7 @@ def test_public_mcp_pdf_style_follows_the_connector_callback_host(db):
     db.commit()
 
     assert _pdf_style_for_client("claude-pdf-client") == "claude"
-    assert _pdf_style_for_client("chatgpt-pdf-client") == "plugin"
+    assert _pdf_style_for_client("chatgpt-pdf-client") == "claude"
 
 
 @pytest.mark.parametrize(
