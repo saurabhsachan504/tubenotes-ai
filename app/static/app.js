@@ -244,10 +244,15 @@
       body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
       cache: opts.cache, signal: opts.signal };
 
-    let res = await fetch(API + path, init);
-    if (res.status === 401 && opts.auth !== false) {
-      const fresh = await refreshTokens();
-      if (fresh) { headers.Authorization = `Bearer ${fresh.access_token}`; res = await fetch(API + path, init); }
+    let res;
+    try {
+      res = await fetch(API + path, init);
+      if (res.status === 401 && opts.auth !== false) {
+        const fresh = await refreshTokens();
+        if (fresh) { headers.Authorization = `Bearer ${fresh.access_token}`; res = await fetch(API + path, init); }
+      }
+    } catch (_) {
+      throw err(0, SERVER_UNAVAILABLE_MESSAGE);
     }
     if (opts.raw) return res;
 
@@ -385,10 +390,25 @@
   }
 
   function err(status, detail) {
-    const e = new Error(typeof detail === "string" ? detail : (detail && detail.message) || "Request failed");
+    const e = new Error(friendlyServerError(status, detail));
     e.status = status; e.detail = detail;
     e.entitlement = detail && detail.entitlement;
     return e;
+  }
+
+  const SERVER_UNAVAILABLE_MESSAGE = "Server is not responding right now. Please try again in a few minutes.";
+
+  function friendlyServerError(status, detail) {
+    const raw = typeof detail === "string" ? detail : (detail && detail.message) || "";
+    const text = raw.toLowerCase();
+    if (
+      status === 0 || [500, 502, 503, 504].includes(Number(status)) ||
+      text.includes("<!doctype html") || text.includes("bad gateway") ||
+      text.includes("service unavailable") || text.includes("gateway timeout") ||
+      text.includes("vllm http") || text.includes("failed to fetch") ||
+      text.includes("networkerror")
+    ) return SERVER_UNAVAILABLE_MESSAGE;
+    return raw || "Request failed";
   }
 
   // =====================================================================

@@ -39,6 +39,7 @@ export async function loadApiBase() {
 
 const TOKENS_KEY = 'tg_tokens';
 const CACHE_KEY = 'tg_entitlement';
+const SERVER_UNAVAILABLE_MESSAGE = 'Server is not responding right now. Please try again in a few minutes.';
 
 let refreshInFlight = null;
 
@@ -74,7 +75,7 @@ export async function isSignedIn() {
 // ---------------------------------------------------------------------------
 export class ApiError extends Error {
   constructor(status, detail, body) {
-    super(typeof detail === 'string' ? detail : detail?.message || 'Request failed');
+    super(friendlyServerError(status, detail));
     this.name = 'ApiError';
     this.status = status;
     this.detail = detail;
@@ -91,6 +92,19 @@ export class ApiError extends Error {
   }
 }
 
+function friendlyServerError(status, detail) {
+  const raw = typeof detail === 'string' ? detail : detail?.message || '';
+  const text = raw.toLowerCase();
+  if (
+    status === 0 || [500, 502, 503, 504].includes(Number(status)) ||
+    text.includes('<!doctype html') || text.includes('bad gateway') ||
+    text.includes('service unavailable') || text.includes('gateway timeout') ||
+    text.includes('vllm http') || text.includes('failed to fetch') ||
+    text.includes('networkerror')
+  ) return SERVER_UNAVAILABLE_MESSAGE;
+  return raw || 'Request failed';
+}
+
 async function request(path, { method = 'GET', body, auth = true, headers = {} } = {}) {
   const finalHeaders = { 'Content-Type': 'application/json', ...headers };
 
@@ -100,23 +114,28 @@ async function request(path, { method = 'GET', body, auth = true, headers = {} }
     finalHeaders.Authorization = `Bearer ${token}`;
   }
 
-  let res = await fetch(`${API_BASE}${path}`, {
-    method,
-    headers: finalHeaders,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers: finalHeaders,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
 
-  // One retry after a forced refresh, in case the token expired mid-flight.
-  if (res.status === 401 && auth) {
-    const refreshed = await refreshTokens();
-    if (refreshed) {
-      finalHeaders.Authorization = `Bearer ${refreshed.access_token}`;
-      res = await fetch(`${API_BASE}${path}`, {
-        method,
-        headers: finalHeaders,
-        body: body === undefined ? undefined : JSON.stringify(body),
-      });
+    // One retry after a forced refresh, in case the token expired mid-flight.
+    if (res.status === 401 && auth) {
+      const refreshed = await refreshTokens();
+      if (refreshed) {
+        finalHeaders.Authorization = `Bearer ${refreshed.access_token}`;
+        res = await fetch(`${API_BASE}${path}`, {
+          method,
+          headers: finalHeaders,
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+      }
     }
+  } catch {
+    throw new ApiError(0, SERVER_UNAVAILABLE_MESSAGE);
   }
 
   const text = await res.text();

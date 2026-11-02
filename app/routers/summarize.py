@@ -1324,14 +1324,15 @@ def _may_cache(transcript, meta) -> bool:
 
 
 def _friendly(exc: Exception) -> str:
+    unavailable = "Server is not responding right now. Please try again in a few minutes."
     if isinstance(exc, summarizer.VLLMBusy):
-        # Already written for a human: the server is full, come back shortly.
-        return str(exc)
+        return unavailable
     text = str(exc)
-    if "vLLM HTTP 404" in text:
-        return f"The vLLM endpoint or model '{settings.VLLM_MODEL}' was not found."
-    if "ConnectError" in type(exc).__name__ or "Connect" in text:
-        return "Can't reach vLLM. Check VLLM_URL and that the vLLM server is running."
+    lowered = text.lower()
+    if "vllm http" in lowered:
+        return unavailable
+    if "connecterror" in type(exc).__name__.lower() or "connect" in lowered:
+        return unavailable
     if "Timeout" in type(exc).__name__ or "timeout" in text.lower():
-        return "The AI server took too long to answer. Try a shorter video."
+        return unavailable
     return f"Summary failed: {text[:200]}"

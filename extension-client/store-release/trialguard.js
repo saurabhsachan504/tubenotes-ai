@@ -58,6 +58,7 @@
   const DEVICE_KEY = "tg_device";
   const CACHE_KEY = "tg_entitlement";
   const BASE_KEY = "tg_api_base_ok";
+  const SERVER_UNAVAILABLE_MESSAGE = "Server is not responding right now. Please try again in a few minutes.";
 
   let apiBase = DEFAULT_API_BASE;
   let refreshInFlight = null;
@@ -88,14 +89,7 @@
   })();
 
   function NetworkError(tried, cause) {
-    const local = /\/\/(localhost|127\.0\.0\.1)/.test(tried[0]);
-    const hint = local
-      ? 'Start it with "uvicorn app.main:app --reload" and keep that terminal open.'
-      : "The server may be down or you may be offline. Please try again in a minute.";
-    const e = new Error(
-      `Cannot reach the server at ${tried.join(" or ")}. ${hint} ` +
-        `(${(cause && cause.message) || cause})`
-    );
+    const e = new Error(SERVER_UNAVAILABLE_MESSAGE);
     e.name = "NetworkError";
     e.tried = tried;
     return e;
@@ -265,9 +259,21 @@
   }
 
   // ---- HTTP -----------------------------------------------------------
+  function friendlyServerError(status, detail) {
+    const raw = typeof detail === "string" ? detail : (detail && detail.message) || "";
+    const text = raw.toLowerCase();
+    if (
+      status === 0 || [500, 502, 503, 504].includes(Number(status)) ||
+      text.includes("<!doctype html") || text.includes("bad gateway") ||
+      text.includes("service unavailable") || text.includes("gateway timeout") ||
+      text.includes("vllm http") || text.includes("failed to fetch") ||
+      text.includes("networkerror")
+    ) return SERVER_UNAVAILABLE_MESSAGE;
+    return raw || "Request failed";
+  }
+
   function ApiError(status, detail) {
-    const msg =
-      typeof detail === "string" ? detail : (detail && detail.message) || "Request failed";
+    const msg = friendlyServerError(status, detail);
     const e = new Error(msg);
     e.name = "ApiError";
     e.status = status;

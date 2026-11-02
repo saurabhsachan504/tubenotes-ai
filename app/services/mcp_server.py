@@ -574,6 +574,16 @@ def _tool_failure_message(exc: Exception) -> str:
                 return message
         return "TubeNotes could not process this request. Please try again."
     message = _friendly(exc).strip()
+    lowered = message.lower()
+    if (
+        "vllm http" in lowered
+        or "bad gateway" in lowered
+        or "service unavailable" in lowered
+        or "gateway timeout" in lowered
+        or "can't reach vllm" in lowered
+        or "timed out" in lowered
+    ):
+        return "Server is not responding right now. Please try again in a few minutes."
     return message if message and message != "Summary failed:" else "TubeNotes could not create the summary. Please try again."
 
 
@@ -1013,14 +1023,18 @@ def build_mcp_server(
             language=language,
         ):
             return _selection_required_payload()
-        result = await _create_text(
-            user,
-            _current_machine_hash(),
-            video_url,
-            language,
-            "summary",
-            include_trial_status=include_trial_status,
-        )
+        try:
+            result = await _create_text(
+                user,
+                _current_machine_hash(),
+                video_url,
+                language,
+                "summary",
+                include_trial_status=include_trial_status,
+            )
+        except Exception as exc:  # Do not expose upstream/model diagnostics to MCP users.
+            logger.exception("native MCP summary failed for TubeNotes user %s", user.id)
+            return {"error": "tool_failed", "message": _tool_failure_message(exc)}
         payload = {
             **{key: value for key, value in result.items() if key != "text"},
             "summary": result["text"],
@@ -1068,17 +1082,21 @@ def build_mcp_server(
             language=language,
         ):
             return _selection_required_payload()
-        return await _pdf_payload(
-            user,
-            _current_machine_hash(),
-            video_url,
-            language,
-            include_trial_status=include_trial_status,
-            pdf_style=pdf_style,
-            cache_mode=pdf_cache_mode,
-            notes_chunk_chars=pdf_notes_chunk_chars,
-            external_download_only=external_pdf_download_only,
-        )
+        try:
+            return await _pdf_payload(
+                user,
+                _current_machine_hash(),
+                video_url,
+                language,
+                include_trial_status=include_trial_status,
+                pdf_style=pdf_style,
+                cache_mode=pdf_cache_mode,
+                notes_chunk_chars=pdf_notes_chunk_chars,
+                external_download_only=external_pdf_download_only,
+            )
+        except Exception as exc:  # Do not expose upstream/model diagnostics to MCP users.
+            logger.exception("native MCP PDF failed for TubeNotes user %s", user.id)
+            return {"error": "tool_failed", "message": _tool_failure_message(exc)}
 
     return server
 
