@@ -1,7 +1,7 @@
 from app.routers.summarize import _friendly
 
 
-UNAVAILABLE = "Server is not responding right now. Please try again in a few minutes."
+UNAVAILABLE = "Unexpected Load On The Server. Please Come Back After Sometime."
 
 
 def test_model_and_connection_failures_hide_technical_details():

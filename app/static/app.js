@@ -396,7 +396,7 @@
     return e;
   }
 
-  const SERVER_UNAVAILABLE_MESSAGE = "Server is not responding right now. Please try again in a few minutes.";
+  const SERVER_UNAVAILABLE_MESSAGE = "Unexpected Load On The Server. Please Come Back After Sometime.";
 
   function friendlyServerError(status, detail) {
     const raw = typeof detail === "string" ? detail : (detail && detail.message) || "";

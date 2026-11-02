@@ -45,6 +45,9 @@ from app.services import (
 logger = logging.getLogger("trialguard.summarize")
 router = APIRouter(tags=["summarize"])
 
+NO_SUBTITLES_MESSAGE = "This video has no Subtitles. Please try other video."
+SERVER_UNAVAILABLE_MESSAGE = "Unexpected Load On The Server. Please Come Back After Sometime."
+
 
 def _job_country(request: Request) -> str:
     """Country snapshot for an operation, without guessing a city or location."""
@@ -595,7 +598,7 @@ async def summarize(
         )
     except youtube.TranscriptUnavailable as exc:
         await run_in_threadpool(job_audit.finish, job_id, status="failed", error_message=str(exc))
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=NO_SUBTITLES_MESSAGE)
 
     detected = summarizer.detect_language(transcript.text, hint=transcript.language)
     target = _resolve_target(payload.target_lang, detected)
@@ -798,7 +801,7 @@ async def notes(
         )
     except youtube.TranscriptUnavailable as exc:
         await run_in_threadpool(job_audit.finish, job_id, status="failed", error_message=str(exc))
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=NO_SUBTITLES_MESSAGE)
 
     detected = summarizer.detect_language(transcript.text, hint=transcript.language)
     target = _resolve_target(payload.target_lang, detected)
@@ -1324,7 +1327,9 @@ def _may_cache(transcript, meta) -> bool:
 
 
 def _friendly(exc: Exception) -> str:
-    unavailable = "Server is not responding right now. Please try again in a few minutes."
+    if isinstance(exc, youtube.TranscriptUnavailable):
+        return NO_SUBTITLES_MESSAGE
+    unavailable = SERVER_UNAVAILABLE_MESSAGE
     if isinstance(exc, summarizer.VLLMBusy):
         return unavailable
     text = str(exc)

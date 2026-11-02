@@ -466,7 +466,7 @@ def test_missing_transcript_is_reported_clearly(client, device, monkeypatch, stu
         headers=headers,
     )
     assert res.status_code == 422
-    assert "no captions" in res.json()["detail"]
+    assert res.json()["detail"] == "This video has no Subtitles. Please try other video."
 
 
 def test_model_failure_becomes_a_friendly_error_event(
@@ -486,7 +486,7 @@ def test_model_failure_becomes_a_friendly_error_event(
     )
     events = read_events(res)
     assert events[-1]["type"] == "error"
-    assert "was not found" in events[-1]["message"]
+    assert events[-1]["message"] == "Unexpected Load On The Server. Please Come Back After Sometime."
 
 
 def test_video_info_is_free(client, device, stub_youtube):

@@ -58,7 +58,7 @@
   const DEVICE_KEY = "tg_device";
   const CACHE_KEY = "tg_entitlement";
   const BASE_KEY = "tg_api_base_ok";
-  const SERVER_UNAVAILABLE_MESSAGE = "Server is not responding right now. Please try again in a few minutes.";
+  const SERVER_UNAVAILABLE_MESSAGE = "Unexpected Load On The Server. Please Come Back After Sometime.";
 
   let apiBase = DEFAULT_API_BASE;
   let refreshInFlight = null;

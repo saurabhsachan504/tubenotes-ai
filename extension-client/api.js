@@ -39,7 +39,7 @@ export async function loadApiBase() {
 
 const TOKENS_KEY = 'tg_tokens';
 const CACHE_KEY = 'tg_entitlement';
-const SERVER_UNAVAILABLE_MESSAGE = 'Server is not responding right now. Please try again in a few minutes.';
+const SERVER_UNAVAILABLE_MESSAGE = 'Unexpected Load On The Server. Please Come Back After Sometime.';
 
 let refreshInFlight = null;
 

@@ -583,7 +583,7 @@ def _tool_failure_message(exc: Exception) -> str:
         or "can't reach vllm" in lowered
         or "timed out" in lowered
     ):
-        return "Server is not responding right now. Please try again in a few minutes."
+        return "Unexpected Load On The Server. Please Come Back After Sometime."
     return message if message and message != "Summary failed:" else "TubeNotes could not create the summary. Please try again."
 
 
