@@ -461,10 +461,15 @@
   .google-auth{display:grid;justify-items:center}
   .google-panel{width:100%;padding:15px 12px 12px;border:1px solid color-mix(in srgb,var(--brand2) 24%,var(--line));border-radius:15px;background:linear-gradient(135deg,color-mix(in srgb,var(--brand1) 8%,var(--panel)),var(--field));box-shadow:inset 0 1px rgba(255,255,255,.56)}
   .google-panel-label{margin:0 0 9px;text-align:center;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
-  .device-recovery{margin-top:14px;padding:13px;border:1px solid rgba(239,68,68,.3);border-radius:12px;background:rgba(254,242,242,.72)}
-  .device-recovery p{margin:0 0 10px;color:#b91c1c;font-size:12.5px;line-height:1.5}
-  .device-recovery button{width:100%;border-color:rgba(220,38,38,.45);color:#b91c1c;background:transparent}
-  .device-recovery button:hover{border-color:#dc2626;background:rgba(254,226,226,.8)}
+  .device-recovery{margin-top:14px;padding:14px;border:1px solid rgba(239,68,68,.28);border-radius:14px;background:linear-gradient(135deg,rgba(254,242,242,.94),rgba(255,247,237,.94));box-shadow:inset 0 1px rgba(255,255,255,.72)}
+  .device-recovery p{margin:0 0 12px;color:#b91c1c;font-size:12.5px;line-height:1.5}
+  .device-recovery-action{position:relative;display:flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:45px;padding:11px 14px;border:0;border-radius:11px;overflow:hidden;color:#fff;background:linear-gradient(135deg,#dc2626,#ef4444 54%,#f97316);box-shadow:0 9px 19px rgba(220,38,38,.25);font:750 13px/1.2 inherit;letter-spacing:.005em;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,filter .18s ease}
+  .device-recovery-action::before{content:"";position:absolute;inset:0;background:linear-gradient(115deg,rgba(255,255,255,.24),transparent 34%);pointer-events:none}
+  .device-recovery-action svg,.device-recovery-action span{position:relative;z-index:1}
+  .device-recovery-action svg{width:18px;height:18px;flex:0 0 auto}
+  .device-recovery-action:hover:not(:disabled){filter:brightness(1.04);transform:translateY(-1px);box-shadow:0 12px 23px rgba(220,38,38,.31)}
+  .device-recovery-action:focus-visible{outline:3px solid rgba(239,68,68,.3);outline-offset:3px}
+  .device-recovery-action:disabled{opacity:.68;cursor:wait;transform:none;box-shadow:0 6px 14px rgba(220,38,38,.18)}
   #gsiButton{display:flex;justify-content:center;min-height:40px}
   .auth-divider{display:flex;align-items:center;gap:10px;width:100%;margin:16px 0 3px;color:var(--muted);font-size:11.5px}
   .auth-divider::before,.auth-divider::after{content:"";height:1px;flex:1;background:var(--line)}
@@ -472,7 +477,7 @@
   .auth-email-switch:hover{background:var(--chip)}
   .auth-footer{display:flex;justify-content:space-between;align-items:center;margin-top:5px}
   [data-theme="dark"] .google-panel{background:linear-gradient(135deg,rgba(124,58,237,.14),rgba(24,19,48,.78));box-shadow:inset 0 1px rgba(255,255,255,.04)}
-  [data-theme="dark"] .device-recovery{background:rgba(127,29,29,.18)}
+  [data-theme="dark"] .device-recovery{background:linear-gradient(135deg,rgba(127,29,29,.3),rgba(124,45,18,.24));border-color:rgba(248,113,113,.28)}
   .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px}
   .tabs button{
     flex:1;background:none;border:none;border-bottom:2px solid transparent;
@@ -850,7 +855,10 @@
       </div>
       <div class="device-recovery hidden" id="deviceRecovery" aria-live="polite">
         <p id="deviceRecoveryMsg"></p>
-        <button class="linkbtn" id="removeOldDevicesBtn" type="button">Remove old devices &amp; continue</button>
+        <button class="device-recovery-action" id="removeOldDevicesBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h5A2.5 2.5 0 0 1 14 7.5v5a2.5 2.5 0 0 1-2.5 2.5h-5A2.5 2.5 0 0 1 4 12.5z"/><path d="M10 9.5h7.5A2.5 2.5 0 0 1 20 12v5.5a2.5 2.5 0 0 1-2.5 2.5H12A2.5 2.5 0 0 1 9.5 17.5V10"/><path d="m14 14 2 2 4-4"/></svg>
+          <span>Remove old devices &amp; Continue</span>
+        </button>
       </div>
       <div class="auth-footer">
         <button class="linkbtn" id="closeAuth">Close</button>
